@@ -1,0 +1,99 @@
+name: BKE Library - Accounts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/accounts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".gitignore"
+      - ".github/workflows/accounts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  accounts:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_accounts_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_accounts_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_accounts_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then
+            echo "Tracked generated dependency/test cache files are forbidden:"
+            echo "$tracked"
+            exit 1
+          fi
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Prove source migration byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-all-errors \
+            -o /tmp/accounts-source.sql \
+            https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/0e6afbf92bf08762e10892643e99b607332eac61/v2/modules/accounts/prisma/migrations/0001_accounts_baseline/migration.sql
+          cmp /tmp/accounts-source.sql @bke/accounts/migrations/0001_accounts_baseline/migration.sql
+
+      - name: Certify Accounts extraction boundary
+        run: npx tsx @bke/accounts/tests/extraction.certify.ts
+
+      - name: Typecheck Accounts
+        run: npm run typecheck --workspace=@bke/accounts
+
+      - name: Validate Accounts Prisma schema
+        run: npm run prisma:validate --workspace=@bke/accounts
+
+      - name: Apply Accounts migrations
+        run: npm run prisma:deploy --workspace=@bke/accounts
+
+      - name: Prove Accounts migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/accounts
+
+      - name: Test Accounts logic
+        run: npm run test --workspace=@bke/accounts
+
+      - name: Certify Accounts PostgreSQL behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in @bke/accounts/tests/*.certify.ts; do
+            if [[ "$file" == *"extraction.certify.ts" ]]; then
+              continue
+            fi
+            echo "::group::$(basename "$file")"
+            npx tsx "$file"
+            echo "::endgroup::"
+          done
