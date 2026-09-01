@@ -1,0 +1,181 @@
+datasource db {
+  provider = "postgresql"
+}
+
+enum IdentityRole {
+  CUSTOMER
+  ADMIN
+}
+
+enum IdentityLifecycleState {
+  ACTIVE
+  SUSPENDED
+  CLOSURE_REQUESTED
+  CLOSED
+  PRIVACY_REVIEW
+  PSEUDONYMIZED
+  PURGE_ELIGIBLE
+}
+
+enum MfaChallengePurpose {
+  LOGIN
+  ENROLLMENT
+  RECENT_AUTH
+}
+
+enum SessionAuthenticationMethod {
+  PASSWORD
+  PASSWORD_TOTP
+  PASSWORD_EMAIL_OTP
+  PASSWORD_RECOVERY
+  MAGIC_LINK
+  MFA_ENROLLMENT
+}
+
+enum SessionAssuranceLevel {
+  BASIC
+  MFA_VERIFIED
+  RECENTLY_AUTHENTICATED
+}
+
+model User {
+  id                          String                               @id
+  email                       String                               @unique
+  name                        String?
+  emailVerified               DateTime?
+  role                        IdentityRole                         @default(CUSTOMER)
+  createdAt                   DateTime                             @default(now())
+  updatedAt                   DateTime
+  suspendedAt                 DateTime?
+  lifecycleState              IdentityLifecycleState               @default(ACTIVE)
+  privacyRequestedAt          DateTime?
+  pseudonymizedAt             DateTime?
+  retentionExpiresAt          DateTime?
+  legalHoldAt                 DateTime?
+  legalHoldReason             String?
+  emailHash                   String?
+  credential                  PasswordCredential?
+  sessions                    Session[]
+  administratorMfa            AdministratorMfaMethod?
+  recoveryCodes               AdministratorRecoveryCode[]
+  mfaChallenges               MfaChallenge[]
+  emergencyMfaAuthorizations  EmergencyMfaEnrollmentAuthorization[]
+
+  @@index([lifecycleState])
+  @@index([retentionExpiresAt])
+  @@index([legalHoldAt])
+}
+
+model PasswordCredential {
+  userId       String   @id
+  passwordHash String
+  changedAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id                    String                      @id
+  tokenHash             String                      @unique
+  userId                String
+  expiresAt             DateTime
+  lastAuthenticatedAt   DateTime                    @default(now())
+  mfaVerifiedAt         DateTime?
+  recentAuthenticatedAt DateTime?
+  lastSeenAt            DateTime                    @default(now())
+  absoluteExpiresAt     DateTime
+  ipHash                String?
+  userAgent             String?
+  userAgentSummary      String?
+  networkHint           String?
+  authenticationMethod  SessionAuthenticationMethod @default(PASSWORD)
+  assuranceLevel        SessionAssuranceLevel       @default(BASIC)
+  revokedAt             DateTime?
+  revocationReason      String?
+  createdAt             DateTime                    @default(now())
+  user                  User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([userId, revokedAt])
+  @@index([userId, absoluteExpiresAt])
+  @@index([userId, lastSeenAt])
+}
+
+model AdministratorMfaMethod {
+  id               String    @id
+  userId           String    @unique
+  encryptedSecret  String?
+  keyVersion       Int       @default(1)
+  pendingExpiresAt DateTime?
+  enabledAt        DateTime?
+  verifiedAt       DateTime?
+  disabledAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AdministratorRecoveryCode {
+  id        String    @id
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, usedAt])
+}
+
+model MfaChallenge {
+  id           String              @id
+  userId       String
+  purpose      MfaChallengePurpose @default(LOGIN)
+  tokenHash    String              @unique
+  codeHash     String?
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  attemptCount Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model EmergencyMfaEnrollmentAuthorization {
+  id                    String    @id
+  userId                String
+  tokenHash             String    @unique
+  createdAt             DateTime  @default(now())
+  expiresAt             DateTime
+  consumedAt            DateTime?
+  revokedAt             DateTime?
+  recoveryReason        String
+  operatorIdentity      String
+  ownerKeyVersion       Int
+  deploymentEnvironment String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt, consumedAt])
+}
+
+model VerificationToken {
+  id         String    @id
+  identifier String
+  purpose    String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([identifier, purpose])
+}
+
+model PasswordResetToken {
+  id        String    @id
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
