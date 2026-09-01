@@ -1,0 +1,253 @@
+name: Extract Identity Library
+
+on:
+  push:
+    branches:
+      - feat/identity-library-extraction
+    paths:
+      - .github/workflows/extract-identity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: identity-library-extraction
+  cancel-in-progress: false
+
+jobs:
+  extract-and-certify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_identity_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_identity_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_identity_library
+      SOURCE_REPOSITORY: jan2xo/bke-digital-solutions
+      SOURCE_SHA: 08fc65cdf459989ced268e35303372acd7995939
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/identity-library-extraction
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Copy certified Identity package surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="/tmp/bke-digital-solutions"
+          rm -rf "$source_root"
+          git clone --filter=blob:none "https://github.com/${SOURCE_REPOSITORY}.git" "$source_root"
+          git -C "$source_root" checkout --detach "$SOURCE_SHA"
+          src="$source_root/v2/modules/identity"
+
+          rm -rf @bke/identity
+          mkdir -p \
+            @bke/identity/contracts \
+            @bke/identity/logic \
+            @bke/identity/providers \
+            @bke/identity/prisma/repositories \
+            @bke/identity/migrations \
+            @bke/identity/tests \
+            @bke/identity/docs
+
+          cp -R "$src/contracts/." @bke/identity/contracts/
+          find "$src/logic" -maxdepth 1 -type f -name '*.ts' -exec cp {} @bke/identity/logic/ \;
+          cp -R "$src/logic/providers/." @bke/identity/providers/
+          cp "$src/prisma/schema.prisma" @bke/identity/prisma/schema.prisma
+          cp -R "$src/prisma/repositories/." @bke/identity/prisma/repositories/
+          cp -R "$src/prisma/migrations/." @bke/identity/migrations/
+          cp -R "$src/test/." @bke/identity/tests/
+          cp "$src/module.manifest.ts" @bke/identity/module.manifest.ts
+          cp -R "$src/docs/." @bke/identity/docs/
+
+      - name: Apply mechanical extraction path rewrites
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          root = Path("@bke/identity")
+
+          for path in (root / "providers").glob("*.ts"):
+              source = path.read_text()
+              source = source.replace('../../contracts/', '../contracts/')
+              source = source.replace("../../contracts/", "../contracts/")
+              source = re.sub(r'(["\'])\.\./(?!contracts/|logic/|\.\.)', r'\1../logic/', source)
+              path.write_text(source)
+
+          for path in (root / "tests").glob("*.ts"):
+              source = path.read_text().replace('../logic/providers/', '../providers/')
+              path.write_text(source)
+
+          extraction = root / "tests" / "extraction.certify.ts"
+          source = extraction.read_text()
+          source = source.replace('path.startsWith("test/")', 'path.startsWith("tests/") ||\n    path.startsWith("providers/")')
+          extraction.write_text(source)
+
+      - name: Create standalone workspace metadata
+        shell: bash
+        run: |
+          cat > package.json <<'JSON'
+          {
+            "name": "bke-libraries-typescript",
+            "private": true,
+            "type": "module",
+            "engines": {
+              "node": ">=22.12.0"
+            },
+            "workspaces": [
+              "@bke/*"
+            ],
+            "scripts": {
+              "typecheck": "npm run typecheck --workspaces --if-present",
+              "test": "npm run test --workspaces --if-present"
+            },
+            "devDependencies": {
+              "@types/node": "^24.3.0",
+              "@types/pg": "^8.15.5",
+              "prisma": "7.9.1",
+              "tsx": "^4.20.5",
+              "typescript": "^5.9.2",
+              "vitest": "^3.2.4"
+            }
+          }
+          JSON
+
+          cat > @bke/identity/package.json <<'JSON'
+          {
+            "name": "@bke/identity",
+            "version": "0.1.0",
+            "description": "Reusable BKE Identity capability library",
+            "type": "module",
+            "engines": {
+              "node": ">=22.12.0"
+            },
+            "scripts": {
+              "typecheck": "tsc -p tsconfig.json --noEmit",
+              "test": "vitest run tests/*.test.ts",
+              "prisma:validate": "prisma validate --config prisma.config.ts",
+              "prisma:deploy": "prisma migrate deploy --config prisma.config.ts"
+            },
+            "dependencies": {
+              "argon2": "^0.44.0",
+              "pg": "^8.16.3"
+            }
+          }
+          JSON
+
+          cat > @bke/identity/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "lib": ["ES2022"],
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "esModuleInterop": true,
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "resolveJsonModule": true,
+              "isolatedModules": true,
+              "types": ["node", "vitest/globals"]
+            },
+            "include": [
+              "contracts/**/*.ts",
+              "logic/**/*.ts",
+              "providers/**/*.ts",
+              "prisma/**/*.ts",
+              "tests/**/*.ts",
+              "module.manifest.ts",
+              "prisma.config.ts"
+            ]
+          }
+          JSON
+
+          cat > @bke/identity/prisma.config.ts <<'TS'
+          import { defineConfig, env } from "prisma/config";
+
+          export default defineConfig({
+            schema: "prisma/schema.prisma",
+            migrations: {
+              path: "migrations",
+            },
+            datasource: {
+              url: env("DATABASE_URL"),
+            },
+          });
+          TS
+
+          cat > @bke/identity/README.md <<'MD'
+          # @bke/identity
+
+          Standalone BKE Identity capability library extracted from the certified Digital Solutions V2 Identity module.
+
+          The application-specific `module.ts` composition adapter is intentionally not part of this package.
+          MD
+
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Certify standalone extraction boundary
+        run: npx tsx @bke/identity/tests/extraction.certify.ts
+
+      - name: Typecheck standalone Identity library
+        run: npm run typecheck --workspace=@bke/identity
+
+      - name: Validate standalone Identity Prisma schema
+        run: npm run prisma:validate --workspace=@bke/identity
+
+      - name: Apply standalone Identity migrations
+        run: npm run prisma:deploy --workspace=@bke/identity
+
+      - name: Prove standalone migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/identity
+
+      - name: Run standalone Identity unit tests
+        run: npm run test --workspace=@bke/identity
+
+      - name: Run standalone Identity PostgreSQL certifications
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in @bke/identity/tests/*.certify.ts; do
+            if [[ "$file" == *"extraction.certify.ts" ]]; then
+              continue
+            fi
+            echo "::group::$(basename "$file")"
+            npx tsx "$file"
+            echo "::endgroup::"
+          done
+
+      - name: Commit certified extracted package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add @bke/identity package.json package-lock.json
+          if git diff --cached --quiet; then
+            echo "No extraction changes to commit."
+            exit 0
+          fi
+          git commit -m "feat: extract certified @bke/identity library"
+          git push origin HEAD:feat/identity-library-extraction
