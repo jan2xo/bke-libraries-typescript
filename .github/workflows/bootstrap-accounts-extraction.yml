@@ -1,0 +1,137 @@
+name: Bootstrap Accounts Physical Extraction
+
+on:
+  push:
+    branches: [feat/accounts-physical-extraction]
+    paths:
+      - ".github/workflows/bootstrap-accounts-extraction.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/accounts-physical-extraction
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Materialize certified Accounts package
+        shell: bash
+        env:
+          SOURCE_SHA: 0e6afbf92bf08762e10892643e99b607332eac61
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/ds
+          git clone --filter=blob:none --no-checkout https://github.com/jan2xo/bke-digital-solutions.git /tmp/ds
+          git -C /tmp/ds fetch --depth=1 origin "$SOURCE_SHA"
+          git -C /tmp/ds checkout --detach FETCH_HEAD
+
+          python3 - <<'PY'
+          import json, os, shutil
+          from pathlib import Path
+
+          source_sha = os.environ["SOURCE_SHA"]
+          source = Path("/tmp/ds/v2/modules/accounts")
+          target = Path("@bke/accounts")
+          if target.exists():
+              shutil.rmtree(target)
+          target.mkdir(parents=True)
+
+          for name in ["contracts", "logic", "providers"]:
+              shutil.copytree(source / name, target / name)
+
+          (target / "prisma" / "repositories").mkdir(parents=True)
+          shutil.copy2(source / "prisma" / "schema.prisma", target / "prisma" / "schema.prisma")
+          for item in (source / "prisma" / "repositories").iterdir():
+              if item.is_file():
+                  shutil.copy2(item, target / "prisma" / "repositories" / item.name)
+
+          shutil.copytree(source / "prisma" / "migrations", target / "migrations")
+          shutil.copy2(source / "module.manifest.ts", target / "module.manifest.ts")
+          prisma_config = (source / "prisma.config.ts").read_text()
+          prisma_config = prisma_config.replace('path: "prisma/migrations"', 'path: "migrations"')
+          (target / "prisma.config.ts").write_text(prisma_config)
+
+          tests = target / "tests"
+          tests.mkdir()
+          for item in (source / "test").iterdir():
+              if not item.is_file() or item.name == "module-composition.test.ts":
+                  continue
+              text = item.read_text()
+              if item.name == "extraction.certify.ts":
+                  text = text.replace('path.startsWith("test/")', 'path.startsWith("tests/")')
+                  text = text.replace('"prisma/migrations/0001_accounts_baseline/migration.sql"', '"migrations/0001_accounts_baseline/migration.sql"')
+                  text = text.replace('"test",', '"tests",')
+              (tests / item.name).write_text(text)
+
+          docs = target / "docs"
+          docs.mkdir()
+          shutil.copy2(source / "docs" / "README.md", docs / "CAPABILITIES.md")
+          shutil.copy2(source / "docs" / "EXTRACTION.md", docs / "EXTRACTION-SOURCE.md")
+
+          package = {
+              "name": "@bke/accounts",
+              "version": "0.1.0",
+              "description": "Reusable BKE Accounts capability library",
+              "type": "module",
+              "engines": {"node": ">=22.12.0"},
+              "files": ["contracts", "logic", "providers", "prisma", "migrations", "docs", "module.manifest.ts", "prisma.config.ts", "README.md"],
+              "exports": {
+                  "./contracts/*": "./contracts/*.ts",
+                  "./logic/*": "./logic/*.ts",
+                  "./providers/*": "./providers/*.ts",
+                  "./prisma/repositories/*": "./prisma/repositories/*.ts",
+                  "./module.manifest": "./module.manifest.ts",
+                  "./prisma.config": "./prisma.config.ts",
+                  "./package.json": "./package.json"
+              },
+              "scripts": {
+                  "typecheck": "tsc -p tsconfig.json --noEmit",
+                  "test": "vitest run tests/*.test.ts",
+                  "prisma:validate": "prisma validate --config prisma.config.ts",
+                  "prisma:deploy": "prisma migrate deploy --config prisma.config.ts"
+              },
+              "dependencies": {"pg": "^8.16.3"}
+          }
+          (target / "package.json").write_text(json.dumps(package, indent=2) + "\n")
+
+          tsconfig = {
+              "compilerOptions": {
+                  "target": "ES2022", "lib": ["ES2022"], "strict": True, "noEmit": True,
+                  "skipLibCheck": True, "esModuleInterop": True, "module": "ESNext",
+                  "moduleResolution": "Bundler", "resolveJsonModule": True, "isolatedModules": True,
+                  "types": ["node", "vitest/globals"]
+              },
+              "include": ["contracts/**/*.ts", "logic/**/*.ts", "providers/**/*.ts", "prisma/**/*.ts", "tests/**/*.ts", "module.manifest.ts", "prisma.config.ts"]
+          }
+          (target / "tsconfig.json").write_text(json.dumps(tsconfig, indent=2) + "\n")
+
+          (target / "README.md").write_text(f'''# @bke/accounts\n\nReusable BKE Accounts capability library.\n\nThis package was physically extracted from certified Digital Solutions V2 Accounts staging at source commit `{source_sha}`. Business logic, contracts, providers, PostgreSQL repositories, Prisma schema, and baseline migration are package-owned. Digital Solutions host composition is intentionally excluded.\n\n## Install\n\nPin the exact certified package artifact/version used by the host. This package is not asserted to be publicly published to npm.\n\n## Use\n\nImport contracts and capability factories from package subpaths, create the required providers/repositories, then wire those capabilities in the consuming application's composition root. See `docs/USAGE.md`.\n\n## Persistence\n\nAccounts owns `CustomerAccount`, `OrganizationProfile`, `Membership`, and `Invitation`. Identity principal IDs are opaque external IDs; there is no Identity `User` relation or foreign key. Apply package-owned migrations from `migrations/` before using PostgreSQL repositories.\n''')
+
+          (docs / "USAGE.md").write_text('''# Consuming @bke/accounts\n\n## Responsibility split\n\n`@bke/accounts` owns Accounts domain contracts, business logic, providers, PostgreSQL repositories, Prisma schema, migrations, and domain certification. The host owns HTTP/Next.js mapping, sessions/cookies, Identity principal verification/enrichment, Legal acceptance, email transport, audit transport, Commerce, Licensing, and application composition.\n\n## Direct capability composition\n\nImport the contract/capability factory and its PostgreSQL repository from package subpaths. Construct the repository with the application's Accounts database connection string, construct any package provider required by the capability, then register the resulting capability in the host composition root. Do not copy package logic back into the application.\n\nExample shape:\n\n```ts\nimport { createAccountsAccountAccessCapability } from "@bke/accounts/logic/account-access";\nimport { createPostgresAccountsAccountAccessRepository } from "@bke/accounts/prisma/repositories/postgres-account-access-repository";\n\nconst accountAccess = createAccountsAccountAccessCapability(\n  createPostgresAccountsAccountAccessRepository(process.env.DATABASE_URL!),\n);\n```\n\nOther Accounts capabilities follow the same pattern: contract + logic factory + required provider/repository. The package manifest enumerates the certified capability IDs.\n\n## Prisma / migrations\n\nThe package owns `prisma/schema.prisma` and `migrations/`. For Prisma CLI operations run the package scripts (for example `npm run prisma:deploy --workspace=@bke/accounts`) with `DATABASE_URL` configured. The consumer must not reconstruct Accounts tables in a global business schema.\n\n## Cross-domain composition\n\nIdentity user/principal IDs enter Accounts as opaque strings. The host proves principal existence/email state where a workflow requires it. Registration remains a composition of Identity + Accounts + Legal. Commerce and Licensing consume Accounts authorization results instead of duplicating the Accounts role/capability matrix. Audit intents returned by Accounts are transported by the host.\n\n## Upgrade proof\n\nWhen changing the pinned Accounts package version, re-run the package's standalone CI first, then prove the consuming application's adapter/composition against that exact package candidate. Application tests should verify mapping/wiring and compatibility, not re-prove package-owned domain invariants.\n''')
+
+          workflow = '''name: BKE Library - Accounts\n\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - "@bke/accounts/**"\n      - "package.json"\n      - "package-lock.json"\n      - ".gitignore"\n      - ".github/workflows/accounts.yml"\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  accounts:\n    runs-on: ubuntu-latest\n    services:\n      postgres:\n        image: postgres:17-alpine\n        env:\n          POSTGRES_USER: bke\n          POSTGRES_PASSWORD: bke\n          POSTGRES_DB: bke_accounts_library\n        ports:\n          - 5432:5432\n        options: >-\n          --health-cmd "pg_isready -U bke -d bke_accounts_library"\n          --health-interval 5s\n          --health-timeout 5s\n          --health-retries 10\n    env:\n      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_accounts_library\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 22\n          cache: npm\n          cache-dependency-path: package-lock.json\n      - name: Install locked dependencies\n        run: npm ci\n      - name: Reject tracked dependency/test caches\n        shell: bash\n        run: |\n          set -euo pipefail\n          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\\.vite/' || true)"\n          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi\n      - name: Audit production dependencies\n        run: npm audit --omit=dev --audit-level=high\n      - name: Prove source migration byte identity\n        shell: bash\n        run: |\n          set -euo pipefail\n          curl -fL --retry 3 --retry-all-errors -o /tmp/accounts-source.sql \\\n            https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/0e6afbf92bf08762e10892643e99b607332eac61/v2/modules/accounts/prisma/migrations/0001_accounts_baseline/migration.sql\n          cmp /tmp/accounts-source.sql @bke/accounts/migrations/0001_accounts_baseline/migration.sql\n      - name: Certify Accounts extraction boundary\n        run: npx tsx @bke/accounts/tests/extraction.certify.ts\n      - name: Typecheck Accounts\n        run: npm run typecheck --workspace=@bke/accounts\n      - name: Validate Accounts Prisma schema\n        run: npm run prisma:validate --workspace=@bke/accounts\n      - name: Apply Accounts migrations\n        run: npm run prisma:deploy --workspace=@bke/accounts\n      - name: Prove Accounts migration idempotence\n        run: npm run prisma:deploy --workspace=@bke/accounts\n      - name: Test Accounts logic\n        run: npm run test --workspace=@bke/accounts\n      - name: Certify Accounts PostgreSQL behavior\n        shell: bash\n        run: |\n          set -euo pipefail\n          for file in @bke/accounts/tests/*.certify.ts; do\n            if [[ "$file" == *"extraction.certify.ts" ]]; then continue; fi\n            echo "::group::$(basename "$file")"\n            npx tsx "$file"\n            echo "::endgroup::"\n          done\n'''
+          Path(".github/workflows/accounts.yml").write_text(workflow)
+          PY
+
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Commit extracted package and remove bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/bootstrap-accounts-extraction.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(accounts): extract certified @bke/accounts library"
+          git push origin HEAD:feat/accounts-physical-extraction
