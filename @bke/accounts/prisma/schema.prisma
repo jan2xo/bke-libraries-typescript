@@ -1,0 +1,92 @@
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountsAccountType {
+  INDIVIDUAL
+  ORGANIZATION
+}
+
+enum AccountsMemberRole {
+  OWNER
+  BILLING
+  LICENSE_MANAGER
+  MEMBER
+}
+
+enum AccountsLifecycleState {
+  ACTIVE
+  SUSPENDED
+  CLOSURE_REQUESTED
+  CLOSED
+  PRIVACY_REVIEW
+  PSEUDONYMIZED
+  PURGE_ELIGIBLE
+}
+
+enum AccountsInvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+model CustomerAccount {
+  id                 String                 @id
+  type               AccountsAccountType
+  displayName        String
+  ownerId            String
+  billingEmail       String
+  taxId              String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @default(now()) @updatedAt
+  lifecycleState     AccountsLifecycleState @default(ACTIVE)
+  closureRequestedAt DateTime?
+  closedAt           DateTime?
+  privacyRequestedAt DateTime?
+  pseudonymizedAt    DateTime?
+  retentionExpiresAt DateTime?
+  legalHoldAt        DateTime?
+  legalHoldReason    String?
+  organization       OrganizationProfile?
+  memberships        Membership[]
+  invitations        Invitation[]
+
+  @@index([ownerId])
+  @@index([lifecycleState])
+  @@index([closedAt])
+  @@index([retentionExpiresAt])
+  @@index([legalHoldAt])
+}
+
+model OrganizationProfile {
+  accountId          String          @id
+  legalName          String
+  registrationNumber String?
+  account            CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model Membership {
+  accountId String
+  userId    String
+  role      AccountsMemberRole
+  createdAt DateTime        @default(now())
+  account   CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, userId])
+  @@index([userId])
+}
+
+model Invitation {
+  id        String                   @id
+  accountId String
+  email     String
+  role      AccountsMemberRole
+  tokenHash String                   @unique
+  status    AccountsInvitationStatus @default(PENDING)
+  expiresAt DateTime
+  createdAt DateTime                 @default(now())
+  account   CustomerAccount          @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, email])
+}
