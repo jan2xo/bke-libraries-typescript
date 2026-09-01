@@ -107,11 +107,11 @@ jobs:
           import { createPostgresIdentityRepository } from "@bke/identity/prisma/repositories/postgres-identity-repository";
           import { identityModuleManifest } from "@bke/identity/module.manifest";
 
-          if (IDENTITY_LOOKUP_CAPABILITY_ID !== "identity.lookup") {
+          if (IDENTITY_LOOKUP_CAPABILITY_ID !== "bke.identity.lookup.v1") {
             throw new Error("Unexpected Identity lookup capability id from packed consumer surface.");
           }
-          if (identityModuleManifest.id !== "identity") {
-            throw new Error("Unexpected Identity manifest id from packed consumer surface.");
+          if (identityModuleManifest.moduleId !== "identity") {
+            throw new Error("Unexpected Identity manifest moduleId from packed consumer surface.");
           }
           if (
             typeof createIdentityLookupCapability !== "function" ||
