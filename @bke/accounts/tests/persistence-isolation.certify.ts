@@ -6,7 +6,7 @@ if (!connectionString) {
 }
 
 const allowedTables = new Set([
-  "_bke_module_migrations",
+  "_prisma_migrations",
   "CustomerAccount",
   "OrganizationProfile",
   "Membership",
@@ -66,7 +66,7 @@ try {
   }
 
   console.log(
-    `Accounts persistence isolation GREEN: ${tableNames.length - 1} business tables, ${enumNames.length} enums, no foreign tables or sequences`,
+    `Accounts persistence isolation GREEN: ${tableNames.length - 1} business tables, ${enumNames.length} enums, Prisma migration ledger only, no foreign tables or sequences`,
   );
 } finally {
   await client.end();
