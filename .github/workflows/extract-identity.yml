@@ -100,6 +100,17 @@ jobs:
           source = source.replace('path.startsWith("test/")', 'path.startsWith("tests/") ||\n    path.startsWith("providers/")')
           extraction.write_text(source)
 
+          persistence = root / "tests" / "persistence.certify.ts"
+          source = persistence.read_text()
+          source = source.replace(
+              "AND table_name <> '_bke_module_migrations'",
+              "AND table_name NOT IN ('_bke_module_migrations', '_prisma_migrations')",
+          )
+          start = source.index("  const ledger = await client.query")
+          end = source.index('  console.log("Identity persistence certification GREEN");')
+          prisma_ledger = '''  const ledger = await client.query<{\n    migrationName: string;\n    finishedAt: Date | null;\n    rolledBackAt: Date | null;\n  }>(`\n    SELECT "migration_name" AS "migrationName",\n           "finished_at" AS "finishedAt",\n           "rolled_back_at" AS "rolledBackAt"\n      FROM "_prisma_migrations"\n     ORDER BY "started_at"\n  `);\n\n  if (\n    ledger.rows.length !== 1 ||\n    ledger.rows[0]?.migrationName !== "0001_identity_baseline" ||\n    !ledger.rows[0]?.finishedAt ||\n    ledger.rows[0]?.rolledBackAt !== null\n  ) {\n    throw new Error(`Unexpected Identity Prisma migration ledger: ${JSON.stringify(ledger.rows)}`);\n  }\n\n'''
+          persistence.write_text(source[:start] + prisma_ledger + source[end:])
+
       - name: Create standalone workspace metadata
         shell: bash
         run: |
