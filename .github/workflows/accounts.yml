@@ -82,6 +82,9 @@ jobs:
       - name: Prove Accounts migration idempotence
         run: npm run prisma:deploy --workspace=@bke/accounts
 
+      - name: Certify Accounts persistence isolation
+        run: npx tsx @bke/accounts/tests/persistence-isolation.certify.ts
+
       - name: Test Accounts logic
         run: npm run test --workspace=@bke/accounts
 
@@ -89,11 +92,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in @bke/accounts/tests/*.certify.ts; do
-            if [[ "$file" == *"extraction.certify.ts" ]]; then
-              continue
-            fi
-            echo "::group::$(basename "$file")"
+          files=(
+            individual-account-creation.postgres.certify.ts
+            account-access.postgres.certify.ts
+            switchable-account-list.postgres.certify.ts
+            organization-account-creation.postgres.certify.ts
+            organization-profile-update.postgres.certify.ts
+            organization-close.postgres.certify.ts
+            organization-detail.postgres.certify.ts
+            invitation-issuance.postgres.certify.ts
+            invitation-list.postgres.certify.ts
+            invitation-resend.postgres.certify.ts
+            invitation-revocation.postgres.certify.ts
+            invitation-expiration.postgres.certify.ts
+            invitation-acceptance.postgres.certify.ts
+            membership-role-change.postgres.certify.ts
+            membership-removal.postgres.certify.ts
+            member-leave.postgres.certify.ts
+            ownership-transfer.postgres.certify.ts
+          )
+          for name in "${files[@]}"; do
+            file="@bke/accounts/tests/$name"
+            echo "::group::$name"
             npx tsx "$file"
             echo "::endgroup::"
           done
