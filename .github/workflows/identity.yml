@@ -1,0 +1,90 @@
+name: BKE Library - Identity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/identity/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".gitignore"
+      - ".github/workflows/identity.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_identity_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_identity_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_identity_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then
+            echo "Tracked generated dependency/test cache files are forbidden:"
+            echo "$tracked"
+            exit 1
+          fi
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Certify Identity extraction boundary
+        run: npx tsx @bke/identity/tests/extraction.certify.ts
+
+      - name: Typecheck Identity
+        run: npm run typecheck --workspace=@bke/identity
+
+      - name: Validate Identity Prisma schema
+        run: npm run prisma:validate --workspace=@bke/identity
+
+      - name: Apply Identity migrations
+        run: npm run prisma:deploy --workspace=@bke/identity
+
+      - name: Prove Identity migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/identity
+
+      - name: Test Identity logic
+        run: npm run test --workspace=@bke/identity
+
+      - name: Certify Identity PostgreSQL behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in @bke/identity/tests/*.certify.ts; do
+            if [[ "$file" == *"extraction.certify.ts" ]]; then
+              continue
+            fi
+            echo "::group::$(basename "$file")"
+            npx tsx "$file"
+            echo "::endgroup::"
+          done
