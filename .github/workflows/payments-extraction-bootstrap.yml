@@ -38,7 +38,6 @@ jobs:
           dst=@bke/payments
           rm -rf "$dst"
           mkdir -p "$dst"/{contracts,logic,providers,prisma/repositories,migrations,docs,tests}
-
           cp -R "$src/contracts/." "$dst/contracts/"
           cp -R "$src/logic/." "$dst/logic/"
           cp -R "$src/providers/." "$dst/providers/"
@@ -47,7 +46,6 @@ jobs:
           cp -R "$src/prisma/migrations/." "$dst/migrations/"
           cp -R "$src/docs/." "$dst/docs/"
           cp "$src/module.manifest.ts" "$dst/module.manifest.ts"
-
           cp "$src/test/"*.test.ts "$dst/tests/"
           cp "$src/test/"*.postgres.certify.ts "$dst/tests/"
           rm -f "$dst/tests/module-composition.test.ts"
@@ -74,12 +72,8 @@ jobs:
 
           export default defineConfig({
             schema: "prisma/schema.prisma",
-            migrations: {
-              path: "migrations",
-            },
-            datasource: {
-              url: env("DATABASE_URL"),
-            },
+            migrations: { path: "migrations" },
+            datasource: { url: env("DATABASE_URL") },
           });
           TS
 
@@ -90,17 +84,7 @@ jobs:
             "description": "Reusable BKE provider-agnostic Payments capabilities with certified PayMongo adapter",
             "type": "module",
             "engines": { "node": ">=22.12.0" },
-            "files": [
-              "contracts",
-              "logic",
-              "providers",
-              "prisma",
-              "migrations",
-              "docs",
-              "module.manifest.ts",
-              "prisma.config.ts",
-              "README.md"
-            ],
+            "files": ["contracts", "logic", "providers", "prisma", "migrations", "docs", "module.manifest.ts", "prisma.config.ts", "README.md"],
             "exports": {
               "./contracts/*": "./contracts/*.ts",
               "./logic/*": "./logic/*.ts",
@@ -135,15 +119,7 @@ jobs:
               "isolatedModules": true,
               "types": ["node", "vitest/globals"]
             },
-            "include": [
-              "contracts/**/*.ts",
-              "logic/**/*.ts",
-              "providers/**/*.ts",
-              "prisma/**/*.ts",
-              "tests/**/*.ts",
-              "module.manifest.ts",
-              "prisma.config.ts"
-            ]
+            "include": ["contracts/**/*.ts", "logic/**/*.ts", "providers/**/*.ts", "prisma/**/*.ts", "tests/**/*.ts", "module.manifest.ts", "prisma.config.ts"]
           }
           JSON
 
@@ -162,268 +138,8 @@ jobs:
           Payments owns provider interaction and Payments-local facts only. It does not mutate Commerce Orders/Invoices, Entitlements, Licensing, Accounts, or Legal state.
           MD
 
-          cat > .github/workflows/payments.yml <<'YAML'
-          name: BKE Library - Payments
-
-          on:
-            pull_request:
-              branches: [main]
-              paths:
-                - "@bke/payments/**"
-                - "package.json"
-                - "package-lock.json"
-                - ".github/workflows/payments.yml"
-            workflow_dispatch:
-
-          permissions:
-            contents: read
-
-          jobs:
-            payments:
-              runs-on: ubuntu-latest
-              services:
-                postgres:
-                  image: postgres:17-alpine
-                  env:
-                    POSTGRES_USER: bke
-                    POSTGRES_PASSWORD: bke
-                    POSTGRES_DB: bke_payments_library
-                  ports:
-                    - 5432:5432
-                  options: >-
-                    --health-cmd "pg_isready -U bke -d bke_payments_library"
-                    --health-interval 5s
-                    --health-timeout 5s
-                    --health-retries 10
-              env:
-                DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_payments_library
-              steps:
-                - uses: actions/checkout@v4
-                - uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-                    cache: npm
-                    cache-dependency-path: package-lock.json
-                - name: Install locked dependencies
-                  run: npm ci
-                - name: Reject tracked dependency/test caches
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
-                    if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
-                - name: Audit production dependencies
-                  run: npm audit --omit=dev --audit-level=high
-                - name: Prove source migration byte identity
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    base=https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/ca0cac6963be3c6b16d61a384cf05206faadd5fe/v2/modules/payments/prisma/migrations
-                    for migration in \
-                      0001_payments_checkout_attempt_baseline \
-                      0002_payments_provider_event_baseline \
-                      0003_payments_settlement_fact_baseline \
-                      0004_payments_refund_operation_baseline; do
-                      curl -fL --retry 3 --retry-all-errors -o "/tmp/${migration}.sql" "$base/$migration/migration.sql"
-                      cmp "/tmp/${migration}.sql" "@bke/payments/migrations/$migration/migration.sql"
-                    done
-                - name: Certify Payments extraction boundary
-                  run: npx tsx @bke/payments/tests/extraction.certify.ts
-                - name: Typecheck Payments
-                  run: npm run typecheck --workspace=@bke/payments
-                - name: Validate Payments Prisma schema
-                  run: npm run prisma:validate --workspace=@bke/payments
-                - name: Apply Payments migrations
-                  run: npm run prisma:deploy --workspace=@bke/payments
-                - name: Prove Payments migration idempotence
-                  run: npm run prisma:deploy --workspace=@bke/payments
-                - name: Test Payments logic and PayMongo adapter
-                  run: npm run test --workspace=@bke/payments
-                - name: Certify Payments checkout PostgreSQL behavior
-                  run: npx tsx @bke/payments/tests/checkout-attempt.postgres.certify.ts
-                - name: Certify Payments provider-event PostgreSQL behavior
-                  run: npx tsx @bke/payments/tests/provider-event-ingestion.postgres.certify.ts
-                - name: Certify Payments settlement PostgreSQL behavior
-                  run: npx tsx @bke/payments/tests/settlement-fact.postgres.certify.ts
-                - name: Certify Payments refund PostgreSQL behavior
-                  run: npx tsx @bke/payments/tests/refund-initiation.postgres.certify.ts
-          YAML
-
-          cat > .github/workflows/payments-package.yml <<'YAML'
-          name: BKE Library - Payments Package
-
-          on:
-            pull_request:
-              branches: [main]
-              paths:
-                - "@bke/payments/**"
-                - "package-lock.json"
-                - ".github/workflows/payments-package.yml"
-            push:
-              branches: [main]
-              paths:
-                - "@bke/payments/**"
-                - "package-lock.json"
-                - ".github/workflows/payments-package.yml"
-            workflow_dispatch:
-
-          permissions:
-            contents: write
-
-          jobs:
-            package:
-              runs-on: ubuntu-latest
-              steps:
-                - uses: actions/checkout@v4
-                  with:
-                    fetch-depth: 2
-                - uses: actions/setup-node@v4
-                  with:
-                    node-version: 22
-                    cache: npm
-                - name: Install locked workspace dependencies
-                  run: npm ci
-                - name: Pack Payments package
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    rm -rf artifacts
-                    mkdir -p artifacts
-                    artifact="$(npm pack --workspace=@bke/payments --pack-destination artifacts --silent | tail -n 1)"
-                    artifact="$(basename "$artifact")"
-                    test "$artifact" = "bke-payments-0.1.0.tgz"
-                    test -s "artifacts/$artifact"
-                    sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
-                    echo "PAYMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
-                - name: Certify package contents
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    tar -tzf "artifacts/$PAYMENTS_ARTIFACT" > artifacts/package-contents.txt
-                    for required in \
-                      package/package.json \
-                      package/module.manifest.ts \
-                      package/contracts/checkout-attempt.contract.ts \
-                      package/contracts/provider-event-ingestion.contract.ts \
-                      package/contracts/settlement-fact.contract.ts \
-                      package/contracts/refund-initiation.contract.ts \
-                      package/logic/checkout-attempt.ts \
-                      package/logic/provider-event-ingestion.ts \
-                      package/logic/settlement-fact.ts \
-                      package/logic/refund-initiation.ts \
-                      package/providers/paymongo/paymongo-adapter.ts \
-                      package/prisma/schema.prisma \
-                      package/prisma/repositories/postgres-checkout-attempt-repository.ts \
-                      package/prisma/repositories/postgres-provider-event-repository.ts \
-                      package/prisma/repositories/postgres-settlement-fact-repository.ts \
-                      package/prisma/repositories/postgres-refund-repository.ts \
-                      package/migrations/0001_payments_checkout_attempt_baseline/migration.sql \
-                      package/migrations/0002_payments_provider_event_baseline/migration.sql \
-                      package/migrations/0003_payments_settlement_fact_baseline/migration.sql \
-                      package/migrations/0004_payments_refund_operation_baseline/migration.sql; do
-                      grep -Fx "$required" artifacts/package-contents.txt
-                    done
-                    if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
-                      echo '::error::Tests or dependency caches must not ship in @bke/payments.'
-                      exit 1
-                    fi
-                - name: Install tarball in blank consumer
-                  shell: bash
-                  run: |
-                    set -euo pipefail
-                    rm -rf .package-smoke
-                    mkdir -p .package-smoke
-                    cat > .package-smoke/package.json <<JSON
-                    {
-                      "private": true,
-                      "type": "module",
-                      "dependencies": { "@bke/payments": "file:../artifacts/$PAYMENTS_ARTIFACT" },
-                      "devDependencies": {
-                        "@types/node": "^24.3.0",
-                        "@types/pg": "^8.15.5",
-                        "tsx": "^4.20.5",
-                        "typescript": "^5.9.2"
-                      }
-                    }
-                    JSON
-                    cat > .package-smoke/tsconfig.json <<'JSON'
-                    {
-                      "compilerOptions": {
-                        "target": "ES2022",
-                        "lib": ["ES2022", "DOM"],
-                        "module": "ESNext",
-                        "moduleResolution": "Bundler",
-                        "strict": true,
-                        "noEmit": true,
-                        "skipLibCheck": true,
-                        "types": ["node"]
-                      },
-                      "include": ["smoke.ts"]
-                    }
-                    JSON
-                    cat > .package-smoke/smoke.ts <<'TS'
-                    import { PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID } from "@bke/payments/contracts/checkout-attempt.contract";
-                    import { PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID } from "@bke/payments/contracts/provider-event-ingestion.contract";
-                    import { PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID } from "@bke/payments/contracts/settlement-fact.contract";
-                    import { PAYMENTS_REFUND_INITIATION_CAPABILITY_ID } from "@bke/payments/contracts/refund-initiation.contract";
-                    import { createPaymentsCheckoutAttemptCapability } from "@bke/payments/logic/checkout-attempt";
-                    import { createPaymentsProviderEventIngestionCapability } from "@bke/payments/logic/provider-event-ingestion";
-                    import { createPaymentsSettlementFactCapability } from "@bke/payments/logic/settlement-fact";
-                    import { createPaymentsRefundInitiationCapability } from "@bke/payments/logic/refund-initiation";
-                    import { createPayMongoPaymentsAdapter } from "@bke/payments/providers/paymongo/paymongo-adapter";
-                    import { createPostgresPaymentsCheckoutAttemptRepository } from "@bke/payments/prisma/repositories/postgres-checkout-attempt-repository";
-                    import { paymentsModuleManifest } from "@bke/payments/module.manifest";
-                    const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID];
-                    if (ids.length !== 4 || paymentsModuleManifest.moduleId !== "payments") throw new Error("Unexpected Payments package identity.");
-                    for (const value of [createPaymentsCheckoutAttemptCapability, createPaymentsProviderEventIngestionCapability, createPaymentsSettlementFactCapability, createPaymentsRefundInitiationCapability, createPayMongoPaymentsAdapter, createPostgresPaymentsCheckoutAttemptRepository]) {
-                      if (typeof value !== "function") throw new Error("Packed Payments consumer exports are incomplete.");
-                    }
-                    console.log("Packed @bke/payments consumer smoke GREEN");
-                    TS
-                    npm install --prefix .package-smoke
-                    npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
-                    npx --prefix .package-smoke tsx .package-smoke/smoke.ts
-                - name: Upload certified package evidence
-                  uses: actions/upload-artifact@v7
-                  with:
-                    name: bke-payments-0.1.0
-                    path: |
-                      artifacts/bke-payments-0.1.0.tgz
-                      artifacts/bke-payments-0.1.0.tgz.sha256
-                      artifacts/package-contents.txt
-                    if-no-files-found: error
-                - name: Create immutable Payments release
-                  if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-                  shell: bash
-                  env:
-                    GH_TOKEN: ${{ github.token }}
-                    BEFORE_SHA: ${{ github.event.before }}
-                  run: |
-                    set -euo pipefail
-                    version="$(node -p "require('./@bke/payments/package.json').version")"
-                    tag="payments-v${version}"
-                    package_changed=false
-                    if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/payments/package.json; then package_changed=true; fi
-                    if gh release view "$tag" >/dev/null 2>&1; then
-                      if [[ "$package_changed" == "true" ]]; then
-                        echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/payments version."
-                        exit 1
-                      fi
-                      echo "Release $tag already exists and package version is unchanged."
-                      exit 0
-                    fi
-                    gh release create "$tag" \
-                      "artifacts/$PAYMENTS_ARTIFACT" \
-                      "artifacts/$PAYMENTS_ARTIFACT.sha256" \
-                      --target "$GITHUB_SHA" \
-                      --title "@bke/payments v${version}" \
-                      --notes "Certified BKE Payments package artifact. Generic checkout/event/settlement/refund capabilities and PayMongo adapter passed source, persistence, behavior, and package gates before release creation."
-          YAML
-
           npm install --package-lock-only --ignore-scripts
-
           rm -rf source-ds
-          rm -f .github/workflows/payments-extraction-bootstrap.yml
 
       - name: Commit extracted package and lock
         shell: bash
@@ -431,7 +147,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add @bke/payments package-lock.json .github/workflows/payments.yml .github/workflows/payments-package.yml .github/workflows/payments-extraction-bootstrap.yml
+          git add @bke/payments package-lock.json
           git diff --cached --check
           git commit -m "feat(library): extract @bke/payments"
           git push origin HEAD:feat/library-payments
