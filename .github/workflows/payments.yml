@@ -1,0 +1,84 @@
+name: BKE Library - Payments
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/payments/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/payments.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  payments:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_payments_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_payments_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_payments_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Prove source migration byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/ca0cac6963be3c6b16d61a384cf05206faadd5fe/v2/modules/payments/prisma/migrations
+          for migration in \
+            0001_payments_checkout_attempt_baseline \
+            0002_payments_provider_event_baseline \
+            0003_payments_settlement_fact_baseline \
+            0004_payments_refund_operation_baseline; do
+            curl -fL --retry 3 --retry-all-errors -o "/tmp/${migration}.sql" "$base/$migration/migration.sql"
+            cmp "/tmp/${migration}.sql" "@bke/payments/migrations/$migration/migration.sql"
+          done
+      - name: Certify Payments extraction boundary
+        run: npx tsx @bke/payments/tests/extraction.certify.ts
+      - name: Typecheck Payments
+        run: npm run typecheck --workspace=@bke/payments
+      - name: Validate Payments Prisma schema
+        run: npm run prisma:validate --workspace=@bke/payments
+      - name: Apply Payments migrations
+        run: npm run prisma:deploy --workspace=@bke/payments
+      - name: Prove Payments migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/payments
+      - name: Test Payments logic and PayMongo adapter
+        run: npm run test --workspace=@bke/payments
+      - name: Certify Payments checkout PostgreSQL behavior
+        run: npx tsx @bke/payments/tests/checkout-attempt.postgres.certify.ts
+      - name: Certify Payments provider-event PostgreSQL behavior
+        run: npx tsx @bke/payments/tests/provider-event-ingestion.postgres.certify.ts
+      - name: Certify Payments settlement PostgreSQL behavior
+        run: npx tsx @bke/payments/tests/settlement-fact.postgres.certify.ts
+      - name: Certify Payments refund PostgreSQL behavior
+        run: npx tsx @bke/payments/tests/refund-initiation.postgres.certify.ts
