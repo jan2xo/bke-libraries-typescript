@@ -1,0 +1,108 @@
+datasource db {
+  provider = "postgresql"
+}
+
+enum PaymentCheckoutAttemptStatus {
+  CREATING
+  PENDING
+  FAILED
+}
+
+enum PaymentRefundOperationState {
+  CREATING
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model PaymentCheckoutAttempt {
+  id                  String                        @id
+  sourceReference     String                        @unique
+  commercialReference String
+  provider            String
+  requestFingerprint  String
+  amountMinor         Int
+  currency            String
+  payerSnapshot       Json
+  itemsSnapshot       Json
+  status              PaymentCheckoutAttemptStatus @default(CREATING)
+  externalCheckoutId  String?
+  checkoutUrl         String?
+  failureCode         String?
+  createdAt           DateTime                      @default(now())
+  updatedAt           DateTime                      @updatedAt
+
+  @@unique([provider, externalCheckoutId])
+  @@index([provider, status])
+  @@index([createdAt])
+}
+
+model PaymentProviderEvent {
+  id                 String   @id
+  provider           String
+  eventId            String
+  payloadHash        String
+  eventFingerprint   String
+  rawType            String?
+  type               String
+  externalPaymentId  String?
+  externalCheckoutId String?
+  reference          String?
+  externalRefundId   String?
+  refundStatus       String?
+  amountMinor        Int?
+  currency           String?
+  livemode           Boolean
+  occurredAt         DateTime
+  receivedAt         DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, type, occurredAt])
+  @@index([externalPaymentId])
+  @@index([externalCheckoutId])
+  @@index([reference])
+  @@index([receivedAt])
+}
+
+model PaymentSettlementFact {
+  id                    String   @id
+  providerEventRecordId String   @unique
+  checkoutAttemptId     String
+  provider              String
+  eventId               String
+  externalPaymentId     String
+  externalCheckoutId    String
+  commercialReference   String
+  amountMinor           Int
+  currency              String
+  livemode              Boolean
+  settledAt             DateTime
+  createdAt             DateTime @default(now())
+
+  @@unique([provider, externalPaymentId])
+  @@index([checkoutAttemptId])
+  @@index([commercialReference])
+  @@index([settledAt])
+}
+
+model PaymentRefundOperation {
+  id                String                      @id
+  sourceReference   String                      @unique
+  settlementFactId  String
+  provider          String
+  externalPaymentId String
+  externalRefundId  String?
+  amountMinor       Int
+  currency          String
+  reason            String
+  notes             String?
+  state             PaymentRefundOperationState @default(CREATING)
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+
+  @@unique([provider, externalRefundId])
+  @@index([settlementFactId])
+  @@index([externalPaymentId])
+  @@index([state])
+  @@index([createdAt])
+}
