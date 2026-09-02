@@ -1,0 +1,74 @@
+name: BKE Library - Licensing
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/licensing/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/licensing.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  licensing:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_licensing_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_licensing_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_licensing_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Prove source migration byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-all-errors -o /tmp/licensing-source.sql \
+            https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/1ca7abf353ffcce0f904c7b935763ad3f0c0616c/v2/modules/licensing/prisma/migrations/0001_licensing_baseline/migration.sql
+          cmp /tmp/licensing-source.sql @bke/licensing/migrations/0001_licensing_baseline/migration.sql
+      - name: Certify Licensing extraction boundary
+        run: npx tsx @bke/licensing/tests/extraction.certify.ts
+      - name: Typecheck Licensing
+        run: npm run typecheck --workspace=@bke/licensing
+      - name: Validate Licensing Prisma schema
+        run: npm run prisma:validate --workspace=@bke/licensing
+      - name: Apply Licensing migrations
+        run: npm run prisma:deploy --workspace=@bke/licensing
+      - name: Prove Licensing migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/licensing
+      - name: Certify Licensing persistence isolation
+        run: npx tsx @bke/licensing/tests/persistence-isolation.certify.ts
+      - name: Test Licensing logic
+        run: npm run test --workspace=@bke/licensing
+      - name: Certify Licensing PostgreSQL behavior
+        run: npx tsx @bke/licensing/tests/license-key-reveal.postgres.certify.ts
