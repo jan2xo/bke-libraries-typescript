@@ -1,0 +1,74 @@
+name: BKE Library - Legal
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/legal/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/legal.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  legal:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_legal_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_legal_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_legal_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Prove source migration byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-all-errors -o /tmp/legal-source.sql \
+            https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/a69e983969c0c96480b6fda39d7405384f3effa0/v2/modules/legal/prisma/migrations/0001_legal_acceptance_baseline/migration.sql
+          cmp /tmp/legal-source.sql @bke/legal/migrations/0001_legal_acceptance_baseline/migration.sql
+      - name: Certify Legal extraction boundary
+        run: npx tsx @bke/legal/tests/extraction.certify.ts
+      - name: Typecheck Legal
+        run: npm run typecheck --workspace=@bke/legal
+      - name: Validate Legal Prisma schema
+        run: npm run prisma:validate --workspace=@bke/legal
+      - name: Apply Legal migrations
+        run: npm run prisma:deploy --workspace=@bke/legal
+      - name: Prove Legal migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/legal
+      - name: Certify Legal persistence isolation
+        run: npx tsx @bke/legal/tests/persistence-isolation.certify.ts
+      - name: Test Legal logic
+        run: npm run test --workspace=@bke/legal
+      - name: Certify Legal PostgreSQL behavior
+        run: npx tsx @bke/legal/tests/acceptance.postgres.certify.ts
