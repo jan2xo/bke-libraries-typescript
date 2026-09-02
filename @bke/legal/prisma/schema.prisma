@@ -1,0 +1,39 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model LegalDocumentVersion {
+  id              String            @id
+  documentId      String
+  version         String
+  name            String?
+  slug            String?
+  markdownContent String
+  sha256          String
+  slaVersion      String
+  createdById     String
+  createdAt       DateTime          @default(now())
+  acceptances     LegalAcceptance[]
+
+  @@unique([documentId, version])
+  @@index([documentId, createdAt])
+}
+
+model LegalAcceptance {
+  id                    String               @id
+  principalId           String
+  customerAccountId     String?
+  documentId            String
+  documentVersionId     String
+  acceptanceContext     String
+  slaVersion            String
+  renderedContentSha256 String
+  variablesSnapshot     Json
+  acceptedAt            DateTime             @default(now())
+  documentVersion       LegalDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
+
+  @@index([principalId, acceptedAt])
+  @@index([customerAccountId, acceptedAt])
+  @@index([documentId, documentVersionId])
+  @@index([principalId, customerAccountId, documentVersionId, acceptanceContext])
+}

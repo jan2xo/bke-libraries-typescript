@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "contracts/**/*.ts",
+    "logic/**/*.ts",
+    "providers/**/*.ts",
+    "prisma/**/*.ts",
+    "tests/**/*.ts",
+    "module.manifest.ts",
+    "prisma.config.ts"
+  ]
+}
