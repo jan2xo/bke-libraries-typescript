@@ -1,0 +1,146 @@
+name: BKE Library - Legal Package
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/legal/**"
+      - "package-lock.json"
+      - ".github/workflows/legal-package.yml"
+  push:
+    branches: [main]
+    paths:
+      - "@bke/legal/**"
+      - "package-lock.json"
+      - ".github/workflows/legal-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci
+      - name: Pack Legal package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+          artifact="$(npm pack --workspace=@bke/legal --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "bke-legal-0.1.0.tgz"
+          test -s "artifacts/$artifact"
+          sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "LEGAL_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Certify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf "artifacts/$LEGAL_ARTIFACT" > artifacts/package-contents.txt
+          grep -Fx 'package/package.json' artifacts/package-contents.txt
+          grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/acceptance.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/module.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/acceptance.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-acceptance-repository.ts' artifacts/package-contents.txt
+          grep -Fx 'package/migrations/0001_legal_acceptance_baseline/migration.sql' artifacts/package-contents.txt
+          grep -Fx 'package/docs/EXTRACTION-SOURCE.md' artifacts/package-contents.txt
+          if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
+            echo '::error::Tests or dependency caches must not ship in @bke/legal.'
+            exit 1
+          fi
+      - name: Install tarball in blank consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .package-smoke
+          mkdir -p .package-smoke
+          cat > .package-smoke/package.json <<JSON
+          {
+            "private": true,
+            "type": "module",
+            "dependencies": { "@bke/legal": "file:../artifacts/$LEGAL_ARTIFACT" },
+            "devDependencies": {
+              "@types/node": "^24.3.0",
+              "@types/pg": "^8.15.5",
+              "tsx": "^4.20.5",
+              "typescript": "^5.9.2"
+            }
+          }
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": ["node"]
+            },
+            "include": ["smoke.ts"]
+          }
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import { LEGAL_ACCEPTANCE_CAPABILITY_ID } from "@bke/legal/contracts/acceptance.contract";
+          import { createLegalAcceptanceCapability } from "@bke/legal/logic/acceptance";
+          import { createPostgresLegalAcceptanceRepository } from "@bke/legal/prisma/repositories/postgres-acceptance-repository";
+          import { legalModuleManifest } from "@bke/legal/module.manifest";
+          if (LEGAL_ACCEPTANCE_CAPABILITY_ID !== "bke.legal.acceptance.v1") throw new Error("Unexpected Legal capability id.");
+          if (legalModuleManifest.moduleId !== "legal") throw new Error("Unexpected Legal module id.");
+          if (typeof createLegalAcceptanceCapability !== "function" || typeof createPostgresLegalAcceptanceRepository !== "function") {
+            throw new Error("Packed Legal consumer exports are incomplete.");
+          }
+          console.log("Packed @bke/legal consumer smoke GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - name: Upload certified package evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: bke-legal-0.1.0
+          path: |
+            artifacts/bke-legal-0.1.0.tgz
+            artifacts/bke-legal-0.1.0.tgz.sha256
+            artifacts/package-contents.txt
+          if-no-files-found: error
+      - name: Create immutable Legal release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./@bke/legal/package.json').version")"
+          tag="legal-v${version}"
+          package_changed=false
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/legal/package.json; then package_changed=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if [[ "$package_changed" == "true" ]]; then
+              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/legal version."
+              exit 1
+            fi
+            echo "Release $tag already exists and package version is unchanged."
+            exit 0
+          fi
+          gh release create "$tag" \
+            "artifacts/$LEGAL_ARTIFACT" \
+            "artifacts/$LEGAL_ARTIFACT.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "@bke/legal v${version}" \
+            --notes "Certified BKE Legal package artifact. Source, persistence, behavior, and package gates passed before release creation."
