@@ -1,0 +1,32 @@
+{
+  "name": "@bke/entitlements",
+  "version": "0.1.0",
+  "description": "Reusable BKE durable-right Entitlements capability library",
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "files": [
+    "contracts",
+    "logic",
+    "prisma",
+    "migrations",
+    "docs",
+    "module.manifest.ts",
+    "prisma.config.ts",
+    "README.md"
+  ],
+  "exports": {
+    "./contracts/*": "./contracts/*.ts",
+    "./logic/*": "./logic/*.ts",
+    "./prisma/repositories/*": "./prisma/repositories/*.ts",
+    "./module.manifest": "./module.manifest.ts",
+    "./prisma.config": "./prisma.config.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run tests/*.test.ts",
+    "prisma:validate": "prisma validate --config prisma.config.ts",
+    "prisma:deploy": "prisma migrate deploy --config prisma.config.ts"
+  },
+  "dependencies": { "pg": "^8.16.3" }
+}

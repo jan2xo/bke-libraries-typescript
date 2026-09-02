@@ -1,0 +1,25 @@
+datasource db {
+  provider = "postgresql"
+}
+
+enum EntitlementStatus {
+  ACTIVE
+}
+
+model Entitlement {
+  id              String            @id
+  subjectId       String
+  resourceId      String
+  sourceReference String            @unique
+  status          EntitlementStatus @default(ACTIVE)
+  quantity        Int
+  scopeSnapshot   Json
+  grantSnapshot   Json
+  validFrom       DateTime
+  validUntil      DateTime?
+  createdAt       DateTime          @default(now())
+
+  @@index([subjectId, status])
+  @@index([resourceId, status])
+  @@index([validUntil])
+}

@@ -1,0 +1,147 @@
+name: BKE Library - Entitlements Package
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/entitlements/**"
+      - "package-lock.json"
+      - ".github/workflows/entitlements-package.yml"
+  push:
+    branches: [main]
+    paths:
+      - "@bke/entitlements/**"
+      - "package-lock.json"
+      - ".github/workflows/entitlements-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci
+      - name: Pack Entitlements package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+          artifact="$(npm pack --workspace=@bke/entitlements --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "bke-entitlements-0.1.0.tgz"
+          test -s "artifacts/$artifact"
+          sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "ENTITLEMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Certify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf "artifacts/$ENTITLEMENTS_ARTIFACT" > artifacts/package-contents.txt
+          grep -Fx 'package/package.json' artifacts/package-contents.txt
+          grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/durable-right-grant.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/module.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/durable-right-grant.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/durable-right-grant-repository.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-durable-right-grant-repository.ts' artifacts/package-contents.txt
+          grep -Fx 'package/migrations/0001_entitlements_durable_right_baseline/migration.sql' artifacts/package-contents.txt
+          grep -Fx 'package/docs/EXTRACTION-SOURCE.md' artifacts/package-contents.txt
+          if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
+            echo '::error::Tests or dependency caches must not ship in @bke/entitlements.'
+            exit 1
+          fi
+      - name: Install tarball in blank consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .package-smoke
+          mkdir -p .package-smoke
+          cat > .package-smoke/package.json <<JSON
+          {
+            "private": true,
+            "type": "module",
+            "dependencies": { "@bke/entitlements": "file:../artifacts/$ENTITLEMENTS_ARTIFACT" },
+            "devDependencies": {
+              "@types/node": "^24.3.0",
+              "@types/pg": "^8.15.5",
+              "tsx": "^4.20.5",
+              "typescript": "^5.9.2"
+            }
+          }
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": ["node"]
+            },
+            "include": ["smoke.ts"]
+          }
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import { ENTITLEMENTS_DURABLE_RIGHT_GRANT_CAPABILITY_ID } from "@bke/entitlements/contracts/durable-right-grant.contract";
+          import { createEntitlementsDurableRightGrantCapability } from "@bke/entitlements/logic/durable-right-grant";
+          import { createPostgresEntitlementsDurableRightGrantRepository } from "@bke/entitlements/prisma/repositories/postgres-durable-right-grant-repository";
+          import { entitlementsModuleManifest } from "@bke/entitlements/module.manifest";
+          if (ENTITLEMENTS_DURABLE_RIGHT_GRANT_CAPABILITY_ID !== "bke.entitlements.durable-right-grant.v1") throw new Error("Unexpected Entitlements capability id.");
+          if (entitlementsModuleManifest.moduleId !== "entitlements") throw new Error("Unexpected Entitlements module id.");
+          if (typeof createEntitlementsDurableRightGrantCapability !== "function" || typeof createPostgresEntitlementsDurableRightGrantRepository !== "function") {
+            throw new Error("Packed Entitlements consumer exports are incomplete.");
+          }
+          console.log("Packed @bke/entitlements consumer smoke GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - name: Upload certified package evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: bke-entitlements-0.1.0
+          path: |
+            artifacts/bke-entitlements-0.1.0.tgz
+            artifacts/bke-entitlements-0.1.0.tgz.sha256
+            artifacts/package-contents.txt
+          if-no-files-found: error
+      - name: Create immutable Entitlements release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./@bke/entitlements/package.json').version")"
+          tag="entitlements-v${version}"
+          package_changed=false
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/entitlements/package.json; then package_changed=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if [[ "$package_changed" == "true" ]]; then
+              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/entitlements version."
+              exit 1
+            fi
+            echo "Release $tag already exists and package version is unchanged."
+            exit 0
+          fi
+          gh release create "$tag" \
+            "artifacts/$ENTITLEMENTS_ARTIFACT" \
+            "artifacts/$ENTITLEMENTS_ARTIFACT.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "@bke/entitlements v${version}" \
+            --notes "Certified BKE Entitlements package artifact. Source, persistence, behavior, and package gates passed before release creation."

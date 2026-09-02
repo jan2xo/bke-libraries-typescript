@@ -1,0 +1,74 @@
+name: BKE Library - Entitlements
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/entitlements/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/entitlements.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  entitlements:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_entitlements_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_entitlements_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_entitlements_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Prove source migration byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-all-errors -o /tmp/entitlements-source.sql \
+            https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/c807dc67fbb0964044a91de8c0eda0446279e401/v2/modules/entitlements/prisma/migrations/0001_entitlements_durable_right_baseline/migration.sql
+          cmp /tmp/entitlements-source.sql @bke/entitlements/migrations/0001_entitlements_durable_right_baseline/migration.sql
+      - name: Certify Entitlements extraction boundary
+        run: npx tsx @bke/entitlements/tests/extraction.certify.ts
+      - name: Typecheck Entitlements
+        run: npm run typecheck --workspace=@bke/entitlements
+      - name: Validate Entitlements Prisma schema
+        run: npm run prisma:validate --workspace=@bke/entitlements
+      - name: Apply Entitlements migrations
+        run: npm run prisma:deploy --workspace=@bke/entitlements
+      - name: Prove Entitlements migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/entitlements
+      - name: Certify Entitlements persistence isolation
+        run: npx tsx @bke/entitlements/tests/persistence-isolation.certify.ts
+      - name: Test Entitlements logic
+        run: npm run test --workspace=@bke/entitlements
+      - name: Certify Entitlements PostgreSQL behavior
+        run: npx tsx @bke/entitlements/tests/durable-right-grant.postgres.certify.ts
