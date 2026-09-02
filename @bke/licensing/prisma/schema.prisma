@@ -1,0 +1,128 @@
+generator client {
+  provider = "prisma-client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LicenseStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  REVOKED
+}
+
+model License {
+  id                String                   @id
+  publicId          String                   @unique
+  keyHash           String                   @unique
+  keyLastFour       String
+  keyCiphertext     String?
+  keyRevealedAt     DateTime?
+  accountId         String
+  orderId           String
+  orderItemId       String
+  productId         String
+  editionId         String?
+  purchasePlanId    String?
+  subscriptionId    String?
+  status            LicenseStatus            @default(ACTIVE)
+  maxSeats          Int
+  maxDevicesPerSeat Int
+  expiresAt         DateTime?
+  createdAt         DateTime                 @default(now())
+  assignments       LicenseAssignment[]
+  activations       DeviceActivation[]
+  events            LicenseEvent[]
+  leaseRecords      LicenseLeaseRecord[]
+  leaseOperations   CommercialLeaseOperation[]
+
+  @@index([accountId, status])
+  @@index([productId, status])
+  @@index([subscriptionId])
+}
+
+model LicenseAssignment {
+  id        String   @id
+  licenseId String
+  userId    String
+  createdAt DateTime @default(now())
+  license   License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@unique([licenseId, userId])
+}
+
+model DeviceActivation {
+  id              String    @id
+  licenseId       String
+  deviceHash      String
+  label           String?
+  machineIdHint   String?
+  operatingSystem String?
+  architecture    String?
+  lastSeenAt      DateTime  @default(now())
+  active          Boolean   @default(true)
+  activatedAt     DateTime  @default(now())
+  deactivatedAt   DateTime?
+  license         License   @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@unique([licenseId, deviceHash])
+  @@index([licenseId, active])
+}
+
+model LicenseEvent {
+  id        String   @id
+  licenseId String
+  type      String
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+  license   License  @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@index([licenseId, createdAt])
+}
+
+model LicenseLeaseRecord {
+  id             String   @id
+  licenseId      String
+  leaseId        String   @unique
+  generation     Int
+  serverRevision Int
+  installationId String
+  deviceId       String
+  version        String
+  status         String
+  action         String
+  operationId    String?  @unique
+  signerKeyId    String?
+  expiresAt      DateTime?
+  leasePayload   String?
+  leaseSignature String?
+  supersededById String?
+  issuedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  license        License  @relation(fields: [licenseId], references: [id], onDelete: Restrict)
+  operation      CommercialLeaseOperation? @relation("LeaseOperationReference", fields: [operationId], references: [operationId], onDelete: Restrict)
+  operationResult CommercialLeaseOperation? @relation("LeaseOperationResult")
+  supersededBy   LicenseLeaseRecord? @relation("LeaseSupersession", fields: [supersededById], references: [id], onDelete: Restrict)
+  supersedes     LicenseLeaseRecord[] @relation("LeaseSupersession")
+
+  @@index([licenseId, installationId, deviceId, generation, serverRevision])
+}
+
+model CommercialLeaseOperation {
+  id            String   @id
+  operationId   String   @unique
+  licenseId     String?
+  action        String
+  status        String   @default("PENDING")
+  resultLeaseId String?  @unique
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+  completedAt   DateTime?
+  license       License? @relation(fields: [licenseId], references: [id], onDelete: Restrict)
+  resultLease   LicenseLeaseRecord? @relation("LeaseOperationResult", fields: [resultLeaseId], references: [leaseId], onDelete: Restrict)
+  leaseRecords  LicenseLeaseRecord[] @relation("LeaseOperationReference")
+
+  @@index([licenseId, action, status])
+}
