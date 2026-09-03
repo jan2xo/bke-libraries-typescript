@@ -1,0 +1,192 @@
+name: Commerce Extraction Bootstrap
+
+on:
+  push:
+    branches: [feat/library-commerce]
+    paths:
+      - ".github/workflows/commerce-extraction-bootstrap.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Copy certified Commerce reusable surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/bke-digital-solutions
+          git init /tmp/bke-digital-solutions
+          git -C /tmp/bke-digital-solutions remote add origin https://github.com/jan2xo/bke-digital-solutions.git
+          git -C /tmp/bke-digital-solutions fetch --depth 1 origin 584804d30a74149147b21e1cfa114216eb0f147a
+          git -C /tmp/bke-digital-solutions checkout --detach FETCH_HEAD
+
+          src=/tmp/bke-digital-solutions/v2/modules/commerce
+          pkg=@bke/commerce
+          rm -rf "$pkg"
+          mkdir -p "$pkg/prisma" "$pkg/tests"
+          cp -R "$src/contracts" "$pkg/contracts"
+          cp -R "$src/logic" "$pkg/logic"
+          cp -R "$src/docs" "$pkg/docs"
+          cp "$src/module.manifest.ts" "$pkg/module.manifest.ts"
+          cp "$src/prisma/schema.prisma" "$pkg/prisma/schema.prisma"
+          cp -R "$src/prisma/repositories" "$pkg/prisma/repositories"
+          cp -R "$src/prisma/migrations" "$pkg/migrations"
+
+          for file in \
+            purchase-plan-pricing.test.ts \
+            purchase-plan-lookup.test.ts \
+            purchase-plan-lookup.postgres.certify.ts \
+            offer-redemption.test.ts \
+            offer-redemption.postgres.certify.ts \
+            order-invoice-creation.test.ts \
+            order-invoice-creation.postgres.certify.ts \
+            checkout-orchestration.test.ts \
+            settlement-reaction.test.ts; do
+            cp "$src/test/$file" "$pkg/tests/$file"
+          done
+
+          cat > "$pkg/package.json" <<'JSON'
+          {
+            "name": "@bke/commerce",
+            "version": "0.1.0",
+            "description": "Reusable BKE commercial pricing, offers, orders, invoices, checkout orchestration, and settlement reaction capabilities",
+            "type": "module",
+            "engines": { "node": ">=22.12.0" },
+            "files": ["contracts", "logic", "prisma", "migrations", "docs", "module.manifest.ts", "prisma.config.ts", "README.md"],
+            "exports": {
+              "./contracts/*": "./contracts/*.ts",
+              "./logic/*": "./logic/*.ts",
+              "./prisma/repositories/*": "./prisma/repositories/*.ts",
+              "./module.manifest": "./module.manifest.ts",
+              "./prisma.config": "./prisma.config.ts",
+              "./package.json": "./package.json"
+            },
+            "scripts": {
+              "typecheck": "tsc -p tsconfig.json --noEmit",
+              "test": "vitest run tests/*.test.ts",
+              "prisma:validate": "prisma validate --config prisma.config.ts",
+              "prisma:deploy": "prisma migrate deploy --config prisma.config.ts"
+            },
+            "dependencies": { "pg": "^8.16.3" }
+          }
+          JSON
+
+          cat > "$pkg/tsconfig.json" <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "lib": ["ES2022", "DOM"],
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "esModuleInterop": true,
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "resolveJsonModule": true,
+              "isolatedModules": true,
+              "types": ["node", "vitest/globals"]
+            },
+            "include": ["contracts/**/*.ts", "logic/**/*.ts", "prisma/**/*.ts", "tests/**/*.ts", "module.manifest.ts", "prisma.config.ts"]
+          }
+          JSON
+
+          cat > "$pkg/prisma.config.ts" <<'TS'
+          import { defineConfig, env } from "prisma/config";
+
+          export default defineConfig({
+            schema: "prisma/schema.prisma",
+            migrations: { path: "migrations" },
+            datasource: { url: env("DATABASE_URL") },
+          });
+          TS
+
+          cat > "$pkg/README.md" <<'MD'
+          # @bke/commerce
+
+          Reusable BKE Commerce capabilities for purchase-plan pricing and lookup, offer redemption, order/invoice creation, checkout orchestration through Commerce-owned ports, and reaction to verified settlement.
+
+          Commerce owns only its commercial contracts, logic, and persistence. Accounts, Legal, Payments, and Entitlements are host-composed dependencies and are not package dependencies.
+          MD
+
+          cat > "$pkg/tests/extraction.certify.ts" <<'TS'
+          import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+          import { dirname, join, relative, resolve } from "node:path";
+          import { fileURLToPath } from "node:url";
+
+          const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+          const reusableRoots = ["contracts", "logic", "prisma/repositories"] as const;
+          function filesUnder(name: string): string[] {
+            const absolute = resolve(root, name);
+            if (!existsSync(absolute)) throw new Error(`Missing Commerce package root: ${name}`);
+            const files: string[] = [];
+            const visit = (path: string) => {
+              for (const childName of readdirSync(path)) {
+                const child = join(path, childName);
+                if (statSync(child).isDirectory()) visit(child);
+                else if (child.endsWith(".ts")) files.push(child);
+              }
+            };
+            visit(absolute);
+            return files;
+          }
+
+          const files = [...reusableRoots.flatMap(filesUnder), resolve(root, "module.manifest.ts")];
+          const at = "@";
+          const forbidden = [
+            `from "${at}bke/`, `from '${at}bke/`, `from "${at}/`, `from '${at}/`,
+            'from "next/', "from 'next/", 'from "server-only"', "from 'server-only'",
+            "/v2/platform/", "/v2/apps/", "../../contracts/capability",
+          ];
+          for (const file of files) {
+            const source = readFileSync(file, "utf8");
+            for (const marker of forbidden) {
+              if (source.includes(marker)) throw new Error(`Commerce package leaks host/cross-library dependency: ${relative(root, file)} -> ${marker}`);
+            }
+          }
+
+          const manifest = readFileSync(resolve(root, "module.manifest.ts"), "utf8");
+          if (!manifest.includes("needs: []") || !manifest.includes("CommerceModuleManifest")) {
+            throw new Error("Commerce package manifest must remain host-independent and package-owned.");
+          }
+          if (existsSync(resolve(root, "module.ts"))) throw new Error("Digital Solutions Commerce host adapter must not ship in @bke/commerce.");
+
+          const migrations = readdirSync(resolve(root, "migrations")).filter((name) => statSync(resolve(root, "migrations", name)).isDirectory()).sort();
+          const expectedMigrations = ["0001_commerce_purchase_plan_baseline", "0002_commerce_offers_redemptions", "0003_commerce_orders_invoices"];
+          if (JSON.stringify(migrations) !== JSON.stringify(expectedMigrations)) throw new Error(`Commerce migration set drifted: ${JSON.stringify(migrations)}`);
+
+          const schema = readFileSync(resolve(root, "prisma/schema.prisma"), "utf8");
+          const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((match) => match[1]).sort();
+          const expectedModels = ["DiscountOffer", "Invoice", "InvoiceLine", "OfferRedemption", "Order", "OrderItem", "Price", "PurchasePlan"].sort();
+          if (JSON.stringify(models) !== JSON.stringify(expectedModels)) throw new Error(`Commerce schema contains foreign/unexpected models: ${JSON.stringify(models)}`);
+
+          const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { name?: string; version?: string; dependencies?: Record<string, string> };
+          if (packageJson.name !== "@bke/commerce" || packageJson.version !== "0.1.0") throw new Error("Unexpected Commerce package identity.");
+          for (const dependency of Object.keys(packageJson.dependencies ?? {})) {
+            if (dependency.startsWith("@bke/")) throw new Error(`Commerce package must not depend directly on sibling BKE library: ${dependency}`);
+          }
+
+          console.log(`Commerce library extraction boundary GREEN: files=${files.length} models=${models.length} migrations=${migrations.length}`);
+          TS
+
+          npm install --package-lock-only --ignore-scripts
+
+      - name: Commit extracted package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add @bke/commerce package-lock.json
+          if git diff --cached --quiet; then
+            echo "Commerce extraction already current"
+            exit 0
+          fi
+          git commit -m "feat: extract @bke/commerce"
+          git push origin HEAD:feat/library-commerce
