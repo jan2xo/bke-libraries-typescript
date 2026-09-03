@@ -49,7 +49,7 @@ jobs:
           if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
-      - name: Prove source migration byte identity
+      - name: Prove source baseline migration byte identity
         shell: bash
         run: |
           set -euo pipefail
@@ -70,5 +70,7 @@ jobs:
         run: npx tsx @bke/legal/tests/persistence-isolation.certify.ts
       - name: Test Legal logic
         run: npm run test --workspace=@bke/legal
-      - name: Certify Legal PostgreSQL behavior
+      - name: Certify Legal acceptance PostgreSQL behavior
         run: npx tsx @bke/legal/tests/acceptance.postgres.certify.ts
+      - name: Certify Legal checkout requirements PostgreSQL behavior
+        run: npx tsx @bke/legal/tests/checkout-requirements.postgres.certify.ts
