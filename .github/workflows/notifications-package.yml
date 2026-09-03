@@ -1,0 +1,145 @@
+name: BKE Library - Notifications Package
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/notifications/**"
+      - "package-lock.json"
+      - ".github/workflows/notifications-package.yml"
+  push:
+    branches: [main]
+    paths:
+      - "@bke/notifications/**"
+      - "package-lock.json"
+      - ".github/workflows/notifications-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci
+      - name: Pack Notifications package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+          artifact="$(npm pack --workspace=@bke/notifications --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "bke-notifications-0.1.0.tgz"
+          test -s "artifacts/$artifact"
+          sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "NOTIFICATIONS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Certify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf "artifacts/$NOTIFICATIONS_ARTIFACT" > artifacts/package-contents.txt
+          grep -Fx 'package/package.json' artifacts/package-contents.txt
+          grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/notification-intent.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/module-manifest.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/notification-intent.ts' artifacts/package-contents.txt
+          grep -Fx 'package/docs/BOUNDARY.md' artifacts/package-contents.txt
+          if grep -E '^package/(tests|node_modules|prisma|migrations|providers|repositories)/' artifacts/package-contents.txt; then
+            echo '::error::Tests, caches, persistence, or transport internals must not ship in @bke/notifications.'
+            exit 1
+          fi
+      - name: Install tarball in blank consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .package-smoke
+          mkdir -p .package-smoke
+          cat > .package-smoke/package.json <<JSON
+          {
+            "private": true,
+            "type": "module",
+            "dependencies": { "@bke/notifications": "file:../artifacts/$NOTIFICATIONS_ARTIFACT" },
+            "devDependencies": {
+              "@types/node": "^24.3.0",
+              "tsx": "^4.20.5",
+              "typescript": "^5.9.2"
+            }
+          }
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": ["node"]
+            },
+            "include": ["smoke.ts"]
+          }
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import { NOTIFICATIONS_INTENT_CAPABILITY_ID } from "@bke/notifications/contracts/notification-intent.contract";
+          import { createNotificationsIntentCapability } from "@bke/notifications/logic/notification-intent";
+          import { notificationsModuleManifest } from "@bke/notifications/module.manifest";
+          if (NOTIFICATIONS_INTENT_CAPABILITY_ID !== "bke.notifications.intent.v1") throw new Error("Unexpected Notifications capability id.");
+          if (notificationsModuleManifest.moduleId !== "notifications") throw new Error("Unexpected Notifications module id.");
+          const result = createNotificationsIntentCapability(() => new Date("2026-09-03T00:00:00Z")).create({
+            source: { moduleId: "commerce", event: "offer.eligible" },
+            audience: { kind: "ALL_USERS" },
+            content: { title: "Offer", body: "Offer live", category: "PROMOTION" },
+            idempotencyKey: "smoke-broadcast"
+          });
+          if (result.status !== "NOTIFY") throw new Error("Packed Notifications capability failed smoke decision.");
+          console.log("Packed @bke/notifications consumer smoke GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - name: Upload certified package evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: bke-notifications-0.1.0
+          path: |
+            artifacts/bke-notifications-0.1.0.tgz
+            artifacts/bke-notifications-0.1.0.tgz.sha256
+            artifacts/package-contents.txt
+          if-no-files-found: error
+      - name: Create immutable Notifications release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./@bke/notifications/package.json').version")"
+          tag="notifications-v${version}"
+          package_changed=false
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/notifications/package.json; then package_changed=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if [[ "$package_changed" == "true" ]]; then
+              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/notifications version."
+              exit 1
+            fi
+            echo "Release $tag already exists and package version is unchanged."
+            exit 0
+          fi
+          gh release create "$tag" \
+            "artifacts/$NOTIFICATIONS_ARTIFACT" \
+            "artifacts/$NOTIFICATIONS_ARTIFACT.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "@bke/notifications v${version}" \
+            --notes "Certified transport-neutral BKE Notifications package artifact. Behavior, extraction boundary, and blank-consumer package gates passed before release creation."
