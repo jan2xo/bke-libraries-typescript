@@ -19,6 +19,7 @@ export interface IdentityPrincipal {
   readonly name: string | null;
   readonly emailVerified: Date | null;
   readonly role: IdentityRole;
+  readonly establishedAt: Date;
   readonly suspendedAt: Date | null;
   readonly lifecycleState: IdentityLifecycleState;
 }
