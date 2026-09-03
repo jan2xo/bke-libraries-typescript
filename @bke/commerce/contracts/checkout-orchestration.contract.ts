@@ -1,3 +1,4 @@
+import type { CommerceCheckoutOfferSnapshot } from "./checkout-offer-pricing.contract";
 import type {
   CommerceCreateOrderInvoiceInput,
   CommerceOrderInvoiceSnapshot,
@@ -34,6 +35,7 @@ export interface CommerceStartCheckoutInput {
   readonly accountId: string;
   readonly legal: readonly CommerceCheckoutLegalRequirementInput[];
   readonly order: CommerceCreateOrderInvoiceInput;
+  readonly offerIdentifier?: string | null;
   readonly paymentSourceReference: string;
   readonly payer: CommerceCheckoutPayerInput;
 }
@@ -43,11 +45,13 @@ export type CommerceStartCheckoutResult =
       readonly status: "PAYMENT_READY";
       readonly order: CommerceOrderInvoiceSnapshot;
       readonly payment: CommerceCheckoutPaymentSnapshot;
+      readonly offer: CommerceCheckoutOfferSnapshot | null;
     }
   | {
       readonly status: "PAYMENT_NOT_REQUIRED";
       readonly order: CommerceOrderInvoiceSnapshot;
       readonly fulfillment: CommerceZeroPaymentFulfillmentSnapshot;
+      readonly offer: CommerceCheckoutOfferSnapshot | null;
     }
   | {
       readonly status: "REJECTED";
@@ -55,6 +59,7 @@ export type CommerceStartCheckoutResult =
         | "ACCOUNT_FORBIDDEN"
         | "LEGAL_NOT_ACCEPTED"
         | "ORDER_CONFLICT"
+        | "OFFER_NOT_AVAILABLE"
         | "ENTITLEMENT_CONFLICT"
         | "PAYMENT_SOURCE_CONFLICT";
     }
