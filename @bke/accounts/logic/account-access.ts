@@ -37,10 +37,6 @@ export function createAccountsAccountAccessCapability(
         return { status: "REJECTED", code: "ACCOUNT_ROLE_FORBIDDEN" };
       }
 
-      if (input.requiredCapability === "PURCHASE" && access.account.lifecycleState !== "ACTIVE") {
-        return { status: "REJECTED", code: "ACCOUNT_NOT_ACTIVE" };
-      }
-
       return {
         status: "AUTHORIZED",
         account: access.account,
