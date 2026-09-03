@@ -20,6 +20,11 @@ interface InvoiceRow {
   status: "DRAFT" | "FINAL" | "VOID";
 }
 
+interface RedemptionRow {
+  id: string;
+  status: "RESERVED" | "APPLIED" | "RELEASED" | "REFUNDED";
+}
+
 interface ItemRow {
   id: string;
   productId: string;
@@ -96,6 +101,20 @@ export function createPostgresCommerceSettlementReactionRepository(
           return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
         }
 
+        const redemptionResult = await client.query<RedemptionRow>(
+          `SELECT "id", "status"
+             FROM "OfferRedemption"
+            WHERE "orderId" = $1
+            LIMIT 1
+            FOR UPDATE`,
+          [order.id],
+        );
+        const redemption = redemptionResult.rows[0];
+        if (redemption && redemption.status !== "RESERVED" && redemption.status !== "APPLIED") {
+          await client.query("ROLLBACK");
+          return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
+        }
+
         if (order.status === "PENDING") {
           await client.query(
             `UPDATE "Order" SET "status" = 'PAID', "paidAt" = $2 WHERE "id" = $1`,
@@ -104,6 +123,14 @@ export function createPostgresCommerceSettlementReactionRepository(
           await client.query(
             `UPDATE "Invoice" SET "status" = 'FINAL', "issuedAt" = $2 WHERE "id" = $1`,
             [invoice.id, input.settledAt],
+          );
+        }
+        if (redemption?.status === "RESERVED") {
+          await client.query(
+            `UPDATE "OfferRedemption"
+                SET "status" = 'APPLIED', "appliedAt" = $2
+              WHERE "id" = $1`,
+            [redemption.id, input.settledAt],
           );
         }
 
