@@ -32,6 +32,7 @@ export interface CommerceInvoicePresentationLineInput {
   readonly description: string;
   readonly quantity: number;
   readonly unitAmountMinor: number;
+  readonly totalMinor: number;
 }
 
 export interface CommerceInvoicePresentationInput {
