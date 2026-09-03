@@ -1,0 +1,31 @@
+name: Accounts 0.2 Lock Bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/accounts-purchase-lifecycle-0.2.0
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Regenerate workspace lock and retire bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git rm .github/workflows/accounts-0.2-lock-bootstrap.yml
+          git commit -m "build(accounts): lock @bke/accounts 0.2.0"
+          git push origin HEAD:feat/accounts-purchase-lifecycle-0.2.0
