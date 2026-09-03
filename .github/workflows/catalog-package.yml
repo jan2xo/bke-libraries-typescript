@@ -1,0 +1,157 @@
+name: BKE Library - Catalog Package
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/catalog/**"
+      - "package-lock.json"
+      - ".github/workflows/catalog-package.yml"
+  push:
+    branches: [main]
+    paths:
+      - "@bke/catalog/**"
+      - "package-lock.json"
+      - ".github/workflows/catalog-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci
+      - name: Pack Catalog package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+          artifact="$(npm pack --workspace=@bke/catalog --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "bke-catalog-0.1.0.tgz"
+          test -s "artifacts/$artifact"
+          sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "CATALOG_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Certify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf "artifacts/$CATALOG_ARTIFACT" > artifacts/package-contents.txt
+          for required in \
+            package/package.json \
+            package/module.manifest.ts \
+            package/contracts/catalog.contract.ts \
+            package/contracts/module.contract.ts \
+            package/logic/catalog.ts \
+            package/logic/catalog-repository.ts \
+            package/prisma/schema.prisma \
+            package/prisma/repositories/postgres-catalog-repository.ts \
+            package/migrations/0001_catalog_product_edition/migration.sql; do
+            grep -Fx "$required" artifacts/package-contents.txt
+          done
+          if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
+            echo '::error::Tests or dependency caches must not ship in @bke/catalog.'
+            exit 1
+          fi
+      - name: Install tarball in blank consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .package-smoke
+          mkdir -p .package-smoke
+          cat > .package-smoke/package.json <<JSON
+          {
+            "private": true,
+            "type": "module",
+            "dependencies": { "@bke/catalog": "file:../artifacts/$CATALOG_ARTIFACT" },
+            "devDependencies": {
+              "@types/node": "^24.3.0",
+              "@types/pg": "^8.15.5",
+              "tsx": "^4.20.5",
+              "typescript": "^5.9.2"
+            }
+          }
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "lib": ["ES2022", "DOM"],
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": ["node"]
+            },
+            "include": ["smoke.ts"]
+          }
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import {
+            CATALOG_LOOKUP_CAPABILITY_ID,
+            CATALOG_MANAGEMENT_CAPABILITY_ID,
+            CATALOG_PRODUCT_KINDS,
+          } from "@bke/catalog/contracts/catalog.contract";
+          import { createCatalogLookupCapability, createCatalogManagementCapability } from "@bke/catalog/logic/catalog";
+          import { createPostgresCatalogRepository } from "@bke/catalog/prisma/repositories/postgres-catalog-repository";
+          import { catalogModuleManifest } from "@bke/catalog/module.manifest";
+
+          if (CATALOG_LOOKUP_CAPABILITY_ID !== "bke.catalog.lookup.v1") throw new Error("Catalog lookup identity mismatch.");
+          if (CATALOG_MANAGEMENT_CAPABILITY_ID !== "bke.catalog.management.v1") throw new Error("Catalog management identity mismatch.");
+          if (!CATALOG_PRODUCT_KINDS.includes("SCRIPT") || !CATALOG_PRODUCT_KINDS.includes("DIGITAL_ASSET")) throw new Error("Catalog kinds incomplete.");
+          if (catalogModuleManifest.moduleId !== "catalog" || catalogModuleManifest.needs.length !== 0) throw new Error("Catalog manifest mismatch.");
+          for (const value of [createCatalogLookupCapability, createCatalogManagementCapability, createPostgresCatalogRepository]) {
+            if (typeof value !== "function") throw new Error("Packed Catalog consumer exports are incomplete.");
+          }
+          console.log("Packed @bke/catalog consumer smoke GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - name: Upload certified package evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: bke-catalog-0.1.0
+          path: |
+            artifacts/bke-catalog-0.1.0.tgz
+            artifacts/bke-catalog-0.1.0.tgz.sha256
+            artifacts/package-contents.txt
+          if-no-files-found: error
+      - name: Create immutable Catalog release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./@bke/catalog/package.json').version")"
+          tag="catalog-v${version}"
+          package_changed=false
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/catalog/package.json; then package_changed=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if [[ "$package_changed" == "true" ]]; then
+              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/catalog version."
+              exit 1
+            fi
+            echo "Release $tag already exists and package version is unchanged."
+            exit 0
+          fi
+          gh release create "$tag" \
+            "artifacts/$CATALOG_ARTIFACT" \
+            "artifacts/$CATALOG_ARTIFACT.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "@bke/catalog v${version}" \
+            --notes "Certified BKE Catalog package artifact. Product/Edition identity, lookup, management, SCRIPT/DIGITAL_ASSET kinds, module-owned PostgreSQL persistence, and package portability passed source, behavior, persistence, and package gates before release creation."
