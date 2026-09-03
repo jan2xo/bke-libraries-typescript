@@ -1,6 +1,7 @@
 import type {
   CommerceCreateOrderInvoiceInput,
   CommerceCreateOrderInvoiceResult,
+  CommerceInvoicePresentationInput,
   CommerceOrderInvoiceCreationCapability,
 } from "../contracts/order-invoice-creation.contract";
 import type { CommerceOrderInvoiceCreationRepository } from "./order-invoice-creation-repository";
@@ -32,6 +33,16 @@ export function calculateCommerceOrderLineTotal(input: {
   return gross - discount;
 }
 
+export function calculateCommerceInvoicePresentationLineTotal(input: {
+  readonly quantity: number;
+  readonly unitAmountMinor: number;
+}): number | null {
+  if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) return null;
+  if (!Number.isSafeInteger(input.unitAmountMinor)) return null;
+  const total = input.quantity * input.unitAmountMinor;
+  return Number.isSafeInteger(total) ? total : null;
+}
+
 export function calculateCommerceOrderTotals(input: CommerceCreateOrderInvoiceInput): {
   readonly subtotalMinor: number;
   readonly totalMinor: number;
@@ -47,6 +58,31 @@ export function calculateCommerceOrderTotals(input: CommerceCreateOrderInvoiceIn
   const totalMinor = subtotalMinor + input.taxMinor;
   if (!Number.isSafeInteger(totalMinor)) return null;
   return { subtotalMinor, totalMinor };
+}
+
+function validInvoicePresentation(
+  presentation: CommerceInvoicePresentationInput | null | undefined,
+  orderSubtotalMinor: number,
+): boolean {
+  if (presentation === null || presentation === undefined) return true;
+  if (
+    !Number.isSafeInteger(presentation.subtotalMinor) ||
+    presentation.subtotalMinor < 0 ||
+    presentation.subtotalMinor < orderSubtotalMinor ||
+    presentation.lines.length === 0 ||
+    presentation.lines.length > 500
+  ) {
+    return false;
+  }
+
+  let netMinor = 0;
+  for (const line of presentation.lines) {
+    const lineTotal = calculateCommerceInvoicePresentationLineTotal(line);
+    if (!validText(line.description, 1024) || lineTotal === null) return false;
+    netMinor += lineTotal;
+    if (!Number.isSafeInteger(netMinor)) return false;
+  }
+  return netMinor === orderSubtotalMinor;
 }
 
 function validateInput(input: CommerceCreateOrderInvoiceInput): boolean {
@@ -88,7 +124,8 @@ function validateInput(input: CommerceCreateOrderInvoiceInput): boolean {
     }
   }
 
-  return calculateCommerceOrderTotals(input) !== null;
+  const totals = calculateCommerceOrderTotals(input);
+  return totals !== null && validInvoicePresentation(input.invoicePresentation, totals.subtotalMinor);
 }
 
 export function createCommerceOrderInvoiceCreationCapability(
@@ -120,6 +157,16 @@ export function createCommerceOrderInvoiceCreationCapability(
             planName: line.planName?.trim() || null,
             pricingVersion: line.pricingVersion?.trim() || null,
           })),
+          invoicePresentation:
+            input.invoicePresentation === null || input.invoicePresentation === undefined
+              ? null
+              : {
+                  subtotalMinor: input.invoicePresentation.subtotalMinor,
+                  lines: input.invoicePresentation.lines.map((line) => ({
+                    ...line,
+                    description: line.description.trim(),
+                  })),
+                },
         });
       } catch {
         return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
