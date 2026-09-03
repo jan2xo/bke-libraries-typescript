@@ -12,7 +12,11 @@ export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
 }): CommerceZeroPaymentFulfillmentCapability {
   return Object.freeze({
     async fulfill(input: CommerceFulfillZeroPaymentInput): Promise<CommerceFulfillZeroPaymentResult> {
-      if (!input.orderId.trim() || Number.isNaN(input.fulfilledAt.getTime())) {
+      if (
+        !input.orderId.trim() ||
+        !(input.fulfilledAt instanceof Date) ||
+        Number.isNaN(input.fulfilledAt.getTime())
+      ) {
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
 
