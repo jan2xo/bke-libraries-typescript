@@ -1,0 +1,41 @@
+name: BKE Library - Notifications
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/notifications/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/notifications.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Certify Notifications extraction boundary
+        run: npx tsx @bke/notifications/tests/extraction.certify.ts
+      - name: Typecheck Notifications
+        run: npm run typecheck --workspace=@bke/notifications
+      - name: Test Notifications logic
+        run: npm run test --workspace=@bke/notifications
