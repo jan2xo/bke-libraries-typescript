@@ -1,0 +1,72 @@
+name: BKE Library - Catalog
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/catalog/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/catalog.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_catalog_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_catalog_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_catalog_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Prove source migration byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_url=https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/bef144b6dadf63019df743cf384736810bb51a0f/v2/modules/catalog/prisma/migrations/0001_catalog_product_edition/migration.sql
+          curl -fL --retry 3 --retry-all-errors -o /tmp/catalog-migration.sql "$source_url"
+          cmp /tmp/catalog-migration.sql @bke/catalog/migrations/0001_catalog_product_edition/migration.sql
+      - name: Certify Catalog extraction boundary
+        run: npx tsx @bke/catalog/tests/extraction.certify.ts
+      - name: Typecheck Catalog
+        run: npm run typecheck --workspace=@bke/catalog
+      - name: Validate Catalog Prisma schema
+        run: npm run prisma:validate --workspace=@bke/catalog
+      - name: Apply Catalog migrations
+        run: npm run prisma:deploy --workspace=@bke/catalog
+      - name: Prove Catalog migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/catalog
+      - name: Test Catalog logic
+        run: npm run test --workspace=@bke/catalog
+      - name: Certify Catalog PostgreSQL behavior
+        run: npx tsx @bke/catalog/tests/postgres.certify.ts
