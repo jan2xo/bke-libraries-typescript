@@ -5,6 +5,7 @@ import { COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID } from "./contracts/order
 import { COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID } from "./contracts/purchase-plan-lookup.contract";
 import { COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID } from "./contracts/purchase-plan-pricing.contract";
 import { COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID } from "./contracts/settlement-reaction.contract";
+import { COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID } from "./contracts/zero-payment-fulfillment.contract";
 
 export const commerceModuleManifest = Object.freeze({
   moduleId: "commerce",
@@ -16,5 +17,6 @@ export const commerceModuleManifest = Object.freeze({
     COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID,
     COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID,
     COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID,
+    COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID,
   ],
 } as const satisfies CommerceModuleManifest);
