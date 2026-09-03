@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/legal --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-legal-0.1.0.tgz"
+          test "$artifact" = "bke-legal-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "LEGAL_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -48,15 +48,22 @@ jobs:
         run: |
           set -euo pipefail
           tar -tzf "artifacts/$LEGAL_ARTIFACT" > artifacts/package-contents.txt
-          grep -Fx 'package/package.json' artifacts/package-contents.txt
-          grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
-          grep -Fx 'package/contracts/acceptance.contract.ts' artifacts/package-contents.txt
-          grep -Fx 'package/contracts/module.contract.ts' artifacts/package-contents.txt
-          grep -Fx 'package/logic/acceptance.ts' artifacts/package-contents.txt
-          grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
-          grep -Fx 'package/prisma/repositories/postgres-acceptance-repository.ts' artifacts/package-contents.txt
-          grep -Fx 'package/migrations/0001_legal_acceptance_baseline/migration.sql' artifacts/package-contents.txt
-          grep -Fx 'package/docs/EXTRACTION-SOURCE.md' artifacts/package-contents.txt
+          for required in \
+            package/package.json \
+            package/module.manifest.ts \
+            package/contracts/acceptance.contract.ts \
+            package/contracts/checkout-requirements.contract.ts \
+            package/contracts/module.contract.ts \
+            package/logic/acceptance.ts \
+            package/logic/checkout-requirements.ts \
+            package/prisma/schema.prisma \
+            package/prisma/repositories/postgres-acceptance-repository.ts \
+            package/prisma/repositories/postgres-checkout-requirements-repository.ts \
+            package/migrations/0001_legal_acceptance_baseline/migration.sql \
+            package/migrations/0002_legal_document_registry/migration.sql \
+            package/docs/EXTRACTION-SOURCE.md; do
+            grep -Fx "$required" artifacts/package-contents.txt
+          done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
             echo '::error::Tests or dependency caches must not ship in @bke/legal.'
             exit 1
@@ -96,15 +103,19 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import { LEGAL_ACCEPTANCE_CAPABILITY_ID } from "@bke/legal/contracts/acceptance.contract";
+          import { LEGAL_CHECKOUT_REQUIREMENTS_CAPABILITY_ID } from "@bke/legal/contracts/checkout-requirements.contract";
           import { createLegalAcceptanceCapability } from "@bke/legal/logic/acceptance";
+          import { createLegalCheckoutRequirementsCapability } from "@bke/legal/logic/checkout-requirements";
           import { createPostgresLegalAcceptanceRepository } from "@bke/legal/prisma/repositories/postgres-acceptance-repository";
+          import { createPostgresLegalCheckoutRequirementsRepository } from "@bke/legal/prisma/repositories/postgres-checkout-requirements-repository";
           import { legalModuleManifest } from "@bke/legal/module.manifest";
-          if (LEGAL_ACCEPTANCE_CAPABILITY_ID !== "bke.legal.acceptance.v1") throw new Error("Unexpected Legal capability id.");
+          if (LEGAL_ACCEPTANCE_CAPABILITY_ID !== "bke.legal.acceptance.v1") throw new Error("Unexpected Legal acceptance capability id.");
+          if (LEGAL_CHECKOUT_REQUIREMENTS_CAPABILITY_ID !== "bke.legal.checkout-requirements.v1") throw new Error("Unexpected Legal checkout capability id.");
           if (legalModuleManifest.moduleId !== "legal") throw new Error("Unexpected Legal module id.");
-          if (typeof createLegalAcceptanceCapability !== "function" || typeof createPostgresLegalAcceptanceRepository !== "function") {
-            throw new Error("Packed Legal consumer exports are incomplete.");
+          for (const value of [createLegalAcceptanceCapability, createLegalCheckoutRequirementsCapability, createPostgresLegalAcceptanceRepository, createPostgresLegalCheckoutRequirementsRepository]) {
+            if (typeof value !== "function") throw new Error("Packed Legal consumer exports are incomplete.");
           }
-          console.log("Packed @bke/legal consumer smoke GREEN");
+          console.log("Packed @bke/legal 0.2.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -112,10 +123,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-legal-0.1.0
+          name: bke-legal-0.2.0
           path: |
-            artifacts/bke-legal-0.1.0.tgz
-            artifacts/bke-legal-0.1.0.tgz.sha256
+            artifacts/bke-legal-0.2.0.tgz
+            artifacts/bke-legal-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Legal release
@@ -143,4 +154,4 @@ jobs:
             "artifacts/$LEGAL_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/legal v${version}" \
-            --notes "Certified BKE Legal package artifact. Source, persistence, behavior, and package gates passed before release creation."
+            --notes "Certified BKE Legal package artifact. Acceptance, checkout requirements, persistence, and package gates passed before release creation."
