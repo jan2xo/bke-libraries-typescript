@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CommerceCheckoutOfferSnapshot } from "../contracts/checkout-offer-pricing.contract";
 import { createCommerceCheckoutOrchestrationCapability } from "../logic/checkout-orchestration";
 
 function input(totalMinor = 1000) {
@@ -44,22 +45,45 @@ function input(totalMinor = 1000) {
         },
       ],
     },
+    offerIdentifier: null as string | null,
     paymentSourceReference: "checkout-1",
     payer: { name: "Buyer", email: "buyer@example.test" },
   };
 }
 
+const offer: CommerceCheckoutOfferSnapshot = {
+  redemptionId: "redemption-1",
+  offerId: "offer-1",
+  name: "Launch 25",
+  code: "LAUNCH25",
+  type: "GENERAL_PROMOTION",
+  scope: "ALL_ELIGIBLE",
+  discountBps: 2500,
+  discountMinor: 250,
+  finalMinor: 750,
+  discountedBillingCycles: null,
+};
+
 function capability(options: {
   account?: "AUTHORIZED" | "REJECTED" | "FAILED";
   legal?: readonly ("ACCEPTED" | "NOT_ACCEPTED" | "FAILED")[];
-  totalMinor?: number;
+  createdTotalMinor?: number;
+  pricedTotalMinor?: number;
+  pricing?: "PRICED" | "OFFER_REJECTED" | "ORDER_REJECTED" | "FAILED";
+  offer?: CommerceCheckoutOfferSnapshot | null;
   fulfillment?: "FULFILLED" | "ORDER_CONFLICT" | "ENTITLEMENT_CONFLICT" | "ENTITLEMENTS_UNAVAILABLE";
   payment?: "READY" | "REJECTED" | "FAILED";
 } = {}) {
   let legalCalls = 0;
+  let pricingCalls = 0;
   let fulfillmentCalls = 0;
   let paymentCalls = 0;
-  const totalMinor = options.totalMinor ?? 1000;
+  let paymentAmount: number | null = null;
+  let paymentItemAmount: number | null = null;
+  let pricedOfferIdentifier: string | null | undefined;
+  const createdTotalMinor = options.createdTotalMinor ?? 1000;
+  const pricedTotalMinor = options.pricedTotalMinor ?? createdTotalMinor;
+  const appliedOffer = options.offer === undefined ? null : options.offer;
   const value = {
     orderId: "order-1",
     orderNumber: "ORD-1",
@@ -68,15 +92,19 @@ function capability(options: {
     invoiceNumber: "INV-1",
     invoiceStatus: "DRAFT" as const,
     currency: "PHP",
-    subtotalMinor: totalMinor,
+    subtotalMinor: createdTotalMinor,
     taxMinor: 0,
-    totalMinor,
+    totalMinor: createdTotalMinor,
     lineCount: 1,
   };
   return {
     legalCalls: () => legalCalls,
+    pricingCalls: () => pricingCalls,
     fulfillmentCalls: () => fulfillmentCalls,
     paymentCalls: () => paymentCalls,
+    paymentAmount: () => paymentAmount,
+    paymentItemAmount: () => paymentItemAmount,
+    pricedOfferIdentifier: () => pricedOfferIdentifier,
     checkout: createCommerceCheckoutOrchestrationCapability({
       accountAuthorizer: {
         async authorize() {
@@ -100,6 +128,30 @@ function capability(options: {
       orderInvoiceCreation: {
         async create() {
           return { status: "CREATED" as const, value };
+        },
+      },
+      checkoutOfferPricing: {
+        async price(pricingInput) {
+          pricingCalls += 1;
+          pricedOfferIdentifier = pricingInput.offerIdentifier;
+          if (options.pricing === "OFFER_REJECTED") {
+            return { status: "REJECTED" as const, code: "OFFER_NOT_FOUND" as const };
+          }
+          if (options.pricing === "ORDER_REJECTED") {
+            return { status: "REJECTED" as const, code: "ORDER_NOT_ELIGIBLE" as const };
+          }
+          if (options.pricing === "FAILED") {
+            return { status: "FAILED" as const, code: "PERSISTENCE_UNAVAILABLE" as const };
+          }
+          return {
+            status: "PRICED" as const,
+            value: {
+              orderId: "order-1",
+              subtotalMinor: pricedTotalMinor,
+              totalMinor: pricedTotalMinor,
+              offer: appliedOffer,
+            },
+          };
         },
       },
       zeroPaymentFulfillment: {
@@ -127,8 +179,10 @@ function capability(options: {
         },
       },
       paymentStarter: {
-        async create() {
+        async create(paymentInput) {
           paymentCalls += 1;
+          paymentAmount = paymentInput.amountMinor;
+          paymentItemAmount = paymentInput.items[0]?.amountMinor ?? null;
           if (options.payment === "REJECTED") return { status: "REJECTED" as const };
           if (options.payment === "FAILED") {
             return { status: "FAILED" as const, code: "PROVIDER_UNAVAILABLE" as const };
@@ -140,7 +194,7 @@ function capability(options: {
               provider: "fakepay",
               externalCheckoutId: "checkout-external-1",
               checkoutUrl: "https://example.test/checkout",
-              amountMinor: totalMinor,
+              amountMinor: paymentInput.amountMinor,
               currency: "PHP",
             },
           };
@@ -158,13 +212,15 @@ describe("Commerce checkout orchestration", () => {
       code: "ACCOUNT_FORBIDDEN",
     });
     expect(subject.legalCalls()).toBe(0);
+    expect(subject.pricingCalls()).toBe(0);
     expect(subject.paymentCalls()).toBe(0);
   });
 
-  it("checks every supplied legal requirement before creating payment", async () => {
+  it("checks every supplied legal requirement before Commerce offer pricing and payment", async () => {
     const subject = capability();
     expect((await subject.checkout.start(input())).status).toBe("PAYMENT_READY");
     expect(subject.legalCalls()).toBe(2);
+    expect(subject.pricingCalls()).toBe(1);
     expect(subject.paymentCalls()).toBe(1);
   });
 
@@ -175,7 +231,7 @@ describe("Commerce checkout orchestration", () => {
       code: "LEGAL_NOT_ACCEPTED",
     });
     expect(subject.legalCalls()).toBe(2);
-    expect(subject.paymentCalls()).toBe(0);
+    expect(subject.pricingCalls()).toBe(0);
   });
 
   it("rejects an empty or duplicate legal bundle as invalid input", async () => {
@@ -191,9 +247,37 @@ describe("Commerce checkout orchestration", () => {
     });
   });
 
-  it("fully fulfills a zero-total order without calling Payments", async () => {
-    const subject = capability({ totalMinor: 0 });
-    const result = await subject.checkout.start(input(0));
+  it("passes an explicit offer identifier into Commerce pricing and pays the repriced amount", async () => {
+    const subject = capability({ pricedTotalMinor: 750, offer });
+    const checkoutInput = input();
+    checkoutInput.offerIdentifier = "LAUNCH25";
+    const result = await subject.checkout.start(checkoutInput);
+
+    expect(result).toMatchObject({
+      status: "PAYMENT_READY",
+      order: { totalMinor: 750 },
+      offer: { offerId: "offer-1", discountMinor: 250 },
+    });
+    expect(subject.pricedOfferIdentifier()).toBe("LAUNCH25");
+    expect(subject.paymentAmount()).toBe(750);
+    expect(subject.paymentItemAmount()).toBe(750);
+  });
+
+  it("maps an unavailable explicit offer to a typed checkout rejection", async () => {
+    const subject = capability({ pricing: "OFFER_REJECTED" });
+    const checkoutInput = input();
+    checkoutInput.offerIdentifier = "NOPE";
+    expect(await subject.checkout.start(checkoutInput)).toEqual({
+      status: "REJECTED",
+      code: "OFFER_NOT_AVAILABLE",
+    });
+    expect(subject.paymentCalls()).toBe(0);
+  });
+
+  it("uses a 100% authorized offer to fully fulfill without calling Payments", async () => {
+    const freeOffer = { ...offer, discountBps: 10_000, discountMinor: 1000, finalMinor: 0 };
+    const subject = capability({ pricedTotalMinor: 0, offer: freeOffer });
+    const result = await subject.checkout.start(input());
     expect(result).toEqual({
       status: "PAYMENT_NOT_REQUIRED",
       order: expect.objectContaining({ orderId: "order-1", totalMinor: 0 }),
@@ -204,13 +288,26 @@ describe("Commerce checkout orchestration", () => {
         invoiceStatus: "FINAL",
         entitlementCount: 1,
       },
+      offer: freeOffer,
+    });
+    expect(subject.fulfillmentCalls()).toBe(1);
+    expect(subject.paymentCalls()).toBe(0);
+  });
+
+  it("fully fulfills an already-zero catalog order without calling Payments", async () => {
+    const subject = capability({ createdTotalMinor: 0, pricedTotalMinor: 0 });
+    const result = await subject.checkout.start(input(0));
+    expect(result).toMatchObject({
+      status: "PAYMENT_NOT_REQUIRED",
+      order: { totalMinor: 0 },
+      offer: null,
     });
     expect(subject.fulfillmentCalls()).toBe(1);
     expect(subject.paymentCalls()).toBe(0);
   });
 
   it("surfaces zero-payment entitlement unavailability instead of reporting false success", async () => {
-    const subject = capability({ totalMinor: 0, fulfillment: "ENTITLEMENTS_UNAVAILABLE" });
+    const subject = capability({ createdTotalMinor: 0, pricedTotalMinor: 0, fulfillment: "ENTITLEMENTS_UNAVAILABLE" });
     expect(await subject.checkout.start(input(0))).toEqual({
       status: "FAILED",
       code: "ENTITLEMENTS_UNAVAILABLE",

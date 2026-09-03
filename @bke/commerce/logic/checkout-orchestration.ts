@@ -1,3 +1,4 @@
+import type { CommerceCheckoutOfferPricingCapability } from "../contracts/checkout-offer-pricing.contract";
 import type {
   CommerceCheckoutLegalRequirementInput,
   CommerceCheckoutOrchestrationCapability,
@@ -37,6 +38,7 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
   readonly accountAuthorizer: CommerceAccountPurchaseAuthorizer;
   readonly legalChecker: CommerceLegalAcceptanceChecker;
   readonly orderInvoiceCreation: CommerceOrderInvoiceCreationCapability;
+  readonly checkoutOfferPricing: CommerceCheckoutOfferPricingCapability;
   readonly zeroPaymentFulfillment: CommerceZeroPaymentFulfillmentCapability;
   readonly paymentStarter: CommercePaymentCheckoutStarter;
 }): CommerceCheckoutOrchestrationCapability {
@@ -49,7 +51,10 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
         !validText(input.payer.name) ||
         !validText(input.payer.email) ||
         input.order.accountId !== input.accountId ||
-        !validLegalRequirements(input.legal)
+        !validLegalRequirements(input.legal) ||
+        (input.offerIdentifier !== undefined &&
+          input.offerIdentifier !== null &&
+          !validText(input.offerIdentifier))
       ) {
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
@@ -93,9 +98,35 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
         };
       }
 
-      if (created.value.totalMinor === 0) {
+      const pricing = await dependencies.checkoutOfferPricing.price({
+        orderId: created.value.orderId,
+        offerIdentifier: input.offerIdentifier,
+      });
+      if (pricing.status === "REJECTED") {
+        if (pricing.code === "ORDER_NOT_FOUND" || pricing.code === "ORDER_NOT_ELIGIBLE") {
+          return { status: "REJECTED", code: "ORDER_CONFLICT" };
+        }
+        return { status: "REJECTED", code: "OFFER_NOT_AVAILABLE" };
+      }
+      if (pricing.status === "FAILED") {
+        return {
+          status: "FAILED",
+          code:
+            pricing.code === "INVALID_INPUT"
+              ? "INVALID_INPUT"
+              : "COMMERCE_PERSISTENCE_UNAVAILABLE",
+        };
+      }
+
+      const pricedOrder = Object.freeze({
+        ...created.value,
+        subtotalMinor: pricing.value.subtotalMinor,
+        totalMinor: pricing.value.totalMinor,
+      });
+
+      if (pricedOrder.totalMinor === 0) {
         const fulfillment = await dependencies.zeroPaymentFulfillment.fulfill({
-          orderId: created.value.orderId,
+          orderId: pricedOrder.orderId,
           fulfilledAt: new Date(),
         });
         if (fulfillment.status === "REJECTED") {
@@ -121,17 +152,27 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
         }
         return {
           status: "PAYMENT_NOT_REQUIRED",
-          order: created.value,
+          order: pricedOrder,
           fulfillment: fulfillment.value,
+          offer: pricing.value.offer,
         };
       }
 
-      const items = input.order.lines.map((line) => ({
-        name: line.productName,
-        description: line.description,
-        amountMinor: line.unitAmountMinor,
-        quantity: line.quantity,
-      }));
+      const items = pricing.value.offer
+        ? [
+            {
+              name: input.order.lines[0]?.productName ?? "Order",
+              description: input.order.lines[0]?.description ?? "Order",
+              amountMinor: pricing.value.subtotalMinor,
+              quantity: 1,
+            },
+          ]
+        : input.order.lines.map((line) => ({
+            name: line.productName,
+            description: line.description,
+            amountMinor: line.unitAmountMinor,
+            quantity: line.quantity,
+          }));
       if (input.order.taxMinor > 0) {
         items.push({
           name: "Tax",
@@ -143,9 +184,9 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
 
       const payment = await dependencies.paymentStarter.create({
         sourceReference: input.paymentSourceReference,
-        commercialReference: created.value.orderId,
-        amountMinor: created.value.totalMinor,
-        currency: created.value.currency,
+        commercialReference: pricedOrder.orderId,
+        amountMinor: pricedOrder.totalMinor,
+        currency: pricedOrder.currency,
         payer: input.payer,
         items,
       });
@@ -171,8 +212,9 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
 
       return {
         status: "PAYMENT_READY",
-        order: created.value,
+        order: pricedOrder,
         payment: payment.value,
+        offer: pricing.value.offer,
       };
     },
   });
