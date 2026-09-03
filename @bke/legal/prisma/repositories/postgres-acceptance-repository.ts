@@ -8,24 +8,21 @@ import type {
   LegalRecordAcceptanceResult,
 } from "../../contracts/acceptance.contract";
 import type { LegalAcceptanceRepository } from "../../logic/acceptance-repository";
-
-function optionalString(value: unknown): string | null {
-  return value === null || value === undefined ? null : String(value);
-}
+import { legalRenderedContentSha256, normalizeLegalVariables } from "../../logic/render";
 
 function snapshot(row: Record<string, unknown>): LegalAcceptanceSnapshot {
   return {
     acceptanceId: String(row.id),
     principalId: String(row.principalId),
-    customerAccountId: optionalString(row.customerAccountId),
+    customerAccountId: row.customerAccountId === null ? null : String(row.customerAccountId),
     documentId: String(row.documentId),
     documentVersionId: String(row.documentVersionId),
     acceptanceContext: String(row.acceptanceContext),
     slaVersion: String(row.slaVersion),
     renderedContentSha256: String(row.renderedContentSha256),
     variablesSnapshot: row.variablesSnapshot,
-    ipAddress: optionalString(row.ipAddress),
-    userAgent: optionalString(row.userAgent),
+    ipAddress: row.ipAddress === null ? null : String(row.ipAddress),
+    userAgent: row.userAgent === null ? null : String(row.userAgent),
     acceptedAt: row.acceptedAt instanceof Date ? row.acceptedAt : new Date(String(row.acceptedAt)),
   };
 }
@@ -42,17 +39,19 @@ export function createPostgresLegalAcceptanceRepository(
       await client.connect();
       try {
         const version = await client.query(
-          `SELECT "documentId", "slaVersion", "sha256"
+          `SELECT "documentId", "slaVersion", "markdownContent"
              FROM "LegalDocumentVersion"
             WHERE "id" = $1`,
           [input.documentVersionId],
         );
         if (!version.rowCount) return { status: "REJECTED", code: "DOCUMENT_VERSION_NOT_FOUND" };
-        const target = version.rows[0] as { documentId: string; slaVersion: string; sha256: string };
+        const target = version.rows[0] as { documentId: string; slaVersion: string; markdownContent: string };
+        const variables = normalizeLegalVariables(input.variablesSnapshot);
         if (
           target.documentId !== input.documentId ||
           target.slaVersion !== input.slaVersion ||
-          target.sha256 !== input.renderedContentSha256
+          variables === null ||
+          legalRenderedContentSha256(target.markdownContent, variables) !== input.renderedContentSha256
         ) {
           return { status: "REJECTED", code: "DOCUMENT_VERSION_MISMATCH" };
         }
@@ -73,7 +72,7 @@ export function createPostgresLegalAcceptanceRepository(
             input.acceptanceContext,
             input.slaVersion,
             input.renderedContentSha256,
-            JSON.stringify(input.variablesSnapshot ?? null),
+            JSON.stringify(variables),
             input.ipAddress ?? null,
             input.userAgent ?? null,
           ],

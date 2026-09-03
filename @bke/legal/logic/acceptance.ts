@@ -45,6 +45,14 @@ function normalize<T extends LegalCheckAcceptanceInput>(input: T): T {
   };
 }
 
+function normalizeRecord(input: LegalRecordAcceptanceInput): LegalRecordAcceptanceInput {
+  return {
+    ...normalize(input),
+    ipAddress: input.ipAddress?.trim() || null,
+    userAgent: input.userAgent?.trim() || null,
+  };
+}
+
 export function createLegalAcceptanceCapability(
   repository: LegalAcceptanceRepository,
 ): LegalAcceptanceCapability {
@@ -59,11 +67,7 @@ export function createLegalAcceptanceCapability(
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
       try {
-        return await repository.record({
-          ...normalize(input),
-          ipAddress: input.ipAddress?.trim() || null,
-          userAgent: input.userAgent?.trim() || null,
-        });
+        return await repository.record(normalizeRecord(input));
       } catch {
         return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
       }

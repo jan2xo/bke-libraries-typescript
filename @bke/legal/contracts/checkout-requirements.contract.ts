@@ -24,13 +24,16 @@ export interface LegalCheckoutRequirementSnapshot {
   readonly documentVersionId: string;
   readonly version: string;
   readonly slaVersion: string;
+  readonly publishedContentSha256: string;
   readonly renderedContentSha256: string;
+  readonly variablesSnapshot: Readonly<Record<string, string>>;
   readonly requiresReacceptance: boolean;
 }
 
 export interface LegalResolveCheckoutRequirementsInput {
   readonly planType: LegalCheckoutPlanType;
   readonly selectedVersionIds?: readonly string[];
+  readonly variables?: Readonly<Record<string, string>>;
 }
 
 export type LegalResolveCheckoutRequirementsResult =
