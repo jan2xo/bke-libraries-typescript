@@ -1,0 +1,46 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model CatalogProduct {
+  id          String   @id
+  slug        String   @unique
+  productId   String?  @unique
+  name        String
+  summary     String
+  description String
+  kind        String   @default("SOFTWARE")
+  category    String   @default("General")
+  featured    Boolean  @default(false)
+  imageKey    String?
+  tags        String[] @default([])
+  active      Boolean  @default(true)
+  publishedAt DateTime?
+  archivedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  editions    CatalogEdition[]
+
+  @@index([kind, active])
+  @@index([active, publishedAt])
+}
+
+model CatalogEdition {
+  id                String   @id
+  productId         String
+  slug              String
+  name              String
+  description       String?
+  features          Json     @default("[]")
+  maxUsers          Int      @default(1)
+  maxDevicesPerUser Int      @default(1)
+  updatePolicy      String   @default("LIFETIME")
+  active            Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  product           CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, slug])
+  @@index([productId, active, sortOrder])
+}
