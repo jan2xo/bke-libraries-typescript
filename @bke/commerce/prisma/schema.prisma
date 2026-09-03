@@ -1,0 +1,226 @@
+datasource db {
+  provider = "postgresql"
+}
+
+enum CommercePurchasePlanType {
+  PERPETUAL
+  MONTHLY
+  ANNUAL
+}
+
+enum CommerceRenewalBehavior {
+  NONE
+  CUSTOMER_AUTHORIZED
+}
+
+enum CommerceBillingType {
+  ONE_TIME
+  SUBSCRIPTION
+}
+
+enum CommerceIntervalUnit {
+  MONTH
+  YEAR
+}
+
+enum CommerceDiscountType {
+  GENERAL_PROMOTION
+  CUSTOMER_ACCOUNT_OFFER
+  ADMINISTRATIVE_ADJUSTMENT
+}
+
+enum CommerceDiscountStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+  REVOKED
+  EXPIRED
+}
+
+enum CommerceOfferRedemptionStatus {
+  RESERVED
+  APPLIED
+  RELEASED
+  REFUNDED
+}
+
+enum CommerceOrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum CommerceInvoiceStatus {
+  DRAFT
+  FINAL
+  VOID
+}
+
+model Price {
+  id              String                @id
+  productId       String
+  licensePolicyId String
+  name            String
+  amountMinor     Int
+  currency        String                @default("PHP")
+  billingType     CommerceBillingType
+  intervalUnit    CommerceIntervalUnit?
+  intervalCount   Int?
+  active          Boolean               @default(true)
+  purchasePlan    PurchasePlan?
+
+  @@index([productId, active])
+}
+
+model PurchasePlan {
+  id                  String                   @id
+  editionId           String
+  type                CommercePurchasePlanType
+  currency            String                   @default("PHP")
+  amountMinor         Int?
+  annualDiscountBps   Int?
+  renewalBehavior     CommerceRenewalBehavior  @default(NONE)
+  active              Boolean                  @default(true)
+  monthlySourcePlanId String?
+  legacyPriceId       String?                  @unique
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @default(now()) @updatedAt
+  monthlySource       PurchasePlan?            @relation("CommerceAnnualMonthlySource", fields: [monthlySourcePlanId], references: [id], onDelete: Cascade)
+  annualPlans         PurchasePlan[]           @relation("CommerceAnnualMonthlySource")
+  legacyPrice         Price?                   @relation(fields: [legacyPriceId], references: [id], onDelete: SetNull)
+
+  @@unique([editionId, type])
+  @@index([editionId, active])
+}
+
+model DiscountOffer {
+  id                        String                 @id
+  codeNormalized            String?                @unique
+  name                      String
+  description               String?
+  type                      CommerceDiscountType
+  status                    CommerceDiscountStatus @default(DRAFT)
+  discountBps               Int
+  startsAt                  DateTime
+  endsAt                    DateTime?
+  productId                 String?
+  editionId                 String?
+  purchasePlanId            String?
+  customerAccountId         String?
+  maximumRedemptions        Int?
+  perAccountRedemptionLimit Int?
+  discountedBillingCycles   Int?
+  allowZeroTotal            Boolean                @default(false)
+  createdById               String
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @default(now()) @updatedAt
+  revokedAt                 DateTime?
+  redemptions               OfferRedemption[]
+
+  @@index([status, startsAt, endsAt])
+  @@index([customerAccountId, status])
+  @@index([purchasePlanId, status])
+}
+
+model OfferRedemption {
+  id                      String                         @id
+  offerId                 String
+  accountId               String
+  orderId                 String                         @unique
+  status                  CommerceOfferRedemptionStatus  @default(RESERVED)
+  discountBps             Int
+  discountedBillingCycles Int?
+  baseMinor               Int
+  discountMinor           Int
+  finalMinor              Int
+  currency                String
+  pricingVersion          String
+  reservedAt              DateTime                       @default(now())
+  appliedAt               DateTime?
+  releasedAt              DateTime?
+  offer                   DiscountOffer                  @relation(fields: [offerId], references: [id], onDelete: Restrict)
+
+  @@index([offerId, status])
+  @@index([offerId, accountId, status])
+  @@index([accountId, status])
+}
+
+model Order {
+  id              String              @id
+  number          String              @unique
+  accountId       String
+  status          CommerceOrderStatus @default(PENDING)
+  currency        String
+  subtotalMinor   Int
+  taxMinor        Int
+  totalMinor      Int
+  billingSnapshot Json
+  createdAt       DateTime            @default(now())
+  paidAt          DateTime?
+  items           OrderItem[]
+  invoice         Invoice?
+
+  @@index([accountId, createdAt])
+}
+
+model OrderItem {
+  id                  String                   @id
+  orderId             String
+  productId           String
+  priceId             String
+  policyId            String
+  productName         String
+  priceName           String
+  quantity            Int
+  unitAmountMinor     Int
+  totalMinor          Int
+  billingType         CommerceBillingType
+  policySnapshot      Json
+  editionId           String?
+  purchasePlanId      String?
+  planName            String?
+  planType            CommercePurchasePlanType?
+  intervalUnit        CommerceIntervalUnit?
+  intervalCount       Int?
+  renewalBehavior     CommerceRenewalBehavior?
+  entitlementSnapshot Json?
+  pricingSnapshot     Json?
+  catalogAmountMinor  Int?
+  offerId             String?
+  offerDiscountBps    Int?
+  offerDiscountMinor  Int?
+  pricingVersion      String?
+  order               Order                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model Invoice {
+  id               String                @id
+  number           String                @unique
+  orderId          String                @unique
+  status           CommerceInvoiceStatus @default(DRAFT)
+  customerSnapshot Json
+  currency         String
+  subtotalMinor    Int
+  taxMinor         Int
+  totalMinor       Int
+  issuedAt         DateTime?
+  createdAt        DateTime              @default(now())
+  order            Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lines            InvoiceLine[]
+}
+
+model InvoiceLine {
+  id              String  @id
+  invoiceId       String
+  description     String
+  quantity        Int
+  unitAmountMinor Int
+  totalMinor      Int
+  invoice         Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
