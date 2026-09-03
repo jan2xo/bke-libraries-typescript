@@ -15,6 +15,7 @@ type IdentityRow = {
   name: string | null;
   emailVerified: Date | null;
   role: IdentityRole;
+  establishedAt: Date;
   suspendedAt: Date | null;
   lifecycleState: IdentityLifecycleState;
 };
@@ -31,6 +32,7 @@ const principalProjection = `
     "name",
     "emailVerified",
     "role",
+    "createdAt" AS "establishedAt",
     "suspendedAt",
     "lifecycleState"
   FROM "User"
@@ -43,6 +45,7 @@ function toPrincipal(row: IdentityRow): IdentityPrincipal {
     name: row.name,
     emailVerified: row.emailVerified,
     role: row.role,
+    establishedAt: row.establishedAt,
     suspendedAt: row.suspendedAt,
     lifecycleState: row.lifecycleState,
   };
@@ -82,6 +85,7 @@ async function findPasswordAuthentication(
          u."name" AS "name",
          u."emailVerified" AS "emailVerified",
          u."role" AS "role",
+         u."createdAt" AS "establishedAt",
          u."suspendedAt" AS "suspendedAt",
          u."lifecycleState" AS "lifecycleState",
          credential."passwordHash" AS "passwordHash",
@@ -97,9 +101,7 @@ async function findPasswordAuthentication(
     );
 
     const row = result.rows[0];
-    if (!row) {
-      return null;
-    }
+    if (!row) return null;
 
     return {
       principal: toPrincipal(row),

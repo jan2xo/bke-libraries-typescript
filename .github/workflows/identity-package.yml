@@ -4,12 +4,14 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "@bke/identity/package.json"
+      - "@bke/identity/**"
+      - "package-lock.json"
       - ".github/workflows/identity-package.yml"
   push:
     branches: [main]
     paths:
-      - "@bke/identity/package.json"
+      - "@bke/identity/**"
+      - "package-lock.json"
       - ".github/workflows/identity-package.yml"
 
 permissions:
@@ -22,15 +24,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
       - name: Install locked workspace dependencies
         run: npm ci
-
       - name: Pack Identity package
         shell: bash
         run: |
@@ -39,32 +38,31 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/identity --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-identity-0.1.0.tgz"
+          test "$artifact" = "bke-identity-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "IDENTITY_ARTIFACT=$artifact" >> "$GITHUB_ENV"
-
       - name: Certify package contents
         shell: bash
         run: |
           set -euo pipefail
           tar -tzf "artifacts/$IDENTITY_ARTIFACT" > artifacts/package-contents.txt
-
-          grep -Fx 'package/package.json' artifacts/package-contents.txt
-          grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
-          grep -Fx 'package/contracts/identity.contract.ts' artifacts/package-contents.txt
-          grep -Fx 'package/logic/identity-service.ts' artifacts/package-contents.txt
-          grep -Fx 'package/providers/argon2-password-verifier.ts' artifacts/package-contents.txt
-          grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
-          grep -Fx 'package/prisma/repositories/postgres-identity-repository.ts' artifacts/package-contents.txt
-          grep -Fx 'package/migrations/0001_identity_baseline/migration.sql' artifacts/package-contents.txt
-          grep -Fx 'package/docs/EXTRACTION.md' artifacts/package-contents.txt
-
+          for required in \
+            package/package.json \
+            package/module.manifest.ts \
+            package/contracts/identity.contract.ts \
+            package/logic/identity-service.ts \
+            package/providers/argon2-password-verifier.ts \
+            package/prisma/schema.prisma \
+            package/prisma/repositories/postgres-identity-repository.ts \
+            package/migrations/0001_identity_baseline/migration.sql \
+            package/docs/EXTRACTION.md; do
+            grep -Fx "$required" artifacts/package-contents.txt
+          done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
             echo '::error::Tests or dependency caches must not ship in @bke/identity.'
             exit 1
           fi
-
       - name: Install tarball in blank consumer
         shell: bash
         run: |
@@ -75,9 +73,7 @@ jobs:
           {
             "private": true,
             "type": "module",
-            "dependencies": {
-              "@bke/identity": "file:../artifacts/$IDENTITY_ARTIFACT"
-            },
+            "dependencies": { "@bke/identity": "file:../artifacts/$IDENTITY_ARTIFACT" },
             "devDependencies": {
               "@types/node": "^24.3.0",
               "@types/pg": "^8.15.5",
@@ -101,42 +97,33 @@ jobs:
           }
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
-          import { IDENTITY_LOOKUP_CAPABILITY_ID } from "@bke/identity/contracts/identity.contract";
+          import { IDENTITY_LOOKUP_CAPABILITY_ID, type IdentityPrincipal } from "@bke/identity/contracts/identity.contract";
           import { createIdentityLookupCapability } from "@bke/identity/logic/identity-service";
           import { createArgon2PasswordVerifier } from "@bke/identity/providers/argon2-password-verifier";
           import { createPostgresIdentityRepository } from "@bke/identity/prisma/repositories/postgres-identity-repository";
           import { identityModuleManifest } from "@bke/identity/module.manifest";
 
-          if (IDENTITY_LOOKUP_CAPABILITY_ID !== "bke.identity.lookup.v1") {
-            throw new Error("Unexpected Identity lookup capability id from packed consumer surface.");
+          const establishment = (principal: IdentityPrincipal): Date => principal.establishedAt;
+          if (typeof establishment !== "function") throw new Error("Identity establishment contract is unavailable.");
+          if (IDENTITY_LOOKUP_CAPABILITY_ID !== "bke.identity.lookup.v1") throw new Error("Unexpected Identity lookup capability id.");
+          if (identityModuleManifest.moduleId !== "identity") throw new Error("Unexpected Identity manifest moduleId.");
+          for (const value of [createIdentityLookupCapability, createArgon2PasswordVerifier, createPostgresIdentityRepository]) {
+            if (typeof value !== "function") throw new Error("Packed Identity consumer exports are incomplete.");
           }
-          if (identityModuleManifest.moduleId !== "identity") {
-            throw new Error("Unexpected Identity manifest moduleId from packed consumer surface.");
-          }
-          if (
-            typeof createIdentityLookupCapability !== "function" ||
-            typeof createArgon2PasswordVerifier !== "function" ||
-            typeof createPostgresIdentityRepository !== "function"
-          ) {
-            throw new Error("Packed Identity consumer exports are incomplete.");
-          }
-
-          console.log("Packed @bke/identity consumer smoke GREEN");
+          console.log("Packed @bke/identity 0.2.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
           npx --prefix .package-smoke tsx .package-smoke/smoke.ts
-
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-identity-0.1.0
+          name: bke-identity-0.2.0
           path: |
-            artifacts/bke-identity-0.1.0.tgz
-            artifacts/bke-identity-0.1.0.tgz.sha256
+            artifacts/bke-identity-0.2.0.tgz
+            artifacts/bke-identity-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
-
       - name: Create immutable Identity release
         if: github.event_name == 'push'
         shell: bash
@@ -145,23 +132,21 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-
-          if git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/identity/package.json; then
-            echo "Identity package manifest unchanged; release creation is not required."
-            exit 0
-          fi
-
           version="$(node -p "require('./@bke/identity/package.json').version")"
           tag="identity-v${version}"
-
+          package_changed=false
+          if [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/identity/package.json; then package_changed=true; fi
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/identity version."
-            exit 1
+            if [[ "$package_changed" == "true" ]]; then
+              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/identity version."
+              exit 1
+            fi
+            echo "Release $tag already exists and package version is unchanged."
+            exit 0
           fi
-
           gh release create "$tag" \
             "artifacts/$IDENTITY_ARTIFACT" \
             "artifacts/$IDENTITY_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/identity v${version}" \
-            --notes "Certified BKE Identity package artifact. Source and package gates passed before release creation."
+            --notes "Certified BKE Identity package artifact. Principal establishment fact, source, persistence, and package gates passed before release creation."

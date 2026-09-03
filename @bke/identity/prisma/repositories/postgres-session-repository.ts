@@ -37,6 +37,7 @@ type SessionValidationRow = SessionRow & {
   userName: string | null;
   userEmailVerified: Date | null;
   userRole: "CUSTOMER" | "ADMIN";
+  userEstablishedAt: Date;
   userSuspendedAt: Date | null;
   userLifecycleState:
     | "ACTIVE"
@@ -76,6 +77,7 @@ function toPersistedSessionContext(
       name: row.userName,
       emailVerified: row.userEmailVerified,
       role: row.userRole,
+      establishedAt: row.userEstablishedAt,
       suspendedAt: row.userSuspendedAt,
       lifecycleState: row.userLifecycleState,
     },
@@ -173,9 +175,7 @@ export function createPostgresIdentitySessionRepository(
 
         await client.query("COMMIT");
         const session = result.rows[0];
-        if (!session) {
-          throw new Error("Identity session insert returned no row.");
-        }
+        if (!session) throw new Error("Identity session insert returned no row.");
         return { status: "CREATED" as const, session: toIssuedSession(session) };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
@@ -207,6 +207,7 @@ export function createPostgresIdentitySessionRepository(
              u."name" AS "userName",
              u."emailVerified" AS "userEmailVerified",
              u."role" AS "userRole",
+             u."createdAt" AS "userEstablishedAt",
              u."suspendedAt" AS "userSuspendedAt",
              u."lifecycleState" AS "userLifecycleState",
              (mfa."enabledAt" IS NOT NULL) AS "administratorMfaEnabled"
@@ -224,11 +225,7 @@ export function createPostgresIdentitySessionRepository(
       }
     },
 
-    async revokeSession(
-      sessionId: string,
-      reason: IdentitySessionRevocationReason,
-      revokedAt: Date,
-    ) {
+    async revokeSession(sessionId: string, reason: IdentitySessionRevocationReason, revokedAt: Date) {
       const client = new Client({ connectionString: normalizedConnectionString });
       await client.connect();
       try {

@@ -23,9 +23,7 @@ function validSession(options?: {
         lastAuthenticatedAt: now,
         mfaVerifiedAt: null,
         recentAuthenticatedAt:
-          options?.recentAuthenticatedAt === undefined
-            ? now
-            : options.recentAuthenticatedAt,
+          options?.recentAuthenticatedAt === undefined ? now : options.recentAuthenticatedAt,
         lastSeenAt: now,
         absoluteExpiresAt: new Date(now.getTime() + 60_000),
         authenticationMethod: "PASSWORD" as const,
@@ -38,6 +36,7 @@ function validSession(options?: {
         name: "Admin",
         emailVerified: null,
         role,
+        establishedAt: new Date("2026-01-01T00:00:00.000Z"),
         suspendedAt: null,
         lifecycleState: "ACTIVE" as const,
       },
@@ -114,10 +113,7 @@ describe("Identity emergency MFA enrollment", () => {
     expect(h.repository.enroll).toHaveBeenCalledWith({
       userId: "admin-1",
       emergencyTokenHash: "emergency-token-hash",
-      recoveryCodeHashes: Array.from(
-        { length: 10 },
-        (_, index) => `recovery-hash-${index}`,
-      ),
+      recoveryCodeHashes: Array.from({ length: 10 }, (_, index) => `recovery-hash-${index}`),
       replacementSession: {
         sessionId: "replacement-session",
         token: "replacement-session-token",
@@ -130,41 +126,22 @@ describe("Identity emergency MFA enrollment", () => {
 
   it("requires a valid recent ADMIN session but not pre-existing MFA", async () => {
     const invalid = harness({ status: "INVALID", code: "SESSION_NOT_FOUND" });
-    await expect(
-      invalid.capability.enroll({ sessionToken: "bad", emergencyToken }),
-    ).resolves.toEqual({ status: "INVALID", code: "INVALID_SESSION" });
+    await expect(invalid.capability.enroll({ sessionToken: "bad", emergencyToken })).resolves.toEqual({ status: "INVALID", code: "INVALID_SESSION" });
 
     const customer = harness(validSession({ role: "CUSTOMER" }));
-    await expect(
-      customer.capability.enroll({ sessionToken: "current", emergencyToken }),
-    ).resolves.toEqual({ status: "INVALID", code: "FORBIDDEN" });
+    await expect(customer.capability.enroll({ sessionToken: "current", emergencyToken })).resolves.toEqual({ status: "INVALID", code: "FORBIDDEN" });
 
-    const stale = harness(
-      validSession({
-        recentAuthenticatedAt: new Date(now.getTime() - 15 * 60_000 - 1),
-      }),
-    );
-    await expect(
-      stale.capability.enroll({ sessionToken: "current", emergencyToken }),
-    ).resolves.toEqual({ status: "INVALID", code: "RECENT_AUTH_REQUIRED" });
+    const stale = harness(validSession({ recentAuthenticatedAt: new Date(now.getTime() - 15 * 60_000 - 1) }));
+    await expect(stale.capability.enroll({ sessionToken: "current", emergencyToken })).resolves.toEqual({ status: "INVALID", code: "RECENT_AUTH_REQUIRED" });
 
-    const boundary = harness(
-      validSession({ recentAuthenticatedAt: new Date(now.getTime() - 15 * 60_000) }),
-    );
-    await expect(
-      boundary.capability.enroll({ sessionToken: "current", emergencyToken }),
-    ).resolves.toMatchObject({ status: "ENROLLED" });
+    const boundary = harness(validSession({ recentAuthenticatedAt: new Date(now.getTime() - 15 * 60_000) }));
+    await expect(boundary.capability.enroll({ sessionToken: "current", emergencyToken })).resolves.toMatchObject({ status: "ENROLLED" });
   });
 
   it("enforces the V1 emergency-token length before hashing or persistence", async () => {
     for (const token of ["x".repeat(39), "x".repeat(257)]) {
       const h = harness();
-      await expect(
-        h.capability.enroll({ sessionToken: "current", emergencyToken: token }),
-      ).resolves.toEqual({
-        status: "INVALID",
-        code: "INVALID_EMERGENCY_ENROLLMENT",
-      });
+      await expect(h.capability.enroll({ sessionToken: "current", emergencyToken: token })).resolves.toEqual({ status: "INVALID", code: "INVALID_EMERGENCY_ENROLLMENT" });
       expect(h.sessionTokenProvider.hash).not.toHaveBeenCalled();
       expect(h.repository.enroll).not.toHaveBeenCalled();
     }
@@ -172,44 +149,19 @@ describe("Identity emergency MFA enrollment", () => {
 
   it("returns typed invalid authorization and provider/persistence failures", async () => {
     const invalidAuthorization = harness();
-    vi.mocked(invalidAuthorization.repository.enroll).mockResolvedValue({
-      status: "INVALID_AUTHORIZATION",
-    });
-    await expect(
-      invalidAuthorization.capability.enroll({
-        sessionToken: "current",
-        emergencyToken,
-      }),
-    ).resolves.toEqual({
-      status: "INVALID",
-      code: "INVALID_EMERGENCY_ENROLLMENT",
-    });
+    vi.mocked(invalidAuthorization.repository.enroll).mockResolvedValue({ status: "INVALID_AUTHORIZATION" });
+    await expect(invalidAuthorization.capability.enroll({ sessionToken: "current", emergencyToken })).resolves.toEqual({ status: "INVALID", code: "INVALID_EMERGENCY_ENROLLMENT" });
 
     const tokenFailure = harness();
-    vi.mocked(tokenFailure.sessionTokenProvider.hash).mockImplementation(() => {
-      throw new Error("token provider unavailable");
-    });
-    await expect(
-      tokenFailure.capability.enroll({ sessionToken: "current", emergencyToken }),
-    ).resolves.toEqual({ status: "FAILED", code: "TOKEN_PROVIDER_UNAVAILABLE" });
+    vi.mocked(tokenFailure.sessionTokenProvider.hash).mockImplementation(() => { throw new Error("token provider unavailable"); });
+    await expect(tokenFailure.capability.enroll({ sessionToken: "current", emergencyToken })).resolves.toEqual({ status: "FAILED", code: "TOKEN_PROVIDER_UNAVAILABLE" });
 
     const codeFailure = harness();
-    vi.mocked(codeFailure.recoveryCodeProvider.issue).mockImplementation(() => {
-      throw new Error("code provider unavailable");
-    });
-    await expect(
-      codeFailure.capability.enroll({ sessionToken: "current", emergencyToken }),
-    ).resolves.toEqual({ status: "FAILED", code: "CODE_PROVIDER_UNAVAILABLE" });
+    vi.mocked(codeFailure.recoveryCodeProvider.issue).mockImplementation(() => { throw new Error("code provider unavailable"); });
+    await expect(codeFailure.capability.enroll({ sessionToken: "current", emergencyToken })).resolves.toEqual({ status: "FAILED", code: "CODE_PROVIDER_UNAVAILABLE" });
 
     const persistenceFailure = harness();
-    vi.mocked(persistenceFailure.repository.enroll).mockRejectedValue(
-      new Error("postgres unavailable"),
-    );
-    await expect(
-      persistenceFailure.capability.enroll({
-        sessionToken: "current",
-        emergencyToken,
-      }),
-    ).resolves.toEqual({ status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" });
+    vi.mocked(persistenceFailure.repository.enroll).mockRejectedValue(new Error("postgres unavailable"));
+    await expect(persistenceFailure.capability.enroll({ sessionToken: "current", emergencyToken })).resolves.toEqual({ status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" });
   });
 });

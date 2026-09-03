@@ -25,6 +25,7 @@ const persisted = (overrides: Partial<IdentityPersistedSessionContext> = {}): Id
     name: "Person",
     emailVerified: now,
     role: "CUSTOMER",
+    establishedAt: new Date("2026-01-01T00:00:00.000Z"),
     suspendedAt: null,
     lifecycleState: "ACTIVE",
   },
@@ -41,12 +42,8 @@ function repository(record: IdentityPersistedSessionContext | null = persisted()
     touchLastSeen: vi.fn(async () => undefined),
   };
 }
-
 function tokenProvider(): IdentitySessionTokenProvider {
-  return {
-    issue: vi.fn(),
-    hash: vi.fn(() => "hashed-token"),
-  };
+  return { issue: vi.fn(), hash: vi.fn(() => "hashed-token") };
 }
 
 describe("Identity session validation", () => {
@@ -60,14 +57,7 @@ describe("Identity session validation", () => {
   it("returns the current session context for a valid token", async () => {
     const record = persisted();
     const validation = createIdentitySessionValidationCapability(repository(record), tokenProvider(), () => now);
-    await expect(validation.validate("raw-token")).resolves.toEqual({
-      status: "VALID",
-      context: {
-        session: record.session,
-        principal: record.principal,
-        administratorMfaEnabled: false,
-      },
-    });
+    await expect(validation.validate("raw-token")).resolves.toEqual({ status: "VALID", context: { session: record.session, principal: record.principal, administratorMfaEnabled: false } });
   });
 
   it("best-effort revokes an expired session and fails closed", async () => {
@@ -79,10 +69,7 @@ describe("Identity session validation", () => {
 
   it("prioritizes account suspension as the invalidation reason", async () => {
     const base = persisted();
-    const repo = repository(persisted({
-      principal: { ...base.principal, suspendedAt: new Date("2026-08-30T23:00:00.000Z") },
-      session: { ...base.session, expiresAt: new Date("2026-08-30T23:00:00.000Z") },
-    }));
+    const repo = repository(persisted({ principal: { ...base.principal, suspendedAt: new Date("2026-08-30T23:00:00.000Z") }, session: { ...base.session, expiresAt: new Date("2026-08-30T23:00:00.000Z") } }));
     const validation = createIdentitySessionValidationCapability(repo, tokenProvider(), () => now);
     await expect(validation.validate("raw-token")).resolves.toEqual({ status: "INVALID", code: "ACCOUNT_SUSPENDED" });
     expect(repo.revokeSession).toHaveBeenCalledWith("session-1", "ACCOUNT_SUSPENDED", now);
@@ -105,13 +92,9 @@ describe("Identity session validation", () => {
   });
 
   it("maps token-provider and persistence failures to typed failures", async () => {
-    const brokenTokens: IdentitySessionTokenProvider = {
-      issue: vi.fn(),
-      hash: vi.fn(() => { throw new Error("hash unavailable"); }),
-    };
+    const brokenTokens: IdentitySessionTokenProvider = { issue: vi.fn(), hash: vi.fn(() => { throw new Error("hash unavailable"); }) };
     const validation = createIdentitySessionValidationCapability(repository(), brokenTokens, () => now);
     await expect(validation.validate("raw-token")).resolves.toEqual({ status: "FAILED", code: "TOKEN_PROVIDER_UNAVAILABLE" });
-
     const repo = repository();
     repo.findSessionByTokenHash = vi.fn(async () => { throw new Error("db unavailable"); });
     const persistenceValidation = createIdentitySessionValidationCapability(repo, tokenProvider(), () => now);

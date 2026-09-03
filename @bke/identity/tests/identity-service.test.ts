@@ -9,6 +9,7 @@ const principal: IdentityPrincipal = Object.freeze({
   name: "Person",
   emailVerified: new Date("2026-08-30T00:00:00.000Z"),
   role: "CUSTOMER",
+  establishedAt: new Date("2026-08-01T00:00:00.000Z"),
   suspendedAt: null,
   lifecycleState: "ACTIVE",
 });
@@ -23,7 +24,7 @@ function repository(overrides: Partial<IdentityRepository> = {}): IdentityReposi
 }
 
 describe("Identity lookup capability", () => {
-  it("returns a principal by id", async () => {
+  it("returns a principal by id including its canonical establishment time", async () => {
     const identity = createIdentityLookupCapability(repository());
     await expect(identity.findById(" user-1 ")).resolves.toEqual({
       status: "FOUND",
@@ -35,9 +36,7 @@ describe("Identity lookup capability", () => {
     const identity = createIdentityLookupCapability(
       repository({ findById: async () => null }),
     );
-    await expect(identity.findById("missing")).resolves.toEqual({
-      status: "NOT_FOUND",
-    });
+    await expect(identity.findById("missing")).resolves.toEqual({ status: "NOT_FOUND" });
   });
 
   it("rejects blank identifiers without calling persistence", async () => {
@@ -50,7 +49,6 @@ describe("Identity lookup capability", () => {
         },
       }),
     );
-
     await expect(identity.findByEmail("   ")).resolves.toEqual({
       status: "FAILED",
       code: "INVALID_IDENTIFIER",
@@ -66,7 +64,6 @@ describe("Identity lookup capability", () => {
         },
       }),
     );
-
     await expect(identity.findById("user-1")).resolves.toEqual({
       status: "FAILED",
       code: "PERSISTENCE_UNAVAILABLE",
