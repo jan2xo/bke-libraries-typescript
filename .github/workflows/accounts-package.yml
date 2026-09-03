@@ -40,7 +40,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/accounts --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-accounts-0.1.0.tgz"
+          test "$artifact" = "bke-accounts-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "ACCOUNTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -131,10 +131,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-accounts-0.1.0
+          name: bke-accounts-0.2.0
           path: |
-            artifacts/bke-accounts-0.1.0.tgz
-            artifacts/bke-accounts-0.1.0.tgz.sha256
+            artifacts/bke-accounts-0.2.0.tgz
+            artifacts/bke-accounts-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
 
