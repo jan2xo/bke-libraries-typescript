@@ -36,11 +36,18 @@ export function calculateCommerceOrderLineTotal(input: {
 export function calculateCommerceInvoicePresentationLineTotal(input: {
   readonly quantity: number;
   readonly unitAmountMinor: number;
+  readonly totalMinor: number;
 }): number | null {
   if (!Number.isSafeInteger(input.quantity) || input.quantity <= 0) return null;
-  if (!Number.isSafeInteger(input.unitAmountMinor)) return null;
-  const total = input.quantity * input.unitAmountMinor;
-  return Number.isSafeInteger(total) ? total : null;
+  if (!Number.isSafeInteger(input.unitAmountMinor) || !Number.isSafeInteger(input.totalMinor)) return null;
+  const gross = input.quantity * input.unitAmountMinor;
+  if (!Number.isSafeInteger(gross)) return null;
+  if (input.unitAmountMinor >= 0) {
+    if (input.totalMinor < 0 || input.totalMinor > gross) return null;
+  } else if (input.totalMinor > 0 || input.totalMinor < gross) {
+    return null;
+  }
+  return input.totalMinor;
 }
 
 export function calculateCommerceOrderTotals(input: CommerceCreateOrderInvoiceInput): {
