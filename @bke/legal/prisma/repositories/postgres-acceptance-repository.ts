@@ -9,17 +9,23 @@ import type {
 } from "../../contracts/acceptance.contract";
 import type { LegalAcceptanceRepository } from "../../logic/acceptance-repository";
 
+function optionalString(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
 function snapshot(row: Record<string, unknown>): LegalAcceptanceSnapshot {
   return {
     acceptanceId: String(row.id),
     principalId: String(row.principalId),
-    customerAccountId: row.customerAccountId === null ? null : String(row.customerAccountId),
+    customerAccountId: optionalString(row.customerAccountId),
     documentId: String(row.documentId),
     documentVersionId: String(row.documentVersionId),
     acceptanceContext: String(row.acceptanceContext),
     slaVersion: String(row.slaVersion),
     renderedContentSha256: String(row.renderedContentSha256),
     variablesSnapshot: row.variablesSnapshot,
+    ipAddress: optionalString(row.ipAddress),
+    userAgent: optionalString(row.userAgent),
     acceptedAt: row.acceptedAt instanceof Date ? row.acceptedAt : new Date(String(row.acceptedAt)),
   };
 }
@@ -54,8 +60,9 @@ export function createPostgresLegalAcceptanceRepository(
         const result = await client.query(
           `INSERT INTO "LegalAcceptance" (
              "id", "principalId", "customerAccountId", "documentId", "documentVersionId",
-             "acceptanceContext", "slaVersion", "renderedContentSha256", "variablesSnapshot"
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+             "acceptanceContext", "slaVersion", "renderedContentSha256", "variablesSnapshot",
+             "ipAddress", "userAgent"
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)
            RETURNING *`,
           [
             randomUUID(),
@@ -67,6 +74,8 @@ export function createPostgresLegalAcceptanceRepository(
             input.slaVersion,
             input.renderedContentSha256,
             JSON.stringify(input.variablesSnapshot ?? null),
+            input.ipAddress ?? null,
+            input.userAgent ?? null,
           ],
         );
         return { status: "RECORDED", value: snapshot(result.rows[0] as Record<string, unknown>) };
