@@ -3,12 +3,28 @@ import { Client } from "pg";
 import type {
   CommerceCreateOrderInvoiceInput,
   CommerceCreateOrderInvoiceResult,
+  CommerceInvoicePresentationInput,
 } from "../../contracts/order-invoice-creation.contract";
-import { calculateCommerceOrderLineTotal, calculateCommerceOrderTotals } from "../../logic/order-invoice-creation";
+import {
+  calculateCommerceInvoicePresentationLineTotal,
+  calculateCommerceOrderLineTotal,
+  calculateCommerceOrderTotals,
+} from "../../logic/order-invoice-creation";
 import type { CommerceOrderInvoiceCreationRepository } from "../../logic/order-invoice-creation-repository";
 
 function json(value: unknown): string {
   return JSON.stringify(value ?? null);
+}
+
+function defaultInvoicePresentation(input: CommerceCreateOrderInvoiceInput, subtotalMinor: number): CommerceInvoicePresentationInput {
+  return {
+    subtotalMinor,
+    lines: input.lines.map((line) => ({
+      description: line.description,
+      quantity: line.quantity,
+      unitAmountMinor: line.unitAmountMinor - Math.trunc((line.offerDiscountMinor ?? 0) / line.quantity),
+    })),
+  };
 }
 
 export function createPostgresCommerceOrderInvoiceCreationRepository(
@@ -25,6 +41,7 @@ export function createPostgresCommerceOrderInvoiceCreationRepository(
       if (!totals) {
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
+      const invoicePresentation = input.invoicePresentation ?? defaultInvoicePresentation(input, totals.subtotalMinor);
 
       const client = new Client({ connectionString: normalizedConnectionString });
       await client.connect();
@@ -101,14 +118,15 @@ export function createPostgresCommerceOrderInvoiceCreationRepository(
             orderId,
             json(input.customerSnapshot),
             input.currency,
-            totals.subtotalMinor,
+            invoicePresentation.subtotalMinor,
             input.taxMinor,
             totals.totalMinor,
           ],
         );
 
-        for (const line of input.lines) {
-          const lineTotal = calculateCommerceOrderLineTotal(line)!;
+        for (const line of invoicePresentation.lines) {
+          const lineTotal = calculateCommerceInvoicePresentationLineTotal(line);
+          if (lineTotal === null) throw new Error("Invalid Commerce invoice presentation line total.");
           await client.query(
             `INSERT INTO "InvoiceLine"
                ("id", "invoiceId", "description", "quantity", "unitAmountMinor", "totalMinor")
