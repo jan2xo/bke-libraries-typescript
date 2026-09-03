@@ -28,6 +28,17 @@ export interface CommerceOrderInvoiceLineInput {
   readonly pricingVersion?: string | null;
 }
 
+export interface CommerceInvoicePresentationLineInput {
+  readonly description: string;
+  readonly quantity: number;
+  readonly unitAmountMinor: number;
+}
+
+export interface CommerceInvoicePresentationInput {
+  readonly subtotalMinor: number;
+  readonly lines: readonly CommerceInvoicePresentationLineInput[];
+}
+
 export interface CommerceCreateOrderInvoiceInput {
   readonly accountId: string;
   readonly orderNumber: string;
@@ -37,6 +48,7 @@ export interface CommerceCreateOrderInvoiceInput {
   readonly billingSnapshot: unknown;
   readonly customerSnapshot: unknown;
   readonly lines: readonly CommerceOrderInvoiceLineInput[];
+  readonly invoicePresentation?: CommerceInvoicePresentationInput | null;
 }
 
 export interface CommerceOrderInvoiceSnapshot {
