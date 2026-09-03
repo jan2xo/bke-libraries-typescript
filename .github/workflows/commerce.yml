@@ -1,0 +1,81 @@
+name: BKE Library - Commerce
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/commerce/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/commerce.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  commerce:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_commerce_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_commerce_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_commerce_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Prove source migration byte identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://raw.githubusercontent.com/jan2xo/bke-digital-solutions/584804d30a74149147b21e1cfa114216eb0f147a/v2/modules/commerce/prisma/migrations
+          for migration in \
+            0001_commerce_purchase_plan_baseline \
+            0002_commerce_offers_redemptions \
+            0003_commerce_orders_invoices; do
+            curl -fL --retry 3 --retry-all-errors -o "/tmp/${migration}.sql" "$base/$migration/migration.sql"
+            cmp "/tmp/${migration}.sql" "@bke/commerce/migrations/$migration/migration.sql"
+          done
+      - name: Certify Commerce extraction boundary
+        run: npx tsx @bke/commerce/tests/extraction.certify.ts
+      - name: Typecheck Commerce
+        run: npm run typecheck --workspace=@bke/commerce
+      - name: Validate Commerce Prisma schema
+        run: npm run prisma:validate --workspace=@bke/commerce
+      - name: Apply Commerce migrations
+        run: npm run prisma:deploy --workspace=@bke/commerce
+      - name: Prove Commerce migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/commerce
+      - name: Test Commerce logic
+        run: npm run test --workspace=@bke/commerce
+      - name: Certify Commerce purchase-plan lookup with PostgreSQL
+        run: npx tsx @bke/commerce/tests/purchase-plan-lookup.postgres.certify.ts
+      - name: Certify Commerce offer redemption with PostgreSQL
+        run: npx tsx @bke/commerce/tests/offer-redemption.postgres.certify.ts
+      - name: Certify Commerce order/invoice creation with PostgreSQL
+        run: npx tsx @bke/commerce/tests/order-invoice-creation.postgres.certify.ts
