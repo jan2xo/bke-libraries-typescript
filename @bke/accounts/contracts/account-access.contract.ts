@@ -34,7 +34,7 @@ export type AccountsAccountAccessResult =
     }
   | {
       readonly status: "REJECTED";
-      readonly code: "NOT_FOUND" | "ACCOUNT_ROLE_FORBIDDEN" | "ACCOUNT_NOT_ACTIVE";
+      readonly code: "NOT_FOUND" | "ACCOUNT_ROLE_FORBIDDEN";
     }
   | {
       readonly status: "FAILED";
