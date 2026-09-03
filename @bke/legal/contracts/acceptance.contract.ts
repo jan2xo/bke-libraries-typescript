@@ -9,6 +9,8 @@ export interface LegalRecordAcceptanceInput {
   readonly slaVersion: string;
   readonly renderedContentSha256: string;
   readonly variablesSnapshot: unknown;
+  readonly ipAddress?: string | null;
+  readonly userAgent?: string | null;
 }
 
 export interface LegalCheckAcceptanceInput {
@@ -31,6 +33,8 @@ export interface LegalAcceptanceSnapshot {
   readonly slaVersion: string;
   readonly renderedContentSha256: string;
   readonly variablesSnapshot: unknown;
+  readonly ipAddress: string | null;
+  readonly userAgent: string | null;
   readonly acceptedAt: Date;
 }
 
