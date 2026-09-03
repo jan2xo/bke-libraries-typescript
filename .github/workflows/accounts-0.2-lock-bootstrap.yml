@@ -1,6 +1,10 @@
 name: Accounts 0.2 Lock Bootstrap
 
 on:
+  push:
+    branches: [feat/accounts-purchase-lifecycle-0.2.0]
+    paths:
+      - ".github/workflows/accounts-0.2-lock-bootstrap.yml"
   workflow_dispatch:
 
 permissions:
