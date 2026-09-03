@@ -1,6 +1,9 @@
 import { Client } from "pg";
 import type { LegalDocumentType } from "../../contracts/checkout-requirements.contract";
-import type { LegalPendingReacceptanceSnapshot } from "../../contracts/reacceptance-status.contract";
+import type {
+  LegalPendingReacceptanceSnapshot,
+  LegalReacceptanceStatusInput,
+} from "../../contracts/reacceptance-status.contract";
 import type { LegalReacceptanceStatusRepository } from "../../logic/reacceptance-status-repository";
 
 function snapshot(row: Record<string, unknown>): LegalPendingReacceptanceSnapshot {
@@ -22,7 +25,7 @@ export function createPostgresLegalReacceptanceStatusRepository(
   if (!normalizedConnectionString) throw new Error("Legal PostgreSQL connection string is required.");
 
   return Object.freeze({
-    async findPending(input) {
+    async findPending(input: LegalReacceptanceStatusInput) {
       const client = new Client({ connectionString: normalizedConnectionString });
       await client.connect();
       try {
