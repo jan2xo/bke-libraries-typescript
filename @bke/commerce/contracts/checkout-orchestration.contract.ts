@@ -2,6 +2,7 @@ import type {
   CommerceCreateOrderInvoiceInput,
   CommerceOrderInvoiceSnapshot,
 } from "./order-invoice-creation.contract";
+import type { CommerceZeroPaymentFulfillmentSnapshot } from "./zero-payment-fulfillment.contract";
 
 export const COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID =
   "bke.commerce.checkout-orchestration.v1" as const;
@@ -31,7 +32,7 @@ export interface CommerceCheckoutPaymentSnapshot {
 export interface CommerceStartCheckoutInput {
   readonly principalId: string;
   readonly accountId: string;
-  readonly legal: CommerceCheckoutLegalRequirementInput;
+  readonly legal: readonly CommerceCheckoutLegalRequirementInput[];
   readonly order: CommerceCreateOrderInvoiceInput;
   readonly paymentSourceReference: string;
   readonly payer: CommerceCheckoutPayerInput;
@@ -46,6 +47,7 @@ export type CommerceStartCheckoutResult =
   | {
       readonly status: "PAYMENT_NOT_REQUIRED";
       readonly order: CommerceOrderInvoiceSnapshot;
+      readonly fulfillment: CommerceZeroPaymentFulfillmentSnapshot;
     }
   | {
       readonly status: "REJECTED";
@@ -53,6 +55,7 @@ export type CommerceStartCheckoutResult =
         | "ACCOUNT_FORBIDDEN"
         | "LEGAL_NOT_ACCEPTED"
         | "ORDER_CONFLICT"
+        | "ENTITLEMENT_CONFLICT"
         | "PAYMENT_SOURCE_CONFLICT";
     }
   | {
@@ -62,6 +65,7 @@ export type CommerceStartCheckoutResult =
         | "ACCOUNT_UNAVAILABLE"
         | "LEGAL_UNAVAILABLE"
         | "COMMERCE_PERSISTENCE_UNAVAILABLE"
+        | "ENTITLEMENTS_UNAVAILABLE"
         | "PAYMENTS_UNAVAILABLE"
         | "PAYMENT_PROVIDER_UNAVAILABLE"
         | "PAYMENT_PROVIDER_REJECTED";

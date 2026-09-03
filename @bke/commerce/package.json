@@ -1,7 +1,7 @@
 {
   "name": "@bke/commerce",
-  "version": "0.1.0",
-  "description": "Reusable BKE commercial pricing, offers, orders, invoices, checkout orchestration, and settlement reaction capabilities",
+  "version": "0.2.0",
+  "description": "Reusable BKE commercial pricing, offers, orders, invoices, checkout orchestration, zero-payment fulfillment, and settlement reaction capabilities",
   "type": "module",
   "engines": { "node": ">=22.12.0" },
   "files": ["contracts", "logic", "prisma", "migrations", "docs", "module.manifest.ts", "prisma.config.ts", "README.md"],

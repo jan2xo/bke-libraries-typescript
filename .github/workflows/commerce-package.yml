@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/commerce --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-commerce-0.1.0.tgz"
+          test "$artifact" = "bke-commerce-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "COMMERCE_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -57,17 +57,21 @@ jobs:
             package/contracts/order-invoice-creation.contract.ts \
             package/contracts/checkout-orchestration.contract.ts \
             package/contracts/settlement-reaction.contract.ts \
+            package/contracts/zero-payment-fulfillment.contract.ts \
             package/logic/purchase-plan-pricing.ts \
             package/logic/purchase-plan-lookup.ts \
             package/logic/offer-redemption.ts \
             package/logic/order-invoice-creation.ts \
             package/logic/checkout-orchestration.ts \
             package/logic/settlement-reaction.ts \
+            package/logic/zero-payment-fulfillment.ts \
+            package/logic/zero-payment-fulfillment-repository.ts \
             package/prisma/schema.prisma \
             package/prisma/repositories/postgres-purchase-plan-lookup-repository.ts \
             package/prisma/repositories/postgres-offer-redemption-repository.ts \
             package/prisma/repositories/postgres-order-invoice-creation-repository.ts \
             package/prisma/repositories/postgres-settlement-reaction-repository.ts \
+            package/prisma/repositories/postgres-zero-payment-fulfillment-repository.ts \
             package/migrations/0001_commerce_purchase_plan_baseline/migration.sql \
             package/migrations/0002_commerce_offers_redemptions/migration.sql \
             package/migrations/0003_commerce_orders_invoices/migration.sql; do
@@ -118,17 +122,20 @@ jobs:
           import { COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID } from "@bke/commerce/contracts/order-invoice-creation.contract";
           import { COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID } from "@bke/commerce/contracts/checkout-orchestration.contract";
           import { COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID } from "@bke/commerce/contracts/settlement-reaction.contract";
+          import { COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID } from "@bke/commerce/contracts/zero-payment-fulfillment.contract";
           import { createCommercePurchasePlanPricingCapability } from "@bke/commerce/logic/purchase-plan-pricing";
           import { createCommercePurchasePlanLookupCapability } from "@bke/commerce/logic/purchase-plan-lookup";
           import { createCommerceOfferRedemptionCapability } from "@bke/commerce/logic/offer-redemption";
           import { createCommerceOrderInvoiceCreationCapability } from "@bke/commerce/logic/order-invoice-creation";
           import { createCommerceCheckoutOrchestrationCapability } from "@bke/commerce/logic/checkout-orchestration";
           import { createCommerceSettlementReactionCapability } from "@bke/commerce/logic/settlement-reaction";
+          import { createCommerceZeroPaymentFulfillmentCapability } from "@bke/commerce/logic/zero-payment-fulfillment";
           import { createPostgresCommercePurchasePlanLookupRepository } from "@bke/commerce/prisma/repositories/postgres-purchase-plan-lookup-repository";
+          import { createPostgresCommerceZeroPaymentFulfillmentRepository } from "@bke/commerce/prisma/repositories/postgres-zero-payment-fulfillment-repository";
           import { commerceModuleManifest } from "@bke/commerce/module.manifest";
-          const ids = [COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID, COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID, COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID, COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID, COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID, COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID];
-          if (ids.length !== 6 || commerceModuleManifest.moduleId !== "commerce" || commerceModuleManifest.needs.length !== 0) throw new Error("Unexpected Commerce package identity.");
-          for (const value of [createCommercePurchasePlanPricingCapability, createCommercePurchasePlanLookupCapability, createCommerceOfferRedemptionCapability, createCommerceOrderInvoiceCreationCapability, createCommerceCheckoutOrchestrationCapability, createCommerceSettlementReactionCapability, createPostgresCommercePurchasePlanLookupRepository]) {
+          const ids = [COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID, COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID, COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID, COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID, COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID, COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID, COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID];
+          if (ids.length !== 7 || commerceModuleManifest.moduleId !== "commerce" || commerceModuleManifest.needs.length !== 0) throw new Error("Unexpected Commerce package identity.");
+          for (const value of [createCommercePurchasePlanPricingCapability, createCommercePurchasePlanLookupCapability, createCommerceOfferRedemptionCapability, createCommerceOrderInvoiceCreationCapability, createCommerceCheckoutOrchestrationCapability, createCommerceSettlementReactionCapability, createCommerceZeroPaymentFulfillmentCapability, createPostgresCommercePurchasePlanLookupRepository, createPostgresCommerceZeroPaymentFulfillmentRepository]) {
             if (typeof value !== "function") throw new Error("Packed Commerce consumer exports are incomplete.");
           }
           console.log("Packed @bke/commerce consumer smoke GREEN");
@@ -139,10 +146,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-commerce-0.1.0
+          name: bke-commerce-0.2.0
           path: |
-            artifacts/bke-commerce-0.1.0.tgz
-            artifacts/bke-commerce-0.1.0.tgz.sha256
+            artifacts/bke-commerce-0.2.0.tgz
+            artifacts/bke-commerce-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Commerce release
@@ -170,4 +177,4 @@ jobs:
             "artifacts/$COMMERCE_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/commerce v${version}" \
-            --notes "Certified BKE Commerce package artifact. Pricing, purchase-plan lookup, offers, order/invoice creation, checkout orchestration, settlement reaction, and Commerce-owned PostgreSQL persistence passed source, behavior, persistence, and package gates before release creation."
+            --notes "Certified BKE Commerce package artifact. Pricing, purchase-plan lookup, offers, order/invoice creation, multi-document checkout orchestration, zero-payment fulfillment, settlement reaction, and Commerce-owned PostgreSQL persistence passed source, behavior, persistence, and package gates before release creation."

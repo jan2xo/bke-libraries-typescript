@@ -79,3 +79,5 @@ jobs:
         run: npx tsx @bke/commerce/tests/offer-redemption.postgres.certify.ts
       - name: Certify Commerce order/invoice creation with PostgreSQL
         run: npx tsx @bke/commerce/tests/order-invoice-creation.postgres.certify.ts
+      - name: Certify Commerce zero-payment fulfillment with PostgreSQL
+        run: npx tsx @bke/commerce/tests/zero-payment-fulfillment.postgres.certify.ts
