@@ -90,6 +90,21 @@ try {
   await client.query(
     `UPDATE "CustomerAccount" SET "lifecycleState" = 'SUSPENDED' WHERE "id" = 'accounts-access-cert'`,
   );
+
+  const suspendedPurchase = await capability.authorize({
+    principalId: "billing-cert",
+    accountId: "accounts-access-cert",
+    requiredCapability: "PURCHASE",
+  });
+  if (
+    suspendedPurchase.status !== "REJECTED" ||
+    suspendedPurchase.code !== "ACCOUNT_NOT_ACTIVE"
+  ) {
+    throw new Error(
+      `Suspended account PURCHASE must be rejected: ${JSON.stringify(suspendedPurchase)}`,
+    );
+  }
+
   const suspendedOwner = await capability.authorize({
     principalId: "owner-cert",
     accountId: "accounts-access-cert",
@@ -97,7 +112,7 @@ try {
   });
   if (suspendedOwner.status !== "AUTHORIZED") {
     throw new Error(
-      `Generic account access must preserve V1 behavior and not impose lifecycle mutability rules: ${JSON.stringify(suspendedOwner)}`,
+      `Non-purchase account access must remain available when role policy permits it: ${JSON.stringify(suspendedOwner)}`,
     );
   }
 
