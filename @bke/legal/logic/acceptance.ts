@@ -50,11 +50,20 @@ export function createLegalAcceptanceCapability(
 ): LegalAcceptanceCapability {
   return Object.freeze({
     async record(input: LegalRecordAcceptanceInput): Promise<LegalRecordAcceptanceResult> {
-      if (!validCommon(input) || input.variablesSnapshot === undefined) {
+      if (
+        !validCommon(input) ||
+        input.variablesSnapshot === undefined ||
+        !validOptionalText(input.ipAddress, 128) ||
+        !validOptionalText(input.userAgent, 500)
+      ) {
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
       try {
-        return await repository.record(normalize(input));
+        return await repository.record({
+          ...normalize(input),
+          ipAddress: input.ipAddress?.trim() || null,
+          userAgent: input.userAgent?.trim() || null,
+        });
       } catch {
         return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
       }
