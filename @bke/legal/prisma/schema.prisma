@@ -15,7 +15,7 @@ model LegalDocument {
 }
 
 model LegalDocumentVersion {
-  id                    String          @id
+  id                    String            @id
   documentId            String
   version               String
   name                  String?
@@ -23,13 +23,14 @@ model LegalDocumentVersion {
   markdownContent       String
   sha256                String
   slaVersion            String
-  status                String          @default("DRAFT")
-  requiresReacceptance  Boolean         @default(false)
+  status                String            @default("DRAFT")
+  requiresReacceptance  Boolean           @default(false)
   publishedAt           DateTime?
   createdById           String
-  createdAt             DateTime        @default(now())
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
   acceptances           LegalAcceptance[]
-  currentForDocuments   LegalDocument[] @relation("CurrentPublishedLegalVersion")
+  currentForDocuments   LegalDocument[]   @relation("CurrentPublishedLegalVersion")
 
   @@unique([documentId, version])
   @@index([documentId, createdAt])
@@ -46,6 +47,8 @@ model LegalAcceptance {
   slaVersion            String
   renderedContentSha256 String
   variablesSnapshot     Json
+  ipAddress             String?
+  userAgent             String?
   acceptedAt            DateTime             @default(now())
   documentVersion       LegalDocumentVersion @relation(fields: [documentVersionId], references: [id], onDelete: Restrict)
 

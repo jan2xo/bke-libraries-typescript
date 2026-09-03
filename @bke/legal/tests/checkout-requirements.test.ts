@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type {
-  LegalCheckoutRequirementSnapshot,
-  LegalDocumentType,
-} from "../contracts/checkout-requirements.contract";
+import type { LegalDocumentType } from "../contracts/checkout-requirements.contract";
 import { createLegalCheckoutRequirementsCapability } from "../logic/checkout-requirements";
-import type { LegalCheckoutRequirementsRepository } from "../logic/checkout-requirements-repository";
+import type {
+  LegalCheckoutRequirementSource,
+  LegalCheckoutRequirementsRepository,
+} from "../logic/checkout-requirements-repository";
+import { legalRenderedContentSha256 } from "../logic/render";
 
-function requirement(type: LegalDocumentType, index: number): LegalCheckoutRequirementSnapshot {
+function requirement(type: LegalDocumentType, index: number): LegalCheckoutRequirementSource {
   return {
     documentId: `doc-${index}`,
     documentType: type,
@@ -15,7 +16,8 @@ function requirement(type: LegalDocumentType, index: number): LegalCheckoutRequi
     documentVersionId: `version-${index}`,
     version: "1.0",
     slaVersion: "1.0",
-    renderedContentSha256: `${index}`.repeat(64).slice(0, 64),
+    publishedContentSha256: `${index}`.repeat(64).slice(0, 64),
+    markdownContent: `# ${type}\nCompany {{company_name}}`,
     requiresReacceptance: false,
   };
 }
@@ -61,12 +63,22 @@ describe("Legal checkout requirements", () => {
     expect(result).toEqual({ status: "REJECTED", code: "LEGAL_ACCEPTANCE_REQUIRED" });
   });
 
-  it("accepts the exact canonical version set regardless of client ordering", async () => {
+  it("renders canonical acceptance evidence from supplied variables", async () => {
     const capability = createLegalCheckoutRequirementsCapability(repository());
     const result = await capability.resolve({
-      planType: "MONTHLY",
-      selectedVersionIds: ["version-3", "version-1", "version-2"],
+      planType: "PERPETUAL",
+      selectedVersionIds: ["version-2", "version-1"],
+      variables: { company_name: "BKE Digital Solutions" },
     });
     expect(result.status).toBe("RESOLVED");
+    if (result.status !== "RESOLVED") return;
+    const first = result.requirements[0]!;
+    expect(first.variablesSnapshot).toEqual({ company_name: "BKE Digital Solutions" });
+    expect(first.renderedContentSha256).toBe(
+      legalRenderedContentSha256(
+        "# SOFTWARE_LICENSE_AGREEMENT\nCompany {{company_name}}",
+        { company_name: "BKE Digital Solutions" },
+      ),
+    );
   });
 });

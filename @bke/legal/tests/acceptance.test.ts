@@ -19,7 +19,9 @@ function input(): LegalRecordAcceptanceInput {
     acceptanceContext: " checkout ",
     slaVersion: " sla-v1 ",
     renderedContentSha256: sha,
-    variablesSnapshot: { company: "BKE" },
+    variablesSnapshot: { company_name: "BKE" },
+    ipAddress: " 127.0.0.1 ",
+    userAgent: " BKE-Certifier/1.0 ",
   };
 }
 
@@ -38,6 +40,8 @@ function repository(overrides: Partial<LegalAcceptanceRepository> = {}): LegalAc
           slaVersion: value.slaVersion,
           renderedContentSha256: value.renderedContentSha256,
           variablesSnapshot: value.variablesSnapshot,
+          ipAddress: value.ipAddress ?? null,
+          userAgent: value.userAgent ?? null,
           acceptedAt: new Date("2026-09-02T00:00:00Z"),
         },
       };
@@ -50,7 +54,7 @@ function repository(overrides: Partial<LegalAcceptanceRepository> = {}): LegalAc
 }
 
 describe("Legal acceptance", () => {
-  it("normalizes opaque IDs, context, SLA version, and rendered hash before recording", async () => {
+  it("normalizes acceptance identity and request evidence before recording", async () => {
     let seen: LegalRecordAcceptanceInput | undefined;
     const capability = createLegalAcceptanceCapability(repository({
       async record(value) {
@@ -69,10 +73,12 @@ describe("Legal acceptance", () => {
       acceptanceContext: "checkout",
       slaVersion: "sla-v1",
       renderedContentSha256: "a".repeat(64),
+      ipAddress: "127.0.0.1",
+      userAgent: "BKE-Certifier/1.0",
     });
   });
 
-  it("rejects malformed evidence before persistence", async () => {
+  it("rejects malformed hashes and oversized request evidence before persistence", async () => {
     let called = false;
     const capability = createLegalAcceptanceCapability(repository({
       async record(value) {
@@ -80,8 +86,14 @@ describe("Legal acceptance", () => {
         return repository().record(value);
       },
     }));
-    const result = await capability.record({ ...input(), renderedContentSha256: "not-a-sha" });
-    expect(result).toEqual({ status: "FAILED", code: "INVALID_INPUT" });
+    expect(await capability.record({ ...input(), renderedContentSha256: "not-a-sha" })).toEqual({
+      status: "FAILED",
+      code: "INVALID_INPUT",
+    });
+    expect(await capability.record({ ...input(), userAgent: "x".repeat(501) })).toEqual({
+      status: "FAILED",
+      code: "INVALID_INPUT",
+    });
     expect(called).toBe(false);
   });
 

@@ -8,6 +8,7 @@ import type {
   LegalRecordAcceptanceResult,
 } from "../../contracts/acceptance.contract";
 import type { LegalAcceptanceRepository } from "../../logic/acceptance-repository";
+import { legalRenderedContentSha256, normalizeLegalVariables } from "../../logic/render";
 
 function snapshot(row: Record<string, unknown>): LegalAcceptanceSnapshot {
   return {
@@ -20,6 +21,8 @@ function snapshot(row: Record<string, unknown>): LegalAcceptanceSnapshot {
     slaVersion: String(row.slaVersion),
     renderedContentSha256: String(row.renderedContentSha256),
     variablesSnapshot: row.variablesSnapshot,
+    ipAddress: row.ipAddress === null ? null : String(row.ipAddress),
+    userAgent: row.userAgent === null ? null : String(row.userAgent),
     acceptedAt: row.acceptedAt instanceof Date ? row.acceptedAt : new Date(String(row.acceptedAt)),
   };
 }
@@ -36,17 +39,19 @@ export function createPostgresLegalAcceptanceRepository(
       await client.connect();
       try {
         const version = await client.query(
-          `SELECT "documentId", "slaVersion", "sha256"
+          `SELECT "documentId", "slaVersion", "markdownContent"
              FROM "LegalDocumentVersion"
             WHERE "id" = $1`,
           [input.documentVersionId],
         );
         if (!version.rowCount) return { status: "REJECTED", code: "DOCUMENT_VERSION_NOT_FOUND" };
-        const target = version.rows[0] as { documentId: string; slaVersion: string; sha256: string };
+        const target = version.rows[0] as { documentId: string; slaVersion: string; markdownContent: string };
+        const variables = normalizeLegalVariables(input.variablesSnapshot);
         if (
           target.documentId !== input.documentId ||
           target.slaVersion !== input.slaVersion ||
-          target.sha256 !== input.renderedContentSha256
+          variables === null ||
+          legalRenderedContentSha256(target.markdownContent, variables) !== input.renderedContentSha256
         ) {
           return { status: "REJECTED", code: "DOCUMENT_VERSION_MISMATCH" };
         }
@@ -54,8 +59,9 @@ export function createPostgresLegalAcceptanceRepository(
         const result = await client.query(
           `INSERT INTO "LegalAcceptance" (
              "id", "principalId", "customerAccountId", "documentId", "documentVersionId",
-             "acceptanceContext", "slaVersion", "renderedContentSha256", "variablesSnapshot"
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+             "acceptanceContext", "slaVersion", "renderedContentSha256", "variablesSnapshot",
+             "ipAddress", "userAgent"
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)
            RETURNING *`,
           [
             randomUUID(),
@@ -66,7 +72,9 @@ export function createPostgresLegalAcceptanceRepository(
             input.acceptanceContext,
             input.slaVersion,
             input.renderedContentSha256,
-            JSON.stringify(input.variablesSnapshot ?? null),
+            JSON.stringify(variables),
+            input.ipAddress ?? null,
+            input.userAgent ?? null,
           ],
         );
         return { status: "RECORDED", value: snapshot(result.rows[0] as Record<string, unknown>) };

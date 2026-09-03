@@ -74,3 +74,5 @@ jobs:
         run: npx tsx @bke/legal/tests/acceptance.postgres.certify.ts
       - name: Certify Legal checkout requirements PostgreSQL behavior
         run: npx tsx @bke/legal/tests/checkout-requirements.postgres.certify.ts
+      - name: Certify Legal reacceptance PostgreSQL behavior
+        run: npx tsx @bke/legal/tests/reacceptance-status.postgres.certify.ts
