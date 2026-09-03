@@ -5,10 +5,15 @@ if (!connectionString) throw new Error("DATABASE_URL is required for Legal isola
 
 const expectedTables = new Set([
   "LegalAcceptance",
+  "LegalDocument",
   "LegalDocumentVersion",
   "_prisma_migrations",
 ]);
-const legalBusinessTables = new Set(["LegalAcceptance", "LegalDocumentVersion"]);
+const legalBusinessTables = new Set([
+  "LegalAcceptance",
+  "LegalDocument",
+  "LegalDocumentVersion",
+]);
 
 const client = new Client({ connectionString });
 await client.connect();
@@ -54,7 +59,7 @@ try {
   }
 
   console.log(
-    "Legal persistence isolation GREEN: two owned business tables, internal-only foreign keys, no owned enums, and no foreign-domain tables",
+    "Legal persistence isolation GREEN: three owned business tables, internal-only foreign keys, no owned enums, and no foreign-domain tables",
   );
 } finally {
   await client.end();
