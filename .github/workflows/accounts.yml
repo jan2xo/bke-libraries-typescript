@@ -95,6 +95,7 @@ jobs:
           files=(
             individual-account-creation.postgres.certify.ts
             account-access.postgres.certify.ts
+            purchase-access.postgres.certify.ts
             switchable-account-list.postgres.certify.ts
             organization-account-creation.postgres.certify.ts
             organization-profile-update.postgres.certify.ts

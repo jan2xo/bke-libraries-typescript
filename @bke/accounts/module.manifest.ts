@@ -14,6 +14,7 @@ import { ACCOUNTS_ORGANIZATION_CLOSE_CAPABILITY_ID } from "./contracts/organizat
 import { ACCOUNTS_ORGANIZATION_DETAIL_CAPABILITY_ID } from "./contracts/organization-detail.contract";
 import { ACCOUNTS_ORGANIZATION_PROFILE_UPDATE_CAPABILITY_ID } from "./contracts/organization-profile-update.contract";
 import { ACCOUNTS_OWNERSHIP_TRANSFER_CAPABILITY_ID } from "./contracts/ownership-transfer.contract";
+import { ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID } from "./contracts/purchase-access.contract";
 import { ACCOUNTS_SWITCHABLE_ACCOUNT_LIST_CAPABILITY_ID } from "./contracts/switchable-account-list.contract";
 import type { AccountsModuleManifest } from "./contracts/module.contract";
 
@@ -23,6 +24,7 @@ export const accountsModuleManifest = Object.freeze({
   provides: [
     ACCOUNTS_INDIVIDUAL_ACCOUNT_CREATION_CAPABILITY_ID,
     ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID,
+    ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID,
     ACCOUNTS_SWITCHABLE_ACCOUNT_LIST_CAPABILITY_ID,
     ACCOUNTS_ORGANIZATION_ACCOUNT_CREATION_CAPABILITY_ID,
     ACCOUNTS_ORGANIZATION_PROFILE_UPDATE_CAPABILITY_ID,

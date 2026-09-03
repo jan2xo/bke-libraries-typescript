@@ -40,7 +40,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/accounts --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-accounts-0.1.0.tgz"
+          test "$artifact" = "bke-accounts-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "ACCOUNTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -54,7 +54,9 @@ jobs:
           grep -Fx 'package/package.json' artifacts/package-contents.txt
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/account-access.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/purchase-access.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/account-access.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/purchase-access.ts' artifacts/package-contents.txt
           grep -Fx 'package/providers/crypto-accounts-id-provider.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-account-access-repository.ts' artifacts/package-contents.txt
@@ -103,7 +105,9 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import { ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID } from "@bke/accounts/contracts/account-access.contract";
+          import { ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID } from "@bke/accounts/contracts/purchase-access.contract";
           import { createAccountsAccountAccessCapability } from "@bke/accounts/logic/account-access";
+          import { createAccountsPurchaseAccessCapability } from "@bke/accounts/logic/purchase-access";
           import { createCryptoAccountsIdProvider } from "@bke/accounts/providers/crypto-accounts-id-provider";
           import { createPostgresAccountsAccountAccessRepository } from "@bke/accounts/prisma/repositories/postgres-account-access-repository";
           import { accountsModuleManifest } from "@bke/accounts/module.manifest";
@@ -111,11 +115,18 @@ jobs:
           if (ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID !== "bke.accounts.account-access.v1") {
             throw new Error("Unexpected Accounts account-access capability id from packed consumer surface.");
           }
+          if (ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID !== "bke.accounts.purchase-access.v1") {
+            throw new Error("Unexpected Accounts purchase-access capability id from packed consumer surface.");
+          }
           if (accountsModuleManifest.moduleId !== "accounts") {
             throw new Error("Unexpected Accounts manifest moduleId from packed consumer surface.");
           }
+          if (!accountsModuleManifest.provides.includes(ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID)) {
+            throw new Error("Accounts manifest does not publish purchase access.");
+          }
           if (
             typeof createAccountsAccountAccessCapability !== "function" ||
+            typeof createAccountsPurchaseAccessCapability !== "function" ||
             typeof createCryptoAccountsIdProvider !== "function" ||
             typeof createPostgresAccountsAccountAccessRepository !== "function"
           ) {
@@ -131,10 +142,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-accounts-0.1.0
+          name: bke-accounts-0.2.0
           path: |
-            artifacts/bke-accounts-0.1.0.tgz
-            artifacts/bke-accounts-0.1.0.tgz.sha256
+            artifacts/bke-accounts-0.2.0.tgz
+            artifacts/bke-accounts-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
 
