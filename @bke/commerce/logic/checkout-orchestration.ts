@@ -1,9 +1,11 @@
 import type {
+  CommerceCheckoutLegalRequirementInput,
   CommerceCheckoutOrchestrationCapability,
   CommerceStartCheckoutInput,
   CommerceStartCheckoutResult,
 } from "../contracts/checkout-orchestration.contract";
 import type { CommerceOrderInvoiceCreationCapability } from "../contracts/order-invoice-creation.contract";
+import type { CommerceZeroPaymentFulfillmentCapability } from "../contracts/zero-payment-fulfillment.contract";
 import type {
   CommerceAccountPurchaseAuthorizer,
   CommerceLegalAcceptanceChecker,
@@ -14,10 +16,28 @@ function validText(value: string): boolean {
   return value.trim().length > 0;
 }
 
+function validLegalRequirement(requirement: CommerceCheckoutLegalRequirementInput): boolean {
+  return (
+    validText(requirement.documentId) &&
+    validText(requirement.documentVersionId) &&
+    validText(requirement.acceptanceContext) &&
+    validText(requirement.slaVersion) &&
+    validText(requirement.renderedContentSha256)
+  );
+}
+
+function validLegalRequirements(requirements: readonly CommerceCheckoutLegalRequirementInput[]): boolean {
+  if (requirements.length === 0 || !requirements.every(validLegalRequirement)) return false;
+  const documentIds = new Set(requirements.map((requirement) => requirement.documentId));
+  const versionIds = new Set(requirements.map((requirement) => requirement.documentVersionId));
+  return documentIds.size === requirements.length && versionIds.size === requirements.length;
+}
+
 export function createCommerceCheckoutOrchestrationCapability(dependencies: {
   readonly accountAuthorizer: CommerceAccountPurchaseAuthorizer;
   readonly legalChecker: CommerceLegalAcceptanceChecker;
   readonly orderInvoiceCreation: CommerceOrderInvoiceCreationCapability;
+  readonly zeroPaymentFulfillment: CommerceZeroPaymentFulfillmentCapability;
   readonly paymentStarter: CommercePaymentCheckoutStarter;
 }): CommerceCheckoutOrchestrationCapability {
   return Object.freeze({
@@ -28,7 +48,8 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
         !validText(input.paymentSourceReference) ||
         !validText(input.payer.name) ||
         !validText(input.payer.email) ||
-        input.order.accountId !== input.accountId
+        input.order.accountId !== input.accountId ||
+        !validLegalRequirements(input.legal)
       ) {
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
@@ -44,16 +65,18 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
         return { status: "FAILED", code: "ACCOUNT_UNAVAILABLE" };
       }
 
-      const legal = await dependencies.legalChecker.check({
-        principalId: input.principalId,
-        accountId: input.accountId,
-        requirement: input.legal,
-      });
-      if (legal.status === "NOT_ACCEPTED") {
-        return { status: "REJECTED", code: "LEGAL_NOT_ACCEPTED" };
-      }
-      if (legal.status === "FAILED") {
-        return { status: "FAILED", code: "LEGAL_UNAVAILABLE" };
+      for (const requirement of input.legal) {
+        const legal = await dependencies.legalChecker.check({
+          principalId: input.principalId,
+          accountId: input.accountId,
+          requirement,
+        });
+        if (legal.status === "NOT_ACCEPTED") {
+          return { status: "REJECTED", code: "LEGAL_NOT_ACCEPTED" };
+        }
+        if (legal.status === "FAILED") {
+          return { status: "FAILED", code: "LEGAL_UNAVAILABLE" };
+        }
       }
 
       const created = await dependencies.orderInvoiceCreation.create(input.order);
@@ -71,7 +94,36 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
       }
 
       if (created.value.totalMinor === 0) {
-        return { status: "PAYMENT_NOT_REQUIRED", order: created.value };
+        const fulfillment = await dependencies.zeroPaymentFulfillment.fulfill({
+          orderId: created.value.orderId,
+          fulfilledAt: new Date(),
+        });
+        if (fulfillment.status === "REJECTED") {
+          return {
+            status: "REJECTED",
+            code:
+              fulfillment.code === "ENTITLEMENT_CONFLICT"
+                ? "ENTITLEMENT_CONFLICT"
+                : "ORDER_CONFLICT",
+          };
+        }
+        if (fulfillment.status === "FAILED") {
+          if (fulfillment.code === "INVALID_INPUT") {
+            return { status: "FAILED", code: "INVALID_INPUT" };
+          }
+          return {
+            status: "FAILED",
+            code:
+              fulfillment.code === "ENTITLEMENTS_UNAVAILABLE"
+                ? "ENTITLEMENTS_UNAVAILABLE"
+                : "COMMERCE_PERSISTENCE_UNAVAILABLE",
+          };
+        }
+        return {
+          status: "PAYMENT_NOT_REQUIRED",
+          order: created.value,
+          fulfillment: fulfillment.value,
+        };
       }
 
       const items = input.order.lines.map((line) => ({
