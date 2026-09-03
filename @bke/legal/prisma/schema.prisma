@@ -2,21 +2,38 @@ datasource db {
   provider = "postgresql"
 }
 
+model LegalDocument {
+  id                        String                @id
+  documentType              String                @unique
+  title                     String
+  slug                      String                @unique
+  status                    String                @default("ACTIVE")
+  currentPublishedVersionId String?
+  currentPublishedVersion   LegalDocumentVersion? @relation("CurrentPublishedLegalVersion", fields: [currentPublishedVersionId], references: [id], onDelete: Restrict)
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+}
+
 model LegalDocumentVersion {
-  id              String            @id
-  documentId      String
-  version         String
-  name            String?
-  slug            String?
-  markdownContent String
-  sha256          String
-  slaVersion      String
-  createdById     String
-  createdAt       DateTime          @default(now())
-  acceptances     LegalAcceptance[]
+  id                    String          @id
+  documentId            String
+  version               String
+  name                  String?
+  slug                  String?
+  markdownContent       String
+  sha256                String
+  slaVersion            String
+  status                String          @default("DRAFT")
+  requiresReacceptance  Boolean         @default(false)
+  publishedAt           DateTime?
+  createdById           String
+  createdAt             DateTime        @default(now())
+  acceptances           LegalAcceptance[]
+  currentForDocuments   LegalDocument[] @relation("CurrentPublishedLegalVersion")
 
   @@unique([documentId, version])
   @@index([documentId, createdAt])
+  @@index([status, publishedAt])
 }
 
 model LegalAcceptance {

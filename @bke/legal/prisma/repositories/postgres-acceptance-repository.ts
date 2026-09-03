@@ -28,9 +28,7 @@ export function createPostgresLegalAcceptanceRepository(
   connectionString: string,
 ): LegalAcceptanceRepository {
   const normalizedConnectionString = connectionString.trim();
-  if (!normalizedConnectionString) {
-    throw new Error("Legal PostgreSQL connection string is required.");
-  }
+  if (!normalizedConnectionString) throw new Error("Legal PostgreSQL connection string is required.");
 
   return Object.freeze({
     async record(input: LegalRecordAcceptanceInput): Promise<LegalRecordAcceptanceResult> {
@@ -38,16 +36,18 @@ export function createPostgresLegalAcceptanceRepository(
       await client.connect();
       try {
         const version = await client.query(
-          `SELECT "documentId", "slaVersion"
+          `SELECT "documentId", "slaVersion", "sha256"
              FROM "LegalDocumentVersion"
             WHERE "id" = $1`,
           [input.documentVersionId],
         );
-        if (!version.rowCount) {
-          return { status: "REJECTED", code: "DOCUMENT_VERSION_NOT_FOUND" };
-        }
-        const target = version.rows[0] as { documentId: string; slaVersion: string };
-        if (target.documentId !== input.documentId || target.slaVersion !== input.slaVersion) {
+        if (!version.rowCount) return { status: "REJECTED", code: "DOCUMENT_VERSION_NOT_FOUND" };
+        const target = version.rows[0] as { documentId: string; slaVersion: string; sha256: string };
+        if (
+          target.documentId !== input.documentId ||
+          target.slaVersion !== input.slaVersion ||
+          target.sha256 !== input.renderedContentSha256
+        ) {
           return { status: "REJECTED", code: "DOCUMENT_VERSION_MISMATCH" };
         }
 
