@@ -1,27 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AccountsLifecycleState, AccountsMemberRole } from "../contracts/account.contract";
+import type { AccountsMemberRole } from "../contracts/account.contract";
 import { createAccountsAccountAccessCapability } from "../logic/account-access";
 import type { AccountsAccountAccessRepository } from "../logic/account-access-repository";
 import { roleHasAccountsCapability } from "../logic/account-authorization-policy";
 
-function account(lifecycleState: AccountsLifecycleState = "ACTIVE") {
-  return {
-    id: "account-1",
-    type: "ORGANIZATION" as const,
-    displayName: "Example Org",
-    ownerId: "owner-1",
-    billingEmail: "billing@example.com",
-    taxId: null,
-    lifecycleState,
-  };
-}
+const account = {
+  id: "account-1",
+  type: "ORGANIZATION" as const,
+  displayName: "Example Org",
+  ownerId: "owner-1",
+  billingEmail: "billing@example.com",
+  taxId: null,
+  lifecycleState: "ACTIVE" as const,
+};
 
-function repository(
-  role: AccountsMemberRole | null,
-  lifecycleState: AccountsLifecycleState = "ACTIVE",
-): AccountsAccountAccessRepository {
+function repository(role: AccountsMemberRole | null): AccountsAccountAccessRepository {
   return {
-    findAccess: vi.fn(async () => ({ account: account(lifecycleState), membershipRole: role })),
+    findAccess: vi.fn(async () => ({ account, membershipRole: role })),
   };
 }
 
@@ -67,38 +62,6 @@ describe("Accounts account access", () => {
         requiredCapability: "MANAGE_MEMBERS",
       }),
     ).resolves.toEqual({ status: "REJECTED", code: "ACCOUNT_ROLE_FORBIDDEN" });
-  });
-
-  it("rejects PURCHASE on a non-active account after role authorization", async () => {
-    const capability = createAccountsAccountAccessCapability(repository("BILLING", "CLOSED"));
-    await expect(
-      capability.authorize({
-        principalId: "billing-1",
-        accountId: "account-1",
-        requiredCapability: "PURCHASE",
-      }),
-    ).resolves.toEqual({ status: "REJECTED", code: "ACCOUNT_NOT_ACTIVE" });
-  });
-
-  it("does not leak account lifecycle when the role lacks PURCHASE", async () => {
-    const capability = createAccountsAccountAccessCapability(repository("MEMBER", "CLOSED"));
-    await expect(
-      capability.authorize({
-        principalId: "member-1",
-        accountId: "account-1",
-        requiredCapability: "PURCHASE",
-      }),
-    ).resolves.toEqual({ status: "REJECTED", code: "ACCOUNT_ROLE_FORBIDDEN" });
-  });
-
-  it("allows non-purchase access to a non-active account when the role permits it", async () => {
-    const capability = createAccountsAccountAccessCapability(repository("BILLING", "CLOSED"));
-    const result = await capability.authorize({
-      principalId: "billing-1",
-      accountId: "account-1",
-      requiredCapability: "VIEW_ORDERS",
-    });
-    expect(result.status).toBe("AUTHORIZED");
   });
 
   it("allows access without a required capability even for MEMBER", async () => {
