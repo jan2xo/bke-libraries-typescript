@@ -5,16 +5,19 @@ import { catalogModuleManifest } from "../module.manifest";
 
 const root = "@bke/catalog";
 const reusableRoots = [`${root}/contracts`, `${root}/logic`, `${root}/prisma/repositories`];
+
+function filesUnder(path: string): string[] {
+  const found: string[] = [];
+  for (const name of readdirSync(path)) {
+    const child = join(path, name);
+    if (statSync(child).isDirectory()) found.push(...filesUnder(child));
+    else if ([".ts", ".tsx", ".js", ".mjs"].includes(extname(child))) found.push(child);
+  }
+  return found;
+}
+
 const files = [
-  ...reusableRoots.flatMap(function filesUnder(path: string): string[] {
-    const found: string[] = [];
-    for (const name of readdirSync(path)) {
-      const child = join(path, name);
-      if (statSync(child).isDirectory()) found.push(...filesUnder(child));
-      else if ([".ts", ".tsx", ".js", ".mjs"].includes(extname(child))) found.push(child);
-    }
-    return found;
-  }),
+  ...reusableRoots.flatMap((path) => filesUnder(path)),
   `${root}/module.manifest.ts`,
 ];
 const forbidden = [
