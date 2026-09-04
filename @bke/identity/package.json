@@ -1,7 +1,7 @@
 {
   "name": "@bke/identity",
-  "version": "0.2.0",
-  "description": "Reusable BKE Identity capability library with canonical principal establishment facts",
+  "version": "0.3.0",
+  "description": "Reusable BKE Identity capability library with canonical authentication and session semantics",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
