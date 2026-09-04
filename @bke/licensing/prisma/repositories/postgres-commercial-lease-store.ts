@@ -58,7 +58,7 @@ function operation(row: OperationRow | undefined): CommercialOperationRecord | n
 }
 
 function transactionFor(client: Client): CommercialLeaseTransaction {
-  return Object.freeze({
+  return Object.freeze<CommercialLeaseTransaction>({
     async findOperation(operationId) {
       const result = await client.query<OperationRow>(
         `SELECT "id", "operationId", "licenseId", "action", "status", "resultLeaseId", "metadata"
