@@ -1,25 +1,26 @@
 import { randomUUID } from "node:crypto";
-import type {
-  CommercialLeaseClaims,
-  CommercialLeaseRequest,
-  CommercialLeaseResult,
-  CommercialLicenseContext,
+import {
+  commercialLeaseActions,
+  type CommercialLeaseAction,
+  type CommercialLeaseEnvelope,
+  type CommercialLeasePayload,
+  type CommercialLeaseRequest,
+  type CommercialLeaseResult,
+  type CommercialLicenseContext,
 } from "../contracts/commercial-lease.contract";
-import { calculateLeaseTimes, isLeaseExpired, validateClientCompatibility } from "./lease-lifecycle";
-import { refreshRequiresReplacement } from "./refresh-decision";
+import { nextLeaseLifecycle, requireProductVersion } from "./lease-lifecycle";
+import { deviceIdentity } from "./product-identity";
 import type {
-  CommercialActivationRecord,
-  CommercialDeviceClassifier,
   CommercialLeaseRecord,
   CommercialLeaseSigner,
   CommercialLeaseStore,
-  CommercialLeaseTransaction,
   CommercialLicenseContextProvider,
   CommercialLicenseKeyHasher,
-  CommercialOperationMetadata,
   CommercialSigningKeyProvider,
+  CommercialTransferEligibilityProvider,
 } from "./commercial-lease-ports";
-import type { CommercialSigningKeyRecord } from "./commercial-signing-registry";
+
+const THIRTY_DAYS_MS = 30 * 86_400_000;
 
 export type CommercialLeaseDependencies = Readonly<{
   store: CommercialLeaseStore;
@@ -27,355 +28,233 @@ export type CommercialLeaseDependencies = Readonly<{
   keys: CommercialSigningKeyProvider;
   signer: CommercialLeaseSigner;
   hasher: CommercialLicenseKeyHasher;
-  devices: CommercialDeviceClassifier;
-  allowTransfer: boolean;
+  transfers: CommercialTransferEligibilityProvider;
+  issuer?: string;
   id?: () => string;
 }>;
 
-type ValidatedRequest = Readonly<{
-  licenseKey: string;
-  clientVersion: string;
-  fingerprint: string;
-  installationId: string;
-  idempotencyKey: string;
-  requestedAction: "ISSUE" | "REFRESH";
-  now: Date;
-}>;
+function isCommercialLeaseAction(value: string): value is CommercialLeaseAction {
+  return (commercialLeaseActions as readonly string[]).includes(value);
+}
 
-function validateRequest(input: CommercialLeaseRequest): ValidatedRequest {
-  const licenseKey = input.licenseKey.trim();
-  const clientVersion = input.clientVersion.trim();
-  const fingerprint = input.fingerprint.trim();
-  const installationId = input.installationId.trim();
-  const idempotencyKey = input.idempotencyKey.trim();
-  if (licenseKey.length < 16) throw new Error("LICENSE_NOT_FOUND");
-  if (fingerprint.length < 8) throw new Error("INVALID_DEVICE_FINGERPRINT");
-  if (installationId.length < 8) throw new Error("INVALID_INSTALLATION_ID");
-  if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) throw new Error("INVALID_IDEMPOTENCY_KEY");
+function actionFrom(value: string): CommercialLeaseAction {
+  if (!isCommercialLeaseAction(value)) throw new Error("COMMERCIAL_OPERATION_ACTION_UNSUPPORTED");
+  return value;
+}
+
+function validateLicenseContext(
+  context: CommercialLicenseContext | null,
+  now: Date,
+): CommercialLicenseContext {
+  if (
+    !context ||
+    context.accountLifecycleState !== "ACTIVE" ||
+    context.licenseStatus !== "ACTIVE" ||
+    (context.licenseExpiresAt && context.licenseExpiresAt.getTime() < now.getTime())
+  ) {
+    throw new Error("INVALID_LICENSE");
+  }
+  return context;
+}
+
+function metadataValue(metadata: Readonly<Record<string, unknown>>, key: string): string | undefined {
+  const value = metadata[key];
+  return value === undefined || value === null ? undefined : String(value);
+}
+
+function replayEnvelope(record: CommercialLeaseRecord): CommercialLeaseEnvelope {
+  if (!record.leasePayload || !record.leaseSignature || !record.signerKeyId) {
+    throw new Error("LEASE_RECORD_INCOMPLETE");
+  }
   return Object.freeze({
-    licenseKey,
-    clientVersion,
-    fingerprint,
-    installationId,
-    idempotencyKey,
-    requestedAction: input.requestedAction ?? "ISSUE",
-    now: input.now ? new Date(input.now) : new Date(),
+    payload: record.leasePayload,
+    signature: record.leaseSignature,
+    key_id: record.signerKeyId,
+    algorithm: "Ed25519" as const,
   });
 }
 
-function validateContext(context: CommercialLicenseContext, clientVersion: string): void {
-  if (!context.licenseActive) throw new Error("LICENSE_INACTIVE");
-  if (!context.accountActive) throw new Error("ACCOUNT_INACTIVE");
-  if (!context.subscriptionActive) throw new Error("SUBSCRIPTION_INACTIVE");
-  if (!Number.isInteger(context.policy.maxDevices) || context.policy.maxDevices < 1) {
-    throw new Error("INVALID_LICENSE_POLICY");
+function retryableTransactionError(error: unknown): boolean {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = String((error as { code?: unknown }).code ?? "");
+    if (code === "40001" || code === "40P01") return true;
   }
-  validateClientCompatibility(clientVersion, context.minSupportedVersion);
-  if (!context.versionAccepted) throw new Error("CLIENT_VERSION_MISMATCH");
-  calculateLeaseTimes(new Date(0), context.policy.refreshAfterSeconds, context.policy.hardExpirySeconds);
-}
-
-function operationMetadataMatches(metadata: CommercialOperationMetadata, request: ValidatedRequest): boolean {
-  return (
-    metadata.fingerprint === request.fingerprint &&
-    metadata.clientVersion === request.clientVersion &&
-    metadata.requestedAction === request.requestedAction
-  );
-}
-
-function policyChanged(lease: CommercialLeaseRecord, context: CommercialLicenseContext): boolean {
-  if (!lease.refreshAfter || !lease.expiresAt) return true;
-  const expected = calculateLeaseTimes(
-    lease.issuedAt,
-    context.policy.refreshAfterSeconds,
-    context.policy.hardExpirySeconds,
-  );
-  return (
-    expected.refreshAfter.getTime() !== lease.refreshAfter.getTime() ||
-    expected.expiresAt.getTime() !== lease.expiresAt.getTime()
-  );
-}
-
-function claimsFor(
-  context: CommercialLicenseContext,
-  lease: CommercialLeaseRecord,
-  key: CommercialSigningKeyRecord,
-): CommercialLeaseClaims {
-  if (!lease.refreshAfter || !lease.expiresAt) throw new Error("LEASE_RECORD_INCOMPLETE");
-  const issuedAt = Math.floor(lease.issuedAt.getTime() / 1000);
-  return Object.freeze({
-    sub: context.accountId,
-    licenseId: context.licenseId,
-    deviceId: lease.deviceId,
-    productId: context.identity.packageFamily,
-    productVersionId: context.identity.releaseIdentityKey,
-    packageFamily: context.identity.packageFamily,
-    packageIdentityKey: context.identity.packageIdentityKey,
-    releaseIdentityKey: context.identity.releaseIdentityKey,
-    clientVersion: lease.version,
-    contractVersion: context.identity.contractVersion,
-    entitlements: context.identity.entitlements,
-    signingKeyId: key.keyId,
-    leaseKeyId: key.keyId,
-    leaseKeyIssuedAt: Math.floor(key.activeFrom.getTime() / 1000),
-    iat: issuedAt,
-    nbf: issuedAt,
-    refreshAfter: Math.floor(lease.refreshAfter.getTime() / 1000),
-    exp: Math.floor(lease.expiresAt.getTime() / 1000),
-    jti: lease.leaseId,
-  });
-}
-
-async function bindActivation(
-  transaction: CommercialLeaseTransaction,
-  context: CommercialLicenseContext,
-  request: ValidatedRequest,
-  dependencies: CommercialLeaseDependencies,
-): Promise<Readonly<{ activation: CommercialActivationRecord; previousFingerprint: string | null }>> {
-  const classification = dependencies.devices.classify(request.fingerprint);
-  let activation = await transaction.findActivationByInstallation(context.licenseId, request.installationId);
-  let previousFingerprint: string | null = activation?.deviceHash ?? null;
-
-  if (!activation && request.requestedAction === "REFRESH") throw new Error("ACTIVATION_REQUIRED");
-
-  if (!activation) {
-    const byFingerprint = await transaction.findActivationByFingerprint(context.licenseId, request.fingerprint);
-    previousFingerprint = byFingerprint?.deviceHash ?? null;
-    if (byFingerprint) {
-      if (
-        byFingerprint.installationId &&
-        byFingerprint.installationId !== request.installationId &&
-        !(context.policy.transferable && dependencies.allowTransfer)
-      ) {
-        throw new Error("INSTALLATION_NOT_BOUND");
-      }
-      activation = await transaction.updateActivation({
-        id: byFingerprint.id,
-        fingerprint: request.fingerprint,
-        installationId: request.installationId,
-        clientVersion: request.clientVersion,
-        ...classification,
-        now: request.now,
-      });
-    } else {
-      const activeCount = await transaction.countActiveActivations(context.licenseId);
-      if (activeCount >= context.policy.maxDevices) throw new Error("DEVICE_LIMIT_REACHED");
-      activation = await transaction.createActivation({
-        id: (dependencies.id ?? randomUUID)(),
-        licenseId: context.licenseId,
-        fingerprint: request.fingerprint,
-        installationId: request.installationId,
-        clientVersion: request.clientVersion,
-        ...classification,
-        now: request.now,
-      });
-    }
-  } else {
-    if (
-      activation.deviceHash !== request.fingerprint &&
-      !(context.policy.transferable && dependencies.allowTransfer)
-    ) {
-      throw new Error("DEVICE_BINDING_MISMATCH");
-    }
-    activation = await transaction.updateActivation({
-      id: activation.id,
-      fingerprint: request.fingerprint,
-      installationId: request.installationId,
-      clientVersion: request.clientVersion,
-      ...classification,
-      now: request.now,
-    });
-  }
-
-  return Object.freeze({ activation, previousFingerprint });
+  return error instanceof Error && /P20(00|01|02)/.test(error.message);
 }
 
 export function createCommercialLeaseCapability(dependencies: CommercialLeaseDependencies) {
   const issue = async (input: CommercialLeaseRequest): Promise<CommercialLeaseResult> => {
-    const request = validateRequest(input);
-    const licenseKeyHash = dependencies.hasher.hash(request.licenseKey);
-    const context = await dependencies.contexts.resolve({
-      licenseKeyHash,
-      clientVersion: request.clientVersion,
-    });
-    if (!context) throw new Error("LICENSE_NOT_FOUND");
-    validateContext(context, request.clientVersion);
+    await dependencies.keys.ensure();
+    const signingKey = await dependencies.keys.active();
+    const id = dependencies.id ?? randomUUID;
+    const issuer = dependencies.issuer ?? "BKE Digital Solutions";
 
-    return dependencies.store.withTransaction(async (transaction) => {
-      const existingOperation = await transaction.findOperation(request.idempotencyKey);
-      if (existingOperation) {
-        if (
-          existingOperation.licenseId !== context.licenseId ||
-          !operationMetadataMatches(existingOperation.metadata, request)
-        ) {
-          throw new Error("IDEMPOTENCY_KEY_REUSED");
-        }
-        if (!existingOperation.resultLeaseId) throw new Error("IDEMPOTENCY_RESULT_EXPIRED");
-        const priorLease = await transaction.findLease(existingOperation.resultLeaseId);
-        if (
-          !priorLease ||
-          priorLease.status !== "ACTIVE" ||
-          !priorLease.refreshAfter ||
-          !priorLease.expiresAt ||
-          isLeaseExpired(priorLease.expiresAt, request.now) ||
-          !priorLease.signerKeyId
-        ) {
-          throw new Error("IDEMPOTENCY_RESULT_EXPIRED");
-        }
-        const key = await dependencies.keys.resolve(priorLease.signerKeyId, request.now);
-        const token = await dependencies.signer.sign(claimsFor(context, priorLease, key), key);
-        return Object.freeze({
-          token,
-          lease: Object.freeze({
-            tokenId: priorLease.leaseId,
-            issuedAt: priorLease.issuedAt,
-            refreshAfter: priorLease.refreshAfter,
-            expiresAt: priorLease.expiresAt,
-            signingKeyId: key.keyId,
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const now = input.now ? new Date(input.now) : new Date();
+      try {
+        const context = validateLicenseContext(
+          await dependencies.contexts.resolve({
+            licenseKeyHash: dependencies.hasher.hash(input.licenseKey),
+            productVersion: input.productVersion,
           }),
-          operation: Object.freeze({
-            id: existingOperation.id,
-            action: request.requestedAction,
-            decision: existingOperation.metadata.decision ?? (request.requestedAction === "ISSUE" ? "ISSUED" : "REFRESHED"),
-            reasonCode: existingOperation.metadata.reasonCode ?? "IDEMPOTENT_REPLAY",
-          }),
+          now,
+        );
+
+        return await dependencies.store.withTransaction(async (transaction) => {
+          let operation = await transaction.findOperation(input.operationId);
+          if (!operation) {
+            if (input.action !== "ACTIVATION") throw new Error("COMMERCIAL_OPERATION_REQUIRED");
+            operation = await transaction.createOperation({
+              id: id(),
+              operationId: input.operationId,
+              licenseId: context.licenseId,
+              action: "ACTIVATION",
+              createdAt: now,
+            });
+          } else {
+            if (operation.licenseId !== context.licenseId) {
+              throw new Error("OPERATION_LICENSE_MISMATCH");
+            }
+
+            if (operation.status === "COMPLETED" && operation.resultLeaseId) {
+              if (
+                (metadataValue(operation.metadata, "installationId") !== undefined &&
+                  metadataValue(operation.metadata, "installationId") !== input.installationId) ||
+                (metadataValue(operation.metadata, "deviceId") !== undefined &&
+                  metadataValue(operation.metadata, "deviceId") !== input.deviceId) ||
+                (input.predecessorLeaseId &&
+                  metadataValue(operation.metadata, "predecessorLeaseId") !== input.predecessorLeaseId)
+              ) {
+                throw new Error("OPERATION_INPUT_MISMATCH");
+              }
+              const prior = await transaction.findLease(operation.resultLeaseId);
+              if (!prior) throw new Error("COMMERCIAL_LEASE_NOT_FOUND");
+              return Object.freeze({ lease: replayEnvelope(prior) });
+            }
+
+            if (input.action && input.action !== operation.action) {
+              throw new Error("OPERATION_ACTION_MISMATCH");
+            }
+          }
+
+          const action = actionFrom(operation.action);
+          if (action === "RENEWAL" && context.subscriptionStatus !== "ACTIVE") {
+            throw new Error("RENEWAL_NOT_ELIGIBLE");
+          }
+
+          if (action === "TRANSFER") {
+            const policyId = metadataValue(operation.metadata, "policyId") ?? "";
+            if (!policyId) throw new Error("TRANSFER_NOT_ALLOWED");
+            if (!(await dependencies.transfers.isTransferAllowed({ licenseId: context.licenseId, policyId }))) {
+              throw new Error("TRANSFER_NOT_ALLOWED");
+            }
+          }
+
+          const version = requireProductVersion(input.productVersion);
+          if (!context.productVersionEligible) throw new Error("VERSION_NOT_ELIGIBLE");
+          if (!context.versionAccepted) throw new Error("VERSION_NOT_ACCEPTED");
+          if (!context.productId) throw new Error("PRODUCT_ID_NOT_CONFIGURED");
+
+          const identity = deviceIdentity(input.deviceId);
+          const existingDevice = await transaction.findActivationByDeviceHash(
+            context.licenseId,
+            identity.deviceHash,
+          );
+
+          if (!existingDevice?.active) {
+            const active = await transaction.countActiveActivations(context.licenseId);
+            if (active >= context.maxSeats * context.maxDevicesPerSeat) {
+              throw new Error("ACTIVATION_LIMIT");
+            }
+            await transaction.upsertActivation({
+              id: id(),
+              licenseId: context.licenseId,
+              deviceHash: identity.deviceHash,
+              machineIdHint: identity.machineIdHint,
+              label: input.label,
+              operatingSystem: input.operatingSystem,
+              architecture: input.architecture,
+              now,
+            });
+          } else {
+            await transaction.touchActivation({
+              id: existingDevice.id,
+              label: input.label,
+              operatingSystem: input.operatingSystem,
+              architecture: input.architecture,
+              now,
+            });
+          }
+
+          const predecessor = input.predecessorLeaseId
+            ? await transaction.findLease(input.predecessorLeaseId)
+            : await transaction.findLatestLease({
+                licenseId: context.licenseId,
+                installationId: input.installationId,
+                deviceId: identity.deviceId,
+              });
+          const previous = predecessor?.licenseId === context.licenseId ? predecessor : null;
+          const lifecycle = nextLeaseLifecycle(previous);
+          const leaseId = id();
+          const expiresAt = context.licenseExpiresAt ?? new Date(now.getTime() + THIRTY_DAYS_MS);
+          const payload: CommercialLeasePayload = Object.freeze({
+            license_id: context.licenseId,
+            lease_id: leaseId,
+            generation: lifecycle.generation,
+            server_revision: lifecycle.serverRevision,
+            product_id: context.productId,
+            installation_id: input.installationId,
+            device_id: identity.deviceId,
+            version,
+            issuer,
+            issued_at: now.toISOString(),
+            not_before: now.toISOString(),
+            expires_at: expiresAt.toISOString(),
+            key_id: signingKey.keyId,
+            algorithm: "Ed25519" as const,
+            revoked: false,
+            superseded_by: null,
+          });
+          const lease = await dependencies.signer.issue(payload, signingKey);
+          const record = await transaction.createLease({
+            id: id(),
+            licenseId: context.licenseId,
+            leaseId,
+            generation: lifecycle.generation,
+            serverRevision: lifecycle.serverRevision,
+            installationId: input.installationId,
+            deviceId: identity.deviceId,
+            version,
+            action,
+            operationId: input.operationId,
+            signerKeyId: signingKey.keyId,
+            expiresAt,
+            leasePayload: lease.payload,
+            leaseSignature: lease.signature,
+            issuedAt: now,
+          });
+
+          if (previous) {
+            await transaction.supersedeLease({
+              previousLeaseRecordId: previous.id,
+              supersededById: record.id,
+            });
+          }
+          await transaction.completeOperation({
+            operationId: input.operationId,
+            resultLeaseId: leaseId,
+            completedAt: now,
+          });
+
+          return Object.freeze({ lease });
         });
+      } catch (error) {
+        if (attempt === 0 && retryableTransactionError(error)) continue;
+        throw error;
       }
+    }
 
-      const operationId = (dependencies.id ?? randomUUID)();
-      await transaction.createOperation({
-        id: operationId,
-        operationId: request.idempotencyKey,
-        licenseId: context.licenseId,
-        action: request.requestedAction,
-        metadata: {
-          fingerprint: request.fingerprint,
-          clientVersion: request.clientVersion,
-          requestedAction: request.requestedAction,
-        },
-        createdAt: request.now,
-      });
-
-      const binding = await bindActivation(transaction, context, request, dependencies);
-      const existingLease = await transaction.findLatestActiveLease(context.licenseId, binding.activation.id);
-      const hasExistingActiveLease = Boolean(
-        existingLease?.status === "ACTIVE" &&
-        existingLease.expiresAt &&
-        !isLeaseExpired(existingLease.expiresAt, request.now),
-      );
-      const refreshDecision = refreshRequiresReplacement({
-        requestFingerprint: request.fingerprint,
-        existingFingerprint: binding.previousFingerprint,
-        requestedVersion: request.clientVersion,
-        existingVersion: existingLease?.version ?? null,
-        hasExistingActiveLease,
-        policyChanged: existingLease ? policyChanged(existingLease, context) : false,
-        versionAccepted: context.versionAccepted,
-      });
-
-      if (!refreshDecision.replacement && existingLease) {
-        if (!existingLease.signerKeyId || !existingLease.refreshAfter || !existingLease.expiresAt) {
-          throw new Error("LEASE_RECORD_INCOMPLETE");
-        }
-        const key = await dependencies.keys.resolve(existingLease.signerKeyId, request.now);
-        const token = await dependencies.signer.sign(claimsFor(context, existingLease, key), key);
-        const metadata = {
-          fingerprint: request.fingerprint,
-          clientVersion: request.clientVersion,
-          requestedAction: request.requestedAction,
-          decision: "UNCHANGED" as const,
-          reasonCode: refreshDecision.reason,
-        };
-        await transaction.completeOperation({
-          operationId: request.idempotencyKey,
-          resultLeaseId: existingLease.leaseId,
-          metadata,
-          completedAt: request.now,
-        });
-        return Object.freeze({
-          token,
-          lease: Object.freeze({
-            tokenId: existingLease.leaseId,
-            issuedAt: existingLease.issuedAt,
-            refreshAfter: existingLease.refreshAfter,
-            expiresAt: existingLease.expiresAt,
-            signingKeyId: key.keyId,
-          }),
-          operation: Object.freeze({
-            id: operationId,
-            action: request.requestedAction,
-            decision: "UNCHANGED" as const,
-            reasonCode: refreshDecision.reason,
-          }),
-        });
-      }
-
-      const key = await dependencies.keys.active(request.now);
-      const times = calculateLeaseTimes(
-        request.now,
-        context.policy.refreshAfterSeconds,
-        context.policy.hardExpirySeconds,
-      );
-      const leaseRecordId = (dependencies.id ?? randomUUID)();
-      const leaseId = (dependencies.id ?? randomUUID)();
-      const createdLease = await transaction.createLease({
-        id: leaseRecordId,
-        licenseId: context.licenseId,
-        leaseId,
-        generation: (existingLease?.generation ?? 0) + 1,
-        serverRevision: (existingLease?.serverRevision ?? 0) + 1,
-        installationId: request.installationId,
-        deviceId: binding.activation.id,
-        version: request.clientVersion,
-        action: request.requestedAction,
-        operationId: request.idempotencyKey,
-        signerKeyId: key.keyId,
-        refreshAfter: times.refreshAfter,
-        expiresAt: times.expiresAt,
-        issuedAt: times.issuedAt,
-      });
-      if (existingLease) {
-        await transaction.markActiveLeasesReplaced({
-          licenseId: context.licenseId,
-          deviceId: binding.activation.id,
-          supersededById: leaseRecordId,
-          replacedAt: request.now,
-        });
-      }
-
-      const token = await dependencies.signer.sign(claimsFor(context, createdLease, key), key);
-      const decision = request.requestedAction === "ISSUE" ? "ISSUED" as const : "REFRESHED" as const;
-      const metadata = {
-        fingerprint: request.fingerprint,
-        clientVersion: request.clientVersion,
-        requestedAction: request.requestedAction,
-        decision,
-        reasonCode: refreshDecision.reason,
-      };
-      await transaction.completeOperation({
-        operationId: request.idempotencyKey,
-        resultLeaseId: createdLease.leaseId,
-        metadata,
-        completedAt: request.now,
-      });
-
-      return Object.freeze({
-        token,
-        lease: Object.freeze({
-          tokenId: createdLease.leaseId,
-          issuedAt: createdLease.issuedAt,
-          refreshAfter: createdLease.refreshAfter!,
-          expiresAt: createdLease.expiresAt!,
-          signingKeyId: key.keyId,
-        }),
-        operation: Object.freeze({
-          id: operationId,
-          action: request.requestedAction,
-          decision,
-          reasonCode: refreshDecision.reason,
-        }),
-      });
-    });
+    throw new Error("COMMERCIAL_OPERATION_FAILED");
   };
 
   return Object.freeze({ issue });
