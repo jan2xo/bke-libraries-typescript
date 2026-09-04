@@ -7,6 +7,7 @@ const sourceExtensions = new Set([".ts", ".tsx", ".js", ".mjs"]);
 const allowedRuntimeImports = new Set(["pg", "prisma/config", "vitest"]);
 const allowedModels = new Set([
   "CommercialLeaseOperation",
+  "CommercialSigningKey",
   "DeviceActivation",
   "License",
   "LicenseAssignment",

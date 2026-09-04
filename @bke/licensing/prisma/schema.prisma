@@ -83,29 +83,29 @@ model LicenseEvent {
 }
 
 model LicenseLeaseRecord {
-  id             String   @id
-  licenseId      String
-  leaseId        String   @unique
-  generation     Int
-  serverRevision Int
-  installationId String
-  deviceId       String
-  version        String
-  status         String
-  action         String
-  operationId    String?  @unique
-  signerKeyId    String?
-  expiresAt      DateTime?
-  leasePayload   String?
-  leaseSignature String?
-  supersededById String?
-  issuedAt       DateTime @default(now())
-  createdAt      DateTime @default(now())
-  license        License  @relation(fields: [licenseId], references: [id], onDelete: Restrict)
-  operation      CommercialLeaseOperation? @relation("LeaseOperationReference", fields: [operationId], references: [operationId], onDelete: Restrict)
+  id              String   @id
+  licenseId       String
+  leaseId         String   @unique
+  generation      Int
+  serverRevision  Int
+  installationId  String
+  deviceId        String
+  version         String
+  status          String
+  action          String
+  operationId     String?  @unique
+  signerKeyId     String?
+  expiresAt       DateTime?
+  leasePayload    String?
+  leaseSignature  String?
+  supersededById  String?
+  issuedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  license         License  @relation(fields: [licenseId], references: [id], onDelete: Restrict)
+  operation       CommercialLeaseOperation? @relation("LeaseOperationReference", fields: [operationId], references: [operationId], onDelete: Restrict)
   operationResult CommercialLeaseOperation? @relation("LeaseOperationResult")
-  supersededBy   LicenseLeaseRecord? @relation("LeaseSupersession", fields: [supersededById], references: [id], onDelete: Restrict)
-  supersedes     LicenseLeaseRecord[] @relation("LeaseSupersession")
+  supersededBy    LicenseLeaseRecord? @relation("LeaseSupersession", fields: [supersededById], references: [id], onDelete: Restrict)
+  supersedes      LicenseLeaseRecord[] @relation("LeaseSupersession")
 
   @@index([licenseId, installationId, deviceId, generation, serverRevision])
 }
@@ -125,4 +125,20 @@ model CommercialLeaseOperation {
   leaseRecords  LicenseLeaseRecord[] @relation("LeaseOperationReference")
 
   @@index([licenseId, action, status])
+}
+
+model CommercialSigningKey {
+  id                  String   @id
+  keyId               String   @unique
+  algorithm           String   @default("Ed25519")
+  status              String   @default("ACTIVE")
+  publicKey           String
+  privateKeyReference String
+  createdAt           DateTime @default(now())
+  activatedAt         DateTime @default(now())
+  retiredAt           DateTime?
+  rotationReason      String?
+  createdBy           String?
+
+  @@index([status])
 }

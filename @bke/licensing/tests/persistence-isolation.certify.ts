@@ -5,6 +5,7 @@ if (!connectionString) throw new Error("DATABASE_URL is required for Licensing i
 
 const expectedTables = new Set([
   "CommercialLeaseOperation",
+  "CommercialSigningKey",
   "DeviceActivation",
   "License",
   "LicenseAssignment",
@@ -62,7 +63,7 @@ try {
   }
 
   console.log(
-    "Licensing persistence isolation GREEN: six owned business tables, internal-only foreign keys, one owned enum, and no foreign-domain tables",
+    "Licensing persistence isolation GREEN: seven owned business tables, internal-only foreign keys, one owned enum, and no foreign-domain tables",
   );
 } finally {
   await client.end();
