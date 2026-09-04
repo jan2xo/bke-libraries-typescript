@@ -12,8 +12,10 @@ type ActivationRow = {
   id: string;
   licenseId: string;
   deviceHash: string;
-  installationId: string | null;
-  clientVersion: string | null;
+  machineIdHint: string | null;
+  label: string | null;
+  operatingSystem: string | null;
+  architecture: string | null;
   active: boolean;
 };
 
@@ -30,8 +32,10 @@ type LeaseRow = {
   action: string;
   operationId: string | null;
   signerKeyId: string | null;
-  refreshAfter: Date | null;
   expiresAt: Date | null;
+  leasePayload: string | null;
+  leaseSignature: string | null;
+  supersededById: string | null;
   issuedAt: Date;
 };
 
@@ -72,17 +76,10 @@ function transactionFor(client: Client): CommercialLeaseTransaction {
     async createOperation(input) {
       const result = await client.query<OperationRow>(
         `INSERT INTO "CommercialLeaseOperation"
-          ("id", "operationId", "licenseId", "action", "status", "metadata", "createdAt")
-         VALUES ($1, $2, $3, $4, 'PENDING', $5::jsonb, $6)
+          ("id", "operationId", "licenseId", "action", "status", "createdAt")
+         VALUES ($1, $2, $3, $4, 'PENDING', $5)
          RETURNING "id", "operationId", "licenseId", "action", "status", "resultLeaseId", "metadata"`,
-        [
-          input.id,
-          input.operationId,
-          input.licenseId,
-          input.action,
-          JSON.stringify(input.metadata),
-          input.createdAt,
-        ],
+        [input.id, input.operationId, input.licenseId, input.action, input.createdAt],
       );
       const record = operation(result.rows[0]);
       if (!record) throw new Error("COMMERCIAL_OPERATION_CREATE_FAILED");
@@ -94,17 +91,17 @@ function transactionFor(client: Client): CommercialLeaseTransaction {
         `UPDATE "CommercialLeaseOperation"
             SET "status" = 'COMPLETED',
                 "resultLeaseId" = $2,
-                "metadata" = $3::jsonb,
-                "completedAt" = $4
+                "completedAt" = $3
           WHERE "operationId" = $1`,
-        [input.operationId, input.resultLeaseId, JSON.stringify(input.metadata), input.completedAt],
+        [input.operationId, input.resultLeaseId, input.completedAt],
       );
     },
 
     async findLease(leaseId) {
       const result = await client.query<LeaseRow>(
         `SELECT "id", "licenseId", "leaseId", "generation", "serverRevision", "installationId", "deviceId",
-                "version", "status", "action", "operationId", "signerKeyId", "refreshAfter", "expiresAt", "issuedAt"
+                "version", "status", "action", "operationId", "signerKeyId", "expiresAt", "leasePayload",
+                "leaseSignature", "supersededById", "issuedAt"
            FROM "LicenseLeaseRecord"
           WHERE "leaseId" = $1`,
         [leaseId],
@@ -112,24 +109,28 @@ function transactionFor(client: Client): CommercialLeaseTransaction {
       return lease(result.rows[0]);
     },
 
-    async findActivationByInstallation(licenseId, installationId) {
-      const result = await client.query<ActivationRow>(
-        `SELECT "id", "licenseId", "deviceHash", "installationId", "clientVersion", "active"
-           FROM "DeviceActivation"
-          WHERE "licenseId" = $1 AND "installationId" = $2 AND "active" = true
-          LIMIT 1`,
-        [licenseId, installationId],
+    async findLatestLease(input) {
+      const result = await client.query<LeaseRow>(
+        `SELECT "id", "licenseId", "leaseId", "generation", "serverRevision", "installationId", "deviceId",
+                "version", "status", "action", "operationId", "signerKeyId", "expiresAt", "leasePayload",
+                "leaseSignature", "supersededById", "issuedAt"
+           FROM "LicenseLeaseRecord"
+          WHERE "licenseId" = $1 AND "installationId" = $2 AND "deviceId" = $3
+          ORDER BY "generation" DESC, "serverRevision" DESC
+          LIMIT 1
+          FOR UPDATE`,
+        [input.licenseId, input.installationId, input.deviceId],
       );
-      return activation(result.rows[0]);
+      return lease(result.rows[0]);
     },
 
-    async findActivationByFingerprint(licenseId, fingerprint) {
+    async findActivationByDeviceHash(licenseId, deviceHash) {
       const result = await client.query<ActivationRow>(
-        `SELECT "id", "licenseId", "deviceHash", "installationId", "clientVersion", "active"
+        `SELECT "id", "licenseId", "deviceHash", "machineIdHint", "label", "operatingSystem", "architecture", "active"
            FROM "DeviceActivation"
-          WHERE "licenseId" = $1 AND "deviceHash" = $2 AND "active" = true
+          WHERE "licenseId" = $1 AND "deviceHash" = $2
           LIMIT 1`,
-        [licenseId, fingerprint],
+        [licenseId, deviceHash],
       );
       return activation(result.rows[0]);
     },
@@ -144,90 +145,61 @@ function transactionFor(client: Client): CommercialLeaseTransaction {
       return Number(result.rows[0]?.count ?? "0");
     },
 
-    async createActivation(input) {
+    async upsertActivation(input) {
       const result = await client.query<ActivationRow>(
         `INSERT INTO "DeviceActivation"
-          ("id", "licenseId", "deviceHash", "installationId", "clientVersion", "isVirtualMachine", "isContainer", "lastSeenAt", "active", "activatedAt")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $8)
-         RETURNING "id", "licenseId", "deviceHash", "installationId", "clientVersion", "active"`,
+          ("id", "licenseId", "deviceHash", "machineIdHint", "label", "operatingSystem", "architecture",
+           "lastSeenAt", "active", "activatedAt", "deactivatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $8, NULL)
+         ON CONFLICT ("licenseId", "deviceHash") DO UPDATE
+           SET "active" = true,
+               "deactivatedAt" = NULL,
+               "lastSeenAt" = EXCLUDED."lastSeenAt",
+               "label" = COALESCE(EXCLUDED."label", "DeviceActivation"."label"),
+               "operatingSystem" = COALESCE(EXCLUDED."operatingSystem", "DeviceActivation"."operatingSystem"),
+               "architecture" = COALESCE(EXCLUDED."architecture", "DeviceActivation"."architecture")
+         RETURNING "id", "licenseId", "deviceHash", "machineIdHint", "label", "operatingSystem", "architecture", "active"`,
         [
           input.id,
           input.licenseId,
-          input.fingerprint,
-          input.installationId,
-          input.clientVersion,
-          input.isVirtualMachine,
-          input.isContainer,
+          input.deviceHash,
+          input.machineIdHint,
+          input.label ?? null,
+          input.operatingSystem ?? null,
+          input.architecture ?? null,
           input.now,
         ],
       );
       const record = activation(result.rows[0]);
-      if (!record) throw new Error("DEVICE_ACTIVATION_CREATE_FAILED");
+      if (!record) throw new Error("DEVICE_ACTIVATION_UPSERT_FAILED");
       return record;
     },
 
-    async updateActivation(input) {
+    async touchActivation(input) {
       const result = await client.query<ActivationRow>(
         `UPDATE "DeviceActivation"
-            SET "deviceHash" = $2,
-                "installationId" = $3,
-                "clientVersion" = $4,
-                "isVirtualMachine" = $5,
-                "isContainer" = $6,
-                "lastSeenAt" = $7,
-                "active" = true,
-                "deactivatedAt" = NULL
+            SET "lastSeenAt" = $2,
+                "label" = COALESCE($3, "label"),
+                "operatingSystem" = COALESCE($4, "operatingSystem"),
+                "architecture" = COALESCE($5, "architecture")
           WHERE "id" = $1
-         RETURNING "id", "licenseId", "deviceHash", "installationId", "clientVersion", "active"`,
-        [
-          input.id,
-          input.fingerprint,
-          input.installationId,
-          input.clientVersion,
-          input.isVirtualMachine,
-          input.isContainer,
-          input.now,
-        ],
+         RETURNING "id", "licenseId", "deviceHash", "machineIdHint", "label", "operatingSystem", "architecture", "active"`,
+        [input.id, input.now, input.label ?? null, input.operatingSystem ?? null, input.architecture ?? null],
       );
       const record = activation(result.rows[0]);
       if (!record) throw new Error("DEVICE_ACTIVATION_NOT_FOUND");
       return record;
     },
 
-    async findLatestActiveLease(licenseId, deviceId) {
-      const result = await client.query<LeaseRow>(
-        `SELECT "id", "licenseId", "leaseId", "generation", "serverRevision", "installationId", "deviceId",
-                "version", "status", "action", "operationId", "signerKeyId", "refreshAfter", "expiresAt", "issuedAt"
-           FROM "LicenseLeaseRecord"
-          WHERE "licenseId" = $1 AND "deviceId" = $2 AND "status" = 'ACTIVE'
-          ORDER BY "generation" DESC, "serverRevision" DESC, "issuedAt" DESC
-          LIMIT 1
-          FOR UPDATE`,
-        [licenseId, deviceId],
-      );
-      return lease(result.rows[0]);
-    },
-
-    async markActiveLeasesReplaced(input) {
-      await client.query(
-        `UPDATE "LicenseLeaseRecord"
-            SET "status" = 'REPLACED', "supersededById" = $3
-          WHERE "licenseId" = $1
-            AND "deviceId" = $2
-            AND "status" = 'ACTIVE'
-            AND "id" <> $3`,
-        [input.licenseId, input.deviceId, input.supersededById],
-      );
-    },
-
     async createLease(input) {
       const result = await client.query<LeaseRow>(
         `INSERT INTO "LicenseLeaseRecord"
           ("id", "licenseId", "leaseId", "generation", "serverRevision", "installationId", "deviceId", "version",
-           "status", "action", "operationId", "signerKeyId", "refreshAfter", "expiresAt", "issuedAt")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', $9, $10, $11, $12, $13, $14)
+           "status", "action", "operationId", "signerKeyId", "expiresAt", "leasePayload", "leaseSignature", "issuedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', $9, $10, $11, $12, $13, $14, $15)
          RETURNING "id", "licenseId", "leaseId", "generation", "serverRevision", "installationId", "deviceId",
-                   "version", "status", "action", "operationId", "signerKeyId", "refreshAfter", "expiresAt", "issuedAt"`,
+                   "version", "status", "action", "operationId", "signerKeyId", "expiresAt", "leasePayload",
+                   "leaseSignature", "supersededById", "issuedAt"`,
         [
           input.id,
           input.licenseId,
@@ -240,14 +212,24 @@ function transactionFor(client: Client): CommercialLeaseTransaction {
           input.action,
           input.operationId,
           input.signerKeyId,
-          input.refreshAfter,
           input.expiresAt,
+          input.leasePayload,
+          input.leaseSignature,
           input.issuedAt,
         ],
       );
       const record = lease(result.rows[0]);
       if (!record) throw new Error("COMMERCIAL_LEASE_CREATE_FAILED");
       return record;
+    },
+
+    async supersedeLease(input) {
+      await client.query(
+        `UPDATE "LicenseLeaseRecord"
+            SET "status" = 'SUPERSEDED', "supersededById" = $2
+          WHERE "id" = $1`,
+        [input.previousLeaseRecordId, input.supersededById],
+      );
     },
   });
 }
