@@ -1,79 +1,34 @@
-export type LeaseTimes = Readonly<{
-  issuedAt: Date;
-  refreshAfter: Date;
-  expiresAt: Date;
+export type LeaseLifecycle = Readonly<{
+  generation: number;
+  serverRevision: number;
 }>;
 
-export type LeaseIdentitySnapshot = Readonly<{
-  licenseId: string;
-  deviceId: string;
-  packageFamily: string;
-  packageIdentityKey: string;
-  releaseIdentityKey: string;
-  clientVersion: string;
-  leaseKeyId: string;
-  expiresAt: Date;
-}>;
+export const commercialLeaseActions = [
+  "ACTIVATION",
+  "REFRESH",
+  "RENEWAL",
+  "TRANSFER",
+  "REPLACEMENT",
+  "REVOCATION_REPLACEMENT",
+  "KEY_ROTATION",
+] as const;
 
-export function calculateLeaseTimes(
-  now: Date,
-  refreshAfterSeconds: number,
-  hardExpirySeconds: number,
-): LeaseTimes {
-  if (
-    !Number.isInteger(refreshAfterSeconds) ||
-    refreshAfterSeconds <= 0 ||
-    !Number.isInteger(hardExpirySeconds) ||
-    hardExpirySeconds <= 0 ||
-    refreshAfterSeconds >= hardExpirySeconds
-  ) {
-    throw new Error("INVALID_LICENSE_POLICY");
-  }
+export type CommercialLeaseAction = (typeof commercialLeaseActions)[number];
 
+export function nextLeaseLifecycle(previous?: LeaseLifecycle | null): LeaseLifecycle {
   return Object.freeze({
-    issuedAt: new Date(now),
-    refreshAfter: new Date(now.getTime() + refreshAfterSeconds * 1000),
-    expiresAt: new Date(now.getTime() + hardExpirySeconds * 1000),
+    generation: (previous?.generation ?? 0) + 1,
+    serverRevision: (previous?.serverRevision ?? 0) + 1,
   });
 }
 
-export function validateClientCompatibility(
-  clientVersion: string,
-  minSupportedVersion: string,
-): void {
-  const parse = (value: string) => {
-    if (!/^\d+\.\d+\.\d+$/.test(value)) throw new Error("CLIENT_VERSION_MISMATCH");
-    return value.split(".").map((part) => Number(part));
-  };
-
-  const client = parse(clientVersion);
-  const minimum = parse(minSupportedVersion);
-  for (let index = 0; index < 3; index += 1) {
-    if (client[index]! > minimum[index]!) return;
-    if (client[index]! < minimum[index]!) throw new Error("CLIENT_VERSION_MISMATCH");
+export function requireProductVersion(version?: string | null): string {
+  if (
+    !version ||
+    version === "0.0.0" ||
+    !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)
+  ) {
+    throw new Error("INVALID_LICENSE_VERSION");
   }
-}
-
-export function isLeaseExpired(expiresAt: Date, now: Date): boolean {
-  return expiresAt.getTime() <= now.getTime();
-}
-
-export function isRefreshDue(refreshAfter: Date, now: Date): boolean {
-  return refreshAfter.getTime() <= now.getTime();
-}
-
-export function leaseClaimsAreCurrent(
-  claims: LeaseIdentitySnapshot,
-  expected: LeaseIdentitySnapshot & Readonly<{ now: Date }>,
-): boolean {
-  return (
-    claims.licenseId === expected.licenseId &&
-    claims.deviceId === expected.deviceId &&
-    claims.packageFamily === expected.packageFamily &&
-    claims.packageIdentityKey === expected.packageIdentityKey &&
-    claims.releaseIdentityKey === expected.releaseIdentityKey &&
-    claims.clientVersion === expected.clientVersion &&
-    claims.leaseKeyId === expected.leaseKeyId &&
-    claims.expiresAt.getTime() > expected.now.getTime()
-  );
+  return version;
 }
