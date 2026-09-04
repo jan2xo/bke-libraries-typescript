@@ -1,0 +1,93 @@
+name: BKE Library - Support Package
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/support/**"
+      - "package-lock.json"
+      - ".github/workflows/support-package.yml"
+  push:
+    branches: [main]
+    paths:
+      - "@bke/support/**"
+      - "package-lock.json"
+      - ".github/workflows/support-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install locked workspace dependencies
+        run: npm ci
+      - name: Pack Support package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts && mkdir -p artifacts
+          artifact="$(npm pack --workspace=@bke/support --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "bke-support-0.1.0.tgz"
+          test -s "artifacts/$artifact"
+          sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "SUPPORT_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Certify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf "artifacts/$SUPPORT_ARTIFACT" > artifacts/package-contents.txt
+          for required in package/package.json package/module.manifest.ts package/contracts/support.contract.ts package/contracts/module.contract.ts package/logic/support.ts package/logic/support-repository.ts package/logic/redaction.ts package/prisma/schema.prisma package/prisma/repositories/postgres-support-repository.ts package/migrations/0001_support_ticket_domain/migration.sql package/docs/v1-parity.md; do grep -Fx "$required" artifacts/package-contents.txt; done
+          if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then echo '::error::Tests or dependency caches must not ship in @bke/support.'; exit 1; fi
+      - name: Install tarball in blank consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .package-smoke && mkdir -p .package-smoke
+          cat > .package-smoke/package.json <<JSON
+          {"private":true,"type":"module","dependencies":{"@bke/support":"file:../artifacts/$SUPPORT_ARTIFACT"},"devDependencies":{"@types/node":"^24.3.0","@types/pg":"^8.15.5","tsx":"^4.20.5","typescript":"^5.9.2"}}
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {"compilerOptions":{"target":"ES2022","lib":["ES2022","DOM"],"module":"ESNext","moduleResolution":"Bundler","strict":true,"noEmit":true,"skipLibCheck":true,"types":["node"]},"include":["smoke.ts"]}
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import { SUPPORT_COMMAND_CAPABILITY_ID, SUPPORT_QUERY_CAPABILITY_ID } from "@bke/support/contracts/support.contract";
+          import { createSupportCommandCapability, createSupportQueryCapability } from "@bke/support/logic/support";
+          import { createPostgresSupportRepository } from "@bke/support/prisma/repositories/postgres-support-repository";
+          import { supportModuleManifest } from "@bke/support/module.manifest";
+          if(SUPPORT_COMMAND_CAPABILITY_ID!=="bke.support.command.v1"||SUPPORT_QUERY_CAPABILITY_ID!=="bke.support.query.v1") throw new Error("Support capability identity mismatch.");
+          if(supportModuleManifest.moduleId!=="support") throw new Error("Support manifest mismatch.");
+          for(const value of [createSupportCommandCapability,createSupportQueryCapability,createPostgresSupportRepository]) if(typeof value!=="function") throw new Error("Packed Support consumer exports incomplete.");
+          console.log("Packed @bke/support consumer smoke GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - name: Upload certified package evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: bke-support-0.1.0
+          path: |
+            artifacts/bke-support-0.1.0.tgz
+            artifacts/bke-support-0.1.0.tgz.sha256
+            artifacts/package-contents.txt
+          if-no-files-found: error
+      - name: Create immutable Support release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./@bke/support/package.json').version")"; tag="support-v${version}"; package_changed=false
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/support/package.json; then package_changed=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then if [[ "$package_changed" == "true" ]]; then echo "::error::Release $tag exists; bump @bke/support version."; exit 1; fi; exit 0; fi
+          gh release create "$tag" "artifacts/$SUPPORT_ARTIFACT" "artifacts/$SUPPORT_ARTIFACT.sha256" --target "$GITHUB_SHA" --title "@bke/support v${version}" --notes "Certified BKE Support package artifact. Ticket creation, customer replies, admin triage, PUBLIC/INTERNAL visibility, security-report priority, context boundaries, module-owned PostgreSQL persistence, and package portability passed behavior, persistence, and package gates before release creation."

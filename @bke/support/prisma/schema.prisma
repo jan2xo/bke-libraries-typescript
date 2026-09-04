@@ -1,0 +1,100 @@
+datasource db {
+  provider = "postgresql"
+}
+
+enum SupportCategory {
+  ACCOUNT
+  PAYMENT
+  REFUND
+  INVOICE
+  LICENSE
+  DEVICE
+  DOWNLOAD
+  SECURITY
+  FEATURE_REQUEST
+  OTHER
+
+  @@map("SupportTicketCategory")
+}
+
+enum SupportState {
+  OPEN
+  TRIAGED
+  WAITING_ON_CUSTOMER
+  WAITING_ON_SUPPORT
+  ESCALATED
+  RESOLVED
+  CLOSED
+
+  @@map("SupportTicketState")
+}
+
+enum SupportPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+
+  @@map("SupportTicketPriority")
+}
+
+enum SupportVisibility {
+  PUBLIC
+  INTERNAL
+
+  @@map("SupportMessageVisibility")
+}
+
+model SupportTicket {
+  id                  String              @id
+  publicId            String              @unique
+  createdById         String
+  accountId           String
+  orderId             String?
+  licenseId           String?
+  category            SupportCategory
+  state               SupportState        @default(OPEN)
+  priority            SupportPriority      @default(NORMAL)
+  subject             String
+  safeContext         Json
+  securityReport      Boolean             @default(false)
+  assignedToId        String?
+  lastCustomerReplyAt DateTime?
+  lastAdminReplyAt    DateTime?
+  escalatedAt         DateTime?
+  resolvedAt          DateTime?
+  closedAt            DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @default(now()) @updatedAt
+  messages            SupportTicketMessage[]
+  events              SupportTicketEvent[]
+
+  @@index([createdById, updatedAt])
+  @@index([accountId, updatedAt])
+  @@index([state, updatedAt])
+  @@index([securityReport, priority, updatedAt])
+}
+
+model SupportTicketMessage {
+  id         String            @id
+  ticketId   String
+  authorId   String
+  body       String
+  visibility SupportVisibility @default(PUBLIC)
+  createdAt  DateTime          @default(now())
+  ticket     SupportTicket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
+model SupportTicketEvent {
+  id        String        @id
+  ticketId  String
+  actorId   String?
+  eventType String
+  metadata  Json
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}

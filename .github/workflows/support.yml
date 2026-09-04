@@ -1,0 +1,64 @@
+name: BKE Library - Support
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/support/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/support.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  support:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_support_library
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_support_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_support_library
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Certify Support extraction boundary
+        run: npx tsx @bke/support/tests/extraction.certify.ts
+      - name: Typecheck Support
+        run: npm run typecheck --workspace=@bke/support
+      - name: Validate Support Prisma schema
+        run: npm run prisma:validate --workspace=@bke/support
+      - name: Apply Support migrations
+        run: npm run prisma:deploy --workspace=@bke/support
+      - name: Prove Support migration idempotence
+        run: npm run prisma:deploy --workspace=@bke/support
+      - name: Test Support logic
+        run: npm run test --workspace=@bke/support
+      - name: Certify Support PostgreSQL behavior
+        run: npx tsx @bke/support/tests/postgres.certify.ts

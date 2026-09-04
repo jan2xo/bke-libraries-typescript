@@ -1,0 +1,29 @@
+name: Temporary Support Workspace Lock Sync
+
+on:
+  push:
+    branches: [feat/support-v1-domain-extraction]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: feat/support-v1-domain-extraction }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --package-lock-only --ignore-scripts
+      - name: Commit generated workspace lock metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package-lock.json
+          git commit -m "chore(support): sync workspace lock metadata"
+          git push origin HEAD:feat/support-v1-domain-extraction
