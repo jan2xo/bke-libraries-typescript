@@ -1,44 +1,32 @@
-export type LeaseRefreshReplacementReason =
-  | "INITIAL_ISSUE"
-  | "BINDING_CHANGED"
-  | "VERSION_CHANGED"
-  | "POLICY_CHANGED"
-  | "LEASE_MISSING"
-  | "UNCHANGED";
-
-export type LeaseRefreshDecisionInput = Readonly<{
-  requestFingerprint: string;
-  existingFingerprint: string | null;
-  requestedVersion: string;
-  existingVersion: string | null;
-  hasExistingActiveLease: boolean;
-  policyChanged: boolean;
-  versionAccepted: boolean;
+export type CurrentCommercialLease = Readonly<{
+  version: string;
+  expiresAt: Date | null;
+  installationId: string;
+  deviceId: string;
+  signerKeyId: string | null;
+  status: string;
+  serverRevision: number;
 }>;
 
-export type LeaseRefreshDecision = Readonly<{
-  replacement: boolean;
-  reason: LeaseRefreshReplacementReason;
+export type ExpectedCommercialLease = Readonly<{
+  version: string;
+  expiresAt: Date | null;
+  installationId: string;
+  deviceId: string;
+  signerKeyId: string;
 }>;
 
 export function refreshRequiresReplacement(
-  input: LeaseRefreshDecisionInput,
-): LeaseRefreshDecision {
-  if (!input.versionAccepted) throw new Error("CLIENT_VERSION_MISMATCH");
-  if (input.existingFingerprint === null) {
-    return Object.freeze({ replacement: true, reason: "INITIAL_ISSUE" });
-  }
-  if (input.requestFingerprint !== input.existingFingerprint) {
-    return Object.freeze({ replacement: true, reason: "BINDING_CHANGED" });
-  }
-  if (input.requestedVersion !== input.existingVersion) {
-    return Object.freeze({ replacement: true, reason: "VERSION_CHANGED" });
-  }
-  if (input.policyChanged) {
-    return Object.freeze({ replacement: true, reason: "POLICY_CHANGED" });
-  }
-  if (!input.hasExistingActiveLease) {
-    return Object.freeze({ replacement: true, reason: "LEASE_MISSING" });
-  }
-  return Object.freeze({ replacement: false, reason: "UNCHANGED" });
+  current: CurrentCommercialLease,
+  expected: ExpectedCommercialLease,
+): boolean {
+  return (
+    current.status !== "ACTIVE" ||
+    current.version !== expected.version ||
+    current.expiresAt?.getTime() !== expected.expiresAt?.getTime() ||
+    current.installationId !== expected.installationId ||
+    current.deviceId !== expected.deviceId ||
+    current.signerKeyId !== expected.signerKeyId ||
+    current.serverRevision < 1
+  );
 }
