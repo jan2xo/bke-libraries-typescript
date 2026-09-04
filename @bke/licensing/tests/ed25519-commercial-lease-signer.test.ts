@@ -1,77 +1,69 @@
-import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { CommercialLeaseClaims } from "../contracts/commercial-lease.contract";
+import type { CommercialLeasePayload } from "../contracts/commercial-lease.contract";
 import type { CommercialSigningKeyRecord } from "../logic/commercial-signing-registry";
-import { createEd25519CommercialLeaseSigner } from "../providers/ed25519-commercial-lease-signer";
+import {
+  createEd25519CommercialLeaseSigner,
+  verifyCommercialLeaseEnvelope,
+} from "../providers/ed25519-commercial-lease-signer";
 
-const claims: CommercialLeaseClaims = {
-  sub: "account-1",
-  licenseId: "license-1",
-  deviceId: "device-1",
-  productId: "bke-product",
-  productVersionId: "bke-product:1.0.0",
-  packageFamily: "bke-product",
-  packageIdentityKey: "bke-product:desktop",
-  releaseIdentityKey: "bke-product:1.0.0",
-  clientVersion: "1.0.0",
-  contractVersion: "3",
-  entitlements: ["BKE_SOFTWARE_ACCESS"],
-  signingKeyId: "key-1",
-  leaseKeyId: "key-1",
-  leaseKeyIssuedAt: 1_788_000_000,
-  iat: 1_788_000_000,
-  nbf: 1_788_000_000,
-  refreshAfter: 1_788_000_060,
-  exp: 1_788_000_300,
-  jti: "lease-1",
-};
+const pair = generateKeyPairSync("ed25519");
+const privateKey = pair.privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+const publicKey = pair.publicKey.export({ format: "pem", type: "spki" }).toString();
+const key: CommercialSigningKeyRecord = Object.freeze({
+  id: "key-record-1",
+  keyId: "lease-key-1",
+  algorithm: "Ed25519",
+  status: "ACTIVE",
+  publicKey,
+  privateKeyReference: "env:TEST_LEASE_PRIVATE_KEY",
+  createdAt: new Date("2026-09-01T00:00:00.000Z"),
+  activatedAt: new Date("2026-09-01T00:00:00.000Z"),
+  retiredAt: null,
+  rotationReason: null,
+  createdBy: null,
+});
+const payload: CommercialLeasePayload = Object.freeze({
+  license_id: "license-1",
+  lease_id: "lease-1",
+  generation: 1,
+  server_revision: 1,
+  product_id: "bke-test-product",
+  installation_id: "installation-1",
+  device_id: "device-identity-0001",
+  version: "1.2.3",
+  issuer: "BKE Digital Solutions",
+  issued_at: "2026-09-05T00:00:00.000Z",
+  not_before: "2026-09-05T00:00:00.000Z",
+  expires_at: "2026-10-05T00:00:00.000Z",
+  key_id: "lease-key-1",
+  algorithm: "Ed25519",
+  revoked: false,
+  superseded_by: null,
+});
 
 describe("Ed25519 commercial lease signer", () => {
-  it("emits the canonical EdDSA JWT-shaped lease token", async () => {
-    const pair = generateKeyPairSync("ed25519");
-    const privatePem = pair.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
-    const key: CommercialSigningKeyRecord = {
-      keyId: "key-1",
-      privateKeyReference: "secret://lease-key",
-      algorithm: "Ed25519",
-      status: "ACTIVE",
-      activeFrom: new Date("2026-09-01T00:00:00.000Z"),
-      activeTo: null,
-      revokedAt: null,
-    };
+  it("emits the legacy canonical JSON envelope and a verifiable base64 signature", async () => {
     const signer = createEd25519CommercialLeaseSigner({
       resolve(reference) {
-        expect(reference).toBe("secret://lease-key");
-        return privatePem;
+        expect(reference).toBe("env:TEST_LEASE_PRIVATE_KEY");
+        return privateKey;
       },
     });
 
-    const token = await signer.sign(claims, key);
-    const [header, payload, signature] = token.split(".");
-    expect(JSON.parse(Buffer.from(header!, "base64url").toString("utf8"))).toEqual({
-      alg: "EdDSA",
-      typ: "JWT",
-      kid: "key-1",
-    });
-    expect(JSON.parse(Buffer.from(payload!, "base64url").toString("utf8"))).toEqual(claims);
-    expect(verify(
-      null,
-      Buffer.from(`${header}.${payload}`, "utf8"),
-      createPublicKey(pair.privateKey),
-      Buffer.from(signature!, "base64url"),
-    )).toBe(true);
+    const lease = await signer.issue(payload, key);
+    expect(lease.payload).toBe(JSON.stringify(payload, Object.keys(payload).sort()));
+    expect(lease.key_id).toBe("lease-key-1");
+    expect(lease.algorithm).toBe("Ed25519");
+    expect(Buffer.from(lease.signature, "base64").length).toBeGreaterThan(0);
+    expect(verifyCommercialLeaseEnvelope(lease, publicKey)).toBe(true);
   });
 
-  it("rejects unsupported registry algorithms", async () => {
-    const signer = createEd25519CommercialLeaseSigner({ resolve: () => "unused" });
-    await expect(signer.sign(claims, {
-      keyId: "key-1",
-      privateKeyReference: "secret://lease-key",
-      algorithm: "RSA",
-      status: "ACTIVE",
-      activeFrom: new Date(),
-      activeTo: null,
-      revokedAt: null,
-    })).rejects.toThrow("COMMERCIAL_SIGNING_KEY_UNSUPPORTED");
+  it("accepts base64-encoded PEM key material", async () => {
+    const signer = createEd25519CommercialLeaseSigner({
+      resolve: () => Buffer.from(privateKey, "utf8").toString("base64"),
+    });
+    const lease = await signer.issue(payload, key);
+    expect(verifyCommercialLeaseEnvelope(lease, Buffer.from(publicKey, "utf8").toString("base64"))).toBe(true);
   });
 });
