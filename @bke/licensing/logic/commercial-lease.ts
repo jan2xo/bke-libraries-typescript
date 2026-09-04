@@ -9,14 +9,15 @@ import { calculateLeaseTimes, isLeaseExpired, validateClientCompatibility } from
 import { refreshRequiresReplacement } from "./refresh-decision";
 import type {
   CommercialActivationRecord,
+  CommercialDeviceClassifier,
   CommercialLeaseRecord,
+  CommercialLeaseSigner,
   CommercialLeaseStore,
+  CommercialLeaseTransaction,
   CommercialLicenseContextProvider,
   CommercialLicenseKeyHasher,
-  CommercialSigningKeyProvider,
-  CommercialLeaseSigner,
-  CommercialDeviceClassifier,
   CommercialOperationMetadata,
+  CommercialSigningKeyProvider,
 } from "./commercial-lease-ports";
 import type { CommercialSigningKeyRecord } from "./commercial-signing-registry";
 
@@ -31,7 +32,17 @@ export type CommercialLeaseDependencies = Readonly<{
   id?: () => string;
 }>;
 
-function validateRequest(input: CommercialLeaseRequest) {
+type ValidatedRequest = Readonly<{
+  licenseKey: string;
+  clientVersion: string;
+  fingerprint: string;
+  installationId: string;
+  idempotencyKey: string;
+  requestedAction: "ISSUE" | "REFRESH";
+  now: Date;
+}>;
+
+function validateRequest(input: CommercialLeaseRequest): ValidatedRequest {
   const licenseKey = input.licenseKey.trim();
   const clientVersion = input.clientVersion.trim();
   const fingerprint = input.fingerprint.trim();
@@ -47,12 +58,12 @@ function validateRequest(input: CommercialLeaseRequest) {
     fingerprint,
     installationId,
     idempotencyKey,
-    requestedAction: input.requestedAction ?? "ISSUE" as const,
+    requestedAction: input.requestedAction ?? "ISSUE",
     now: input.now ? new Date(input.now) : new Date(),
   });
 }
 
-function validateContext(context: CommercialLicenseContext, clientVersion: string) {
+function validateContext(context: CommercialLicenseContext, clientVersion: string): void {
   if (!context.licenseActive) throw new Error("LICENSE_INACTIVE");
   if (!context.accountActive) throw new Error("ACCOUNT_INACTIVE");
   if (!context.subscriptionActive) throw new Error("SUBSCRIPTION_INACTIVE");
@@ -64,10 +75,7 @@ function validateContext(context: CommercialLicenseContext, clientVersion: strin
   calculateLeaseTimes(new Date(0), context.policy.refreshAfterSeconds, context.policy.hardExpirySeconds);
 }
 
-function operationMetadataMatches(
-  metadata: CommercialOperationMetadata,
-  request: ReturnType<typeof validateRequest>,
-): boolean {
+function operationMetadataMatches(metadata: CommercialOperationMetadata, request: ValidatedRequest): boolean {
   return (
     metadata.fingerprint === request.fingerprint &&
     metadata.clientVersion === request.clientVersion &&
@@ -119,18 +127,20 @@ function claimsFor(
 }
 
 async function bindActivation(
-  transaction: Parameters<Parameters<CommercialLeaseStore["withTransaction"]>[0]>[0],
+  transaction: CommercialLeaseTransaction,
   context: CommercialLicenseContext,
-  request: ReturnType<typeof validateRequest>,
+  request: ValidatedRequest,
   dependencies: CommercialLeaseDependencies,
-): Promise<CommercialActivationRecord> {
+): Promise<Readonly<{ activation: CommercialActivationRecord; previousFingerprint: string | null }>> {
   const classification = dependencies.devices.classify(request.fingerprint);
   let activation = await transaction.findActivationByInstallation(context.licenseId, request.installationId);
+  let previousFingerprint: string | null = activation?.deviceHash ?? null;
 
   if (!activation && request.requestedAction === "REFRESH") throw new Error("ACTIVATION_REQUIRED");
 
   if (!activation) {
     const byFingerprint = await transaction.findActivationByFingerprint(context.licenseId, request.fingerprint);
+    previousFingerprint = byFingerprint?.deviceHash ?? null;
     if (byFingerprint) {
       if (
         byFingerprint.installationId &&
@@ -177,7 +187,7 @@ async function bindActivation(
     });
   }
 
-  return activation;
+  return Object.freeze({ activation, previousFingerprint });
 }
 
 export function createCommercialLeaseCapability(dependencies: CommercialLeaseDependencies) {
@@ -205,6 +215,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
         if (
           !priorLease ||
           priorLease.status !== "ACTIVE" ||
+          !priorLease.refreshAfter ||
           !priorLease.expiresAt ||
           isLeaseExpired(priorLease.expiresAt, request.now) ||
           !priorLease.signerKeyId
@@ -218,7 +229,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
           lease: Object.freeze({
             tokenId: priorLease.leaseId,
             issuedAt: priorLease.issuedAt,
-            refreshAfter: priorLease.refreshAfter!,
+            refreshAfter: priorLease.refreshAfter,
             expiresAt: priorLease.expiresAt,
             signingKeyId: key.keyId,
           }),
@@ -245,8 +256,8 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
         createdAt: request.now,
       });
 
-      const activation = await bindActivation(transaction, context, request, dependencies);
-      const existingLease = await transaction.findLatestActiveLease(context.licenseId, activation.id);
+      const binding = await bindActivation(transaction, context, request, dependencies);
+      const existingLease = await transaction.findLatestActiveLease(context.licenseId, binding.activation.id);
       const hasExistingActiveLease = Boolean(
         existingLease?.status === "ACTIVE" &&
         existingLease.expiresAt &&
@@ -254,7 +265,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
       );
       const refreshDecision = refreshRequiresReplacement({
         requestFingerprint: request.fingerprint,
-        existingFingerprint: activation.deviceHash,
+        existingFingerprint: binding.previousFingerprint,
         requestedVersion: request.clientVersion,
         existingVersion: existingLease?.version ?? null,
         hasExistingActiveLease,
@@ -314,7 +325,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
         generation: (existingLease?.generation ?? 0) + 1,
         serverRevision: (existingLease?.serverRevision ?? 0) + 1,
         installationId: request.installationId,
-        deviceId: activation.id,
+        deviceId: binding.activation.id,
         version: request.clientVersion,
         action: request.requestedAction,
         operationId: request.idempotencyKey,
@@ -326,7 +337,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
       if (existingLease) {
         await transaction.markActiveLeasesReplaced({
           licenseId: context.licenseId,
-          deviceId: activation.id,
+          deviceId: binding.activation.id,
           supersededById: leaseRecordId,
           replacedAt: request.now,
         });
