@@ -1,293 +1,402 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type {
-  CommercialLicenseContext,
+  CommercialLeaseAction,
   CommercialLeaseRequest,
+  CommercialLicenseContext,
 } from "../contracts/commercial-lease.contract";
-import { createCommercialLeaseCapability } from "../logic/commercial-lease";
+import {
+  createCommercialLeaseCapability,
+  type CommercialLeaseDependencies,
+} from "../logic/commercial-lease";
 import type {
   CommercialActivationRecord,
   CommercialLeaseRecord,
-  CommercialLeaseStore,
+  CommercialLeaseTransaction,
   CommercialOperationMetadata,
   CommercialOperationRecord,
 } from "../logic/commercial-lease-ports";
 import type { CommercialSigningKeyRecord } from "../logic/commercial-signing-registry";
+import { deviceIdentity } from "../logic/product-identity";
 
-const NOW = new Date("2026-09-05T00:00:00.000Z");
-const SIGNING_KEY: CommercialSigningKeyRecord = {
-  keyId: "signing-key-1",
-  privateKeyReference: "secret://signing-key-1",
+const now = new Date("2026-09-05T00:00:00.000Z");
+const signingKey: CommercialSigningKeyRecord = Object.freeze({
+  id: "signing-key-record",
+  keyId: "lease-key-1",
   algorithm: "Ed25519",
   status: "ACTIVE",
-  activeFrom: new Date("2026-09-01T00:00:00.000Z"),
-  activeTo: null,
-  revokedAt: null,
-};
-
-const baseContext: CommercialLicenseContext = {
-  licenseId: "license-1",
-  accountId: "account-1",
-  licenseActive: true,
-  accountActive: true,
-  subscriptionActive: true,
-  versionAccepted: true,
-  minSupportedVersion: "1.0.0",
-  policy: {
-    maxDevices: 2,
-    transferable: false,
-    refreshAfterSeconds: 60,
-    hardExpirySeconds: 300,
-  },
-  identity: {
-    packageFamily: "bke-product",
-    packageIdentityKey: "bke-product:desktop",
-    releaseIdentityKey: "bke-product:1.0.0",
-    contractVersion: "3",
-    entitlements: ["BKE_SOFTWARE_ACCESS", "BKE_VERSION_1_0_0"],
-  },
-};
-
-const request = (overrides: Partial<CommercialLeaseRequest> = {}): CommercialLeaseRequest => ({
-  licenseKey: "license-key-1234567890",
-  clientVersion: "1.0.0",
-  fingerprint: "fingerprint-123",
-  installationId: "installation-123",
-  idempotencyKey: "operation-123",
-  now: NOW,
-  ...overrides,
+  publicKey: "public-key",
+  privateKeyReference: "env:LEASE_PRIVATE_KEY",
+  createdAt: now,
+  activatedAt: now,
+  retiredAt: null,
+  rotationReason: null,
+  createdBy: null,
 });
 
-function createHarness(context: CommercialLicenseContext = baseContext) {
-  const activations: CommercialActivationRecord[] = [];
-  const leases: CommercialLeaseRecord[] = [];
-  const operations = new Map<string, CommercialOperationRecord>();
-  let idCounter = 0;
-  let currentContext = context;
+const baseContext: CommercialLicenseContext = Object.freeze({
+  licenseId: "license-1",
+  licenseStatus: "ACTIVE",
+  licenseExpiresAt: null,
+  accountLifecycleState: "ACTIVE",
+  subscriptionStatus: "ACTIVE",
+  productId: "bke-test-product",
+  productVersionEligible: true,
+  versionAccepted: true,
+  maxSeats: 1,
+  maxDevicesPerSeat: 2,
+});
 
-  const store: CommercialLeaseStore = {
-    async withTransaction(work) {
-      return work({
-        async findOperation(operationId) {
-          return operations.get(operationId) ?? null;
-        },
-        async createOperation(input) {
-          const record: CommercialOperationRecord = {
-            id: input.id,
-            operationId: input.operationId,
-            licenseId: input.licenseId,
-            action: input.action,
-            status: "PENDING",
-            resultLeaseId: null,
-            metadata: input.metadata,
-          };
-          operations.set(input.operationId, record);
-          return record;
-        },
-        async completeOperation(input) {
-          const current = operations.get(input.operationId);
-          if (!current) throw new Error("TEST_OPERATION_MISSING");
-          operations.set(input.operationId, {
-            ...current,
-            status: "COMPLETED",
-            resultLeaseId: input.resultLeaseId,
-            metadata: input.metadata,
-          });
-        },
-        async findLease(leaseId) {
-          return leases.find((lease) => lease.leaseId === leaseId) ?? null;
-        },
-        async findActivationByInstallation(licenseId, installationId) {
-          return activations.find((activation) =>
-            activation.licenseId === licenseId &&
-            activation.installationId === installationId &&
-            activation.active
-          ) ?? null;
-        },
-        async findActivationByFingerprint(licenseId, fingerprint) {
-          return activations.find((activation) =>
-            activation.licenseId === licenseId &&
-            activation.deviceHash === fingerprint &&
-            activation.active
-          ) ?? null;
-        },
-        async countActiveActivations(licenseId) {
-          return activations.filter((activation) => activation.licenseId === licenseId && activation.active).length;
-        },
-        async createActivation(input) {
-          const record: CommercialActivationRecord = {
-            id: input.id,
-            licenseId: input.licenseId,
-            deviceHash: input.fingerprint,
-            installationId: input.installationId,
-            clientVersion: input.clientVersion,
-            active: true,
-          };
-          activations.push(record);
-          return record;
-        },
-        async updateActivation(input) {
-          const index = activations.findIndex((activation) => activation.id === input.id);
-          if (index < 0) throw new Error("TEST_ACTIVATION_MISSING");
-          const current = activations[index]!;
-          const updated: CommercialActivationRecord = {
-            ...current,
-            deviceHash: input.fingerprint,
-            installationId: input.installationId,
-            clientVersion: input.clientVersion,
-          };
-          activations[index] = updated;
-          return updated;
-        },
-        async findLatestActiveLease(licenseId, deviceId) {
-          return leases
-            .filter((lease) => lease.licenseId === licenseId && lease.deviceId === deviceId && lease.status === "ACTIVE")
-            .sort((left, right) => right.generation - left.generation || right.serverRevision - left.serverRevision)[0] ?? null;
-        },
-        async markActiveLeasesReplaced(input) {
-          for (let index = 0; index < leases.length; index += 1) {
-            const lease = leases[index]!;
-            if (lease.licenseId === input.licenseId && lease.deviceId === input.deviceId && lease.status === "ACTIVE" && lease.id !== input.supersededById) {
-              leases[index] = { ...lease, status: "REPLACED" };
-            }
-          }
-        },
-        async createLease(input) {
-          const record: CommercialLeaseRecord = {
-            ...input,
-            status: "ACTIVE",
-          };
-          leases.push(record);
-          return record;
-        },
+const baseRequest: CommercialLeaseRequest = Object.freeze({
+  licenseKey: "license-key-1234567890",
+  installationId: "installation-123",
+  deviceId: "device-identity-0001",
+  operationId: "operation-activation-1",
+  productVersion: "1.2.3",
+  action: "ACTIVATION",
+  label: "Workstation",
+  operatingSystem: "windows",
+  architecture: "x64",
+  now,
+});
+
+type FixtureOptions = Readonly<{
+  context?: CommercialLicenseContext;
+  transferAllowed?: boolean;
+}>;
+
+function fixture(options: FixtureOptions = {}) {
+  const context = options.context ?? baseContext;
+  const operations = new Map<string, CommercialOperationRecord>();
+  const activations = new Map<string, CommercialActivationRecord>();
+  const leases = new Map<string, CommercialLeaseRecord>();
+  let sequence = 0;
+  let signCount = 0;
+  const id = () => `generated-${++sequence}`;
+
+  const transaction: CommercialLeaseTransaction = {
+    async findOperation(operationId) {
+      return operations.get(operationId) ?? null;
+    },
+    async createOperation(input) {
+      const record: CommercialOperationRecord = Object.freeze({
+        id: input.id,
+        operationId: input.operationId,
+        licenseId: input.licenseId,
+        action: input.action,
+        status: "PENDING",
+        resultLeaseId: null,
+        metadata: Object.freeze({}),
       });
+      operations.set(record.operationId, record);
+      return record;
+    },
+    async completeOperation(input) {
+      const current = operations.get(input.operationId);
+      if (!current) throw new Error("OPERATION_NOT_FOUND");
+      operations.set(
+        input.operationId,
+        Object.freeze({
+          ...current,
+          status: "COMPLETED",
+          resultLeaseId: input.resultLeaseId,
+        }),
+      );
+    },
+    async findLease(leaseId) {
+      return leases.get(leaseId) ?? null;
+    },
+    async findLatestLease(input) {
+      return (
+        [...leases.values()]
+          .filter(
+            (record) =>
+              record.licenseId === input.licenseId &&
+              record.installationId === input.installationId &&
+              record.deviceId === input.deviceId,
+          )
+          .sort(
+            (left, right) =>
+              right.generation - left.generation || right.serverRevision - left.serverRevision,
+          )[0] ?? null
+      );
+    },
+    async findActivationByDeviceHash(licenseId, deviceHash) {
+      const record = activations.get(deviceHash);
+      return record?.licenseId === licenseId ? record : null;
+    },
+    async countActiveActivations(licenseId) {
+      return [...activations.values()].filter(
+        (record) => record.licenseId === licenseId && record.active,
+      ).length;
+    },
+    async upsertActivation(input) {
+      const existing = activations.get(input.deviceHash);
+      const record: CommercialActivationRecord = Object.freeze({
+        id: existing?.id ?? input.id,
+        licenseId: input.licenseId,
+        deviceHash: input.deviceHash,
+        machineIdHint: existing?.machineIdHint ?? input.machineIdHint,
+        label: input.label ?? existing?.label ?? null,
+        operatingSystem: input.operatingSystem ?? existing?.operatingSystem ?? null,
+        architecture: input.architecture ?? existing?.architecture ?? null,
+        active: true,
+      });
+      activations.set(input.deviceHash, record);
+      return record;
+    },
+    async touchActivation(input) {
+      const entry = [...activations.entries()].find(([, record]) => record.id === input.id);
+      if (!entry) throw new Error("DEVICE_ACTIVATION_NOT_FOUND");
+      const [deviceHash, existing] = entry;
+      const record: CommercialActivationRecord = Object.freeze({
+        ...existing,
+        label: input.label ?? existing.label,
+        operatingSystem: input.operatingSystem ?? existing.operatingSystem,
+        architecture: input.architecture ?? existing.architecture,
+      });
+      activations.set(deviceHash, record);
+      return record;
+    },
+    async createLease(input) {
+      const record: CommercialLeaseRecord = Object.freeze({
+        id: input.id,
+        licenseId: input.licenseId,
+        leaseId: input.leaseId,
+        generation: input.generation,
+        serverRevision: input.serverRevision,
+        installationId: input.installationId,
+        deviceId: input.deviceId,
+        version: input.version,
+        status: "ACTIVE",
+        action: input.action,
+        operationId: input.operationId,
+        signerKeyId: input.signerKeyId,
+        expiresAt: input.expiresAt,
+        leasePayload: input.leasePayload,
+        leaseSignature: input.leaseSignature,
+        supersededById: null,
+        issuedAt: input.issuedAt,
+      });
+      leases.set(record.leaseId, record);
+      return record;
+    },
+    async supersedeLease(input) {
+      const entry = [...leases.entries()].find(
+        ([, record]) => record.id === input.previousLeaseRecordId,
+      );
+      if (!entry) throw new Error("LEASE_NOT_FOUND");
+      const [leaseId, previous] = entry;
+      leases.set(
+        leaseId,
+        Object.freeze({
+          ...previous,
+          status: "SUPERSEDED",
+          supersededById: input.supersededById,
+        }),
+      );
     },
   };
 
-  const capability = createCommercialLeaseCapability({
-    store,
+  const dependencies: CommercialLeaseDependencies = {
+    store: {
+      async withTransaction(work) {
+        return work(transaction);
+      },
+    },
     contexts: {
       async resolve() {
-        return currentContext;
+        return context;
       },
     },
     keys: {
+      async ensure() {},
       async active() {
-        return SIGNING_KEY;
-      },
-      async resolve(keyId) {
-        if (keyId !== SIGNING_KEY.keyId) throw new Error("COMMERCIAL_SIGNING_KEY_UNAVAILABLE");
-        return SIGNING_KEY;
+        return signingKey;
       },
     },
     signer: {
-      async sign(claims, key) {
-        return `token:${claims.jti}:${key.keyId}`;
+      async issue(payload, key) {
+        signCount += 1;
+        return Object.freeze({
+          payload: JSON.stringify(payload, Object.keys(payload).sort()),
+          signature: `signature-${payload.lease_id}`,
+          key_id: key.keyId,
+          algorithm: "Ed25519" as const,
+        });
       },
     },
     hasher: {
       hash(value) {
-        return `hash:${value}`;
+        return createHash("sha256").update(value).digest("hex");
       },
     },
-    devices: {
-      classify() {
-        return { isVirtualMachine: false, isContainer: false };
+    transfers: {
+      async isTransferAllowed() {
+        return options.transferAllowed ?? false;
       },
     },
-    allowTransfer: true,
-    id() {
-      idCounter += 1;
-      return `generated-${idCounter}`;
-    },
-  });
+    id,
+  };
+
+  function prepareOperation(
+    action: CommercialLeaseAction,
+    operationId: string,
+    metadata: CommercialOperationMetadata = Object.freeze({}),
+  ) {
+    operations.set(
+      operationId,
+      Object.freeze({
+        id: id(),
+        operationId,
+        licenseId: context.licenseId,
+        action,
+        status: "PENDING",
+        resultLeaseId: null,
+        metadata,
+      }),
+    );
+  }
 
   return {
-    capability,
+    capability: createCommercialLeaseCapability(dependencies),
+    operations,
     activations,
     leases,
-    operations,
-    setContext(next: CommercialLicenseContext) {
-      currentContext = next;
-    },
+    prepareOperation,
+    signCount: () => signCount,
   };
 }
 
+function payloadOf(result: Awaited<ReturnType<ReturnType<typeof createCommercialLeaseCapability>["issue"]>>) {
+  return JSON.parse(result.lease.payload) as Record<string, unknown>;
+}
+
 describe("commercial lease capability", () => {
-  it("issues an initial identity-bound lease", async () => {
-    const harness = createHarness();
-    const result = await harness.capability.issue(request());
+  it("issues an activation lease with the certified legacy payload", async () => {
+    const state = fixture();
+    const result = await state.capability.issue(baseRequest);
+    const payload = payloadOf(result);
 
-    expect(result.operation).toMatchObject({
-      action: "ISSUE",
-      decision: "ISSUED",
-      reasonCode: "INITIAL_ISSUE",
+    expect(payload).toMatchObject({
+      license_id: "license-1",
+      generation: 1,
+      server_revision: 1,
+      product_id: "bke-test-product",
+      installation_id: "installation-123",
+      device_id: "device-identity-0001",
+      version: "1.2.3",
+      issuer: "BKE Digital Solutions",
+      key_id: "lease-key-1",
+      algorithm: "Ed25519",
+      revoked: false,
+      superseded_by: null,
     });
-    expect(result.lease.refreshAfter.toISOString()).toBe("2026-09-05T00:01:00.000Z");
-    expect(result.lease.expiresAt.toISOString()).toBe("2026-09-05T00:05:00.000Z");
-    expect(harness.activations).toHaveLength(1);
-    expect(harness.leases).toHaveLength(1);
-    expect(result.token).toBe(`token:${result.lease.tokenId}:signing-key-1`);
+    expect(state.operations.get(baseRequest.operationId)?.status).toBe("COMPLETED");
+    expect(state.activations.size).toBe(1);
+    expect(state.leases.size).toBe(1);
+    expect(state.signCount()).toBe(1);
   });
 
-  it("keeps an unchanged active lease for a new equivalent operation", async () => {
-    const harness = createHarness();
-    const first = await harness.capability.issue(request());
-    const second = await harness.capability.issue(request({ idempotencyKey: "operation-456" }));
+  it("replays a completed operation from the persisted envelope", async () => {
+    const state = fixture();
+    const first = await state.capability.issue(baseRequest);
+    const replay = await state.capability.issue(baseRequest);
 
-    expect(second.operation).toMatchObject({ decision: "UNCHANGED", reasonCode: "UNCHANGED" });
-    expect(second.lease.tokenId).toBe(first.lease.tokenId);
-    expect(harness.leases).toHaveLength(1);
+    expect(replay).toEqual(first);
+    expect(state.leases.size).toBe(1);
+    expect(state.signCount()).toBe(1);
   });
 
-  it("replays the exact completed idempotent operation without creating another lease", async () => {
-    const harness = createHarness();
-    const first = await harness.capability.issue(request());
-    const replay = await harness.capability.issue(request());
-
-    expect(replay.lease.tokenId).toBe(first.lease.tokenId);
-    expect(replay.operation.decision).toBe("ISSUED");
-    expect(harness.leases).toHaveLength(1);
-  });
-
-  it("rejects reuse of an idempotency key for different request semantics", async () => {
-    const harness = createHarness();
-    await harness.capability.issue(request());
-
-    await expect(harness.capability.issue(request({ fingerprint: "fingerprint-999" })))
-      .rejects.toThrow("IDEMPOTENCY_KEY_REUSED");
-  });
-
-  it("requires an existing activation for refresh", async () => {
-    const harness = createHarness();
-    await expect(harness.capability.issue(request({ requestedAction: "REFRESH" })))
-      .rejects.toThrow("ACTIVATION_REQUIRED");
-  });
-
-  it("enforces the effective device limit", async () => {
-    const harness = createHarness({
-      ...baseContext,
-      policy: { ...baseContext.policy, maxDevices: 1 },
+  it("increments generation/revision and supersedes the predecessor", async () => {
+    const state = fixture();
+    const first = await state.capability.issue(baseRequest);
+    const firstPayload = payloadOf(first);
+    const secondRequest = {
+      ...baseRequest,
+      operationId: "operation-replacement-2",
+      action: "REPLACEMENT" as const,
+      predecessorLeaseId: String(firstPayload.lease_id),
+    };
+    state.prepareOperation("REPLACEMENT", secondRequest.operationId, {
+      predecessorLeaseId: secondRequest.predecessorLeaseId,
     });
-    await harness.capability.issue(request());
 
-    await expect(harness.capability.issue(request({
-      fingerprint: "fingerprint-999",
-      installationId: "installation-999",
-      idempotencyKey: "operation-999",
-    }))).rejects.toThrow("DEVICE_LIMIT_REACHED");
+    const second = await state.capability.issue(secondRequest);
+    const secondPayload = payloadOf(second);
+    expect(secondPayload.generation).toBe(2);
+    expect(secondPayload.server_revision).toBe(2);
+    const firstRecord = state.leases.get(String(firstPayload.lease_id));
+    const secondRecord = state.leases.get(String(secondPayload.lease_id));
+    expect(firstRecord?.status).toBe("SUPERSEDED");
+    expect(firstRecord?.supersededById).toBe(secondRecord?.id);
   });
 
-  it("fails closed on account, subscription, license, and version state", async () => {
-    const cases: Array<[Partial<CommercialLicenseContext>, string]> = [
-      [{ licenseActive: false }, "LICENSE_INACTIVE"],
-      [{ accountActive: false }, "ACCOUNT_INACTIVE"],
-      [{ subscriptionActive: false }, "SUBSCRIPTION_INACTIVE"],
-      [{ versionAccepted: false }, "CLIENT_VERSION_MISMATCH"],
-    ];
+  it("requires a prepared operation for non-activation actions", async () => {
+    const state = fixture();
+    await expect(
+      state.capability.issue({ ...baseRequest, action: "REFRESH", operationId: "missing-refresh" }),
+    ).rejects.toThrow("COMMERCIAL_OPERATION_REQUIRED");
+  });
 
-    for (const [override, expected] of cases) {
-      const harness = createHarness({ ...baseContext, ...override });
-      await expect(harness.capability.issue(request())).rejects.toThrow(expected);
-    }
+  it("rejects a pending operation when the requested action changes", async () => {
+    const state = fixture();
+    state.prepareOperation("REFRESH", "refresh-1");
+    await expect(
+      state.capability.issue({ ...baseRequest, action: "ACTIVATION", operationId: "refresh-1" }),
+    ).rejects.toThrow("OPERATION_ACTION_MISMATCH");
+  });
+
+  it("blocks renewal when the subscription is not active", async () => {
+    const state = fixture({ context: { ...baseContext, subscriptionStatus: "CANCELLED" } });
+    state.prepareOperation("RENEWAL", "renewal-1");
+    await expect(
+      state.capability.issue({ ...baseRequest, action: "RENEWAL", operationId: "renewal-1" }),
+    ).rejects.toThrow("RENEWAL_NOT_ELIGIBLE");
+  });
+
+  it("requires an approved transfer policy", async () => {
+    const denied = fixture({ transferAllowed: false });
+    denied.prepareOperation("TRANSFER", "transfer-1", { policyId: "policy-1" });
+    await expect(
+      denied.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-1" }),
+    ).rejects.toThrow("TRANSFER_NOT_ALLOWED");
+
+    const allowed = fixture({ transferAllowed: true });
+    allowed.prepareOperation("TRANSFER", "transfer-2", { policyId: "policy-1" });
+    await expect(
+      allowed.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-2" }),
+    ).resolves.toMatchObject({ lease: { algorithm: "Ed25519" } });
+  });
+
+  it("enforces maxSeats multiplied by maxDevicesPerSeat", async () => {
+    const state = fixture({ context: { ...baseContext, maxSeats: 1, maxDevicesPerSeat: 1 } });
+    const other = deviceIdentity("other-device-identity-0001");
+    state.activations.set(
+      other.deviceHash,
+      Object.freeze({
+        id: "existing-device",
+        licenseId: "license-1",
+        deviceHash: other.deviceHash,
+        machineIdHint: other.machineIdHint,
+        label: null,
+        operatingSystem: null,
+        architecture: null,
+        active: true,
+      }),
+    );
+
+    await expect(state.capability.issue(baseRequest)).rejects.toThrow("ACTIVATION_LIMIT");
+  });
+
+  it.each([
+    [{ ...baseContext, licenseStatus: "REVOKED" }, "INVALID_LICENSE"],
+    [{ ...baseContext, accountLifecycleState: "CLOSED" }, "INVALID_LICENSE"],
+    [{ ...baseContext, productVersionEligible: false }, "VERSION_NOT_ELIGIBLE"],
+    [{ ...baseContext, versionAccepted: false }, "VERSION_NOT_ACCEPTED"],
+    [{ ...baseContext, productId: null }, "PRODUCT_ID_NOT_CONFIGURED"],
+  ] as const)("fails closed for invalid external licensing context", async (context, code) => {
+    const state = fixture({ context });
+    await expect(state.capability.issue(baseRequest)).rejects.toThrow(code);
   });
 });
