@@ -1,39 +1,40 @@
 export type CommercialSigningKeyRecord = Readonly<{
+  id: string;
   keyId: string;
-  privateKeyReference: string;
   algorithm: string;
   status: string;
-  activeFrom: Date;
-  activeTo: Date | null;
-  revokedAt: Date | null;
+  publicKey: string;
+  privateKeyReference: string;
+  createdAt: Date;
+  activatedAt: Date;
+  retiredAt: Date | null;
+  rotationReason: string | null;
+  createdBy: string | null;
 }>;
 
-function isActive(key: CommercialSigningKeyRecord, now: Date): boolean {
-  return (
-    key.status === "ACTIVE" &&
-    key.revokedAt === null &&
-    key.activeFrom.getTime() <= now.getTime() &&
-    (key.activeTo === null || key.activeTo.getTime() > now.getTime())
-  );
+export type CommercialSigningKeyBootstrap = Readonly<{
+  keyId: string;
+  publicKey: string;
+  privateKeyReference: string;
+}>;
+
+export function resolveCommercialPrivateKey(
+  reference: string,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  const prefix = "env:";
+  if (!reference.startsWith(prefix)) throw new Error("SIGNING_KEY_REFERENCE_UNSUPPORTED");
+  const value = environment[reference.slice(prefix.length)];
+  if (!value) throw new Error("SIGNING_KEY_UNRESOLVED");
+  return value;
 }
 
 export function selectActiveCommercialSigningKey(
   keys: readonly CommercialSigningKeyRecord[],
-  now: Date,
 ): CommercialSigningKeyRecord {
-  const active = keys
-    .filter((key) => isActive(key, now))
-    .sort((left, right) => right.activeFrom.getTime() - left.activeFrom.getTime())[0];
-  if (!active) throw new Error("COMMERCIAL_SIGNING_KEY_UNAVAILABLE");
-  return active;
-}
-
-export function resolveCommercialSigningKey(
-  keys: readonly CommercialSigningKeyRecord[],
-  keyId: string,
-  now: Date,
-): CommercialSigningKeyRecord {
-  const key = keys.find((candidate) => candidate.keyId === keyId);
-  if (!key || !isActive(key, now)) throw new Error("COMMERCIAL_SIGNING_KEY_UNAVAILABLE");
-  return key;
+  const active = keys.filter((key) => key.status === "ACTIVE");
+  if (active.length !== 1) {
+    throw new Error(active.length === 0 ? "NO_ACTIVE_SIGNING_KEY" : "MULTIPLE_ACTIVE_SIGNING_KEYS");
+  }
+  return active[0]!;
 }
