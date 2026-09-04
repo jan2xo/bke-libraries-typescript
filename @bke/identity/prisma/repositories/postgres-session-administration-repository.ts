@@ -1,5 +1,6 @@
 import { Client } from "pg";
 import type {
+  IdentitySessionAdministrationPersistenceInput,
   IdentitySessionAdministrationPersistenceResult,
   IdentitySessionAdministrationRepository,
 } from "../../logic/session-administration-repository";
@@ -13,7 +14,9 @@ export function createPostgresIdentitySessionAdministrationRepository(
   }
 
   return Object.freeze({
-    async revokeAdministratorSessions(input) {
+    async revokeAdministratorSessions(
+      input: IdentitySessionAdministrationPersistenceInput,
+    ): Promise<IdentitySessionAdministrationPersistenceResult> {
       const client = new Client({ connectionString: normalizedConnectionString });
       await client.connect();
       try {
