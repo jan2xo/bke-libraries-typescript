@@ -37,11 +37,13 @@ jobs:
           set -euo pipefail
           rm -rf artifacts
           mkdir -p artifacts
+          version="$(node -p "require('./@bke/licensing/package.json').version")"
           artifact="$(npm pack --workspace=@bke/licensing --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-licensing-0.1.0.tgz"
+          test "$artifact" = "bke-licensing-${version}.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "LICENSING_VERSION=$version" >> "$GITHUB_ENV"
           echo "LICENSING_ARTIFACT=$artifact" >> "$GITHUB_ENV"
       - name: Certify package contents
         shell: bash
@@ -51,13 +53,22 @@ jobs:
           grep -Fx 'package/package.json' artifacts/package-contents.txt
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/license-key-reveal.contract.ts' artifacts/package-contents.txt
-          grep -Fx 'package/contracts/license.contract.ts' artifacts/package-contents.txt
-          grep -Fx 'package/contracts/module.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/commercial-lease.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/license-key-reveal.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/commercial-lease.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/commercial-lease-ports.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/commercial-signing-registry.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/lease-lifecycle.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/product-identity.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/refresh-decision.ts' artifacts/package-contents.txt
           grep -Fx 'package/providers/aes-gcm-license-key-decrypter.ts' artifacts/package-contents.txt
+          grep -Fx 'package/providers/ed25519-commercial-lease-signer.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-license-key-reveal-repository.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-commercial-lease-store.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-commercial-signing-key-provider.ts' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0001_licensing_baseline/migration.sql' artifacts/package-contents.txt
+          grep -Fx 'package/migrations/0002_commercial_lease_runtime/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/docs/EXTRACTION-SOURCE.md' artifacts/package-contents.txt
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
             echo '::error::Tests or dependency caches must not ship in @bke/licensing.'
@@ -97,19 +108,44 @@ jobs:
           }
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
+          import {
+            LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID,
+            commercialLeaseActions,
+          } from "@bke/licensing/contracts/commercial-lease.contract";
           import { LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID } from "@bke/licensing/contracts/license-key-reveal.contract";
+          import { createCommercialLeaseCapability } from "@bke/licensing/logic/commercial-lease";
           import { createLicensingLicenseKeyRevealCapability } from "@bke/licensing/logic/license-key-reveal";
+          import { selectActiveCommercialSigningKey } from "@bke/licensing/logic/commercial-signing-registry";
+          import { nextLeaseLifecycle, requireProductVersion } from "@bke/licensing/logic/lease-lifecycle";
+          import { deviceIdentity } from "@bke/licensing/logic/product-identity";
+          import { refreshRequiresReplacement } from "@bke/licensing/logic/refresh-decision";
           import { createAesGcmLicensingLicenseKeyDecrypter } from "@bke/licensing/providers/aes-gcm-license-key-decrypter";
+          import { createEd25519CommercialLeaseSigner } from "@bke/licensing/providers/ed25519-commercial-lease-signer";
+          import { createPostgresCommercialLeaseStore } from "@bke/licensing/prisma/repositories/postgres-commercial-lease-store";
+          import { createPostgresCommercialSigningKeyProvider } from "@bke/licensing/prisma/repositories/postgres-commercial-signing-key-provider";
           import { createPostgresLicensingLicenseKeyRevealRepository } from "@bke/licensing/prisma/repositories/postgres-license-key-reveal-repository";
           import { licensingModuleManifest } from "@bke/licensing/module.manifest";
-          if (LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID !== "bke.licensing.license-key-reveal.v1") throw new Error("Unexpected Licensing capability id.");
+
+          if (LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID !== "bke.licensing.license-key-reveal.v1") throw new Error("Unexpected reveal capability id.");
+          if (LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID !== "bke.licensing.commercial-lease.v1") throw new Error("Unexpected commercial lease capability id.");
           if (licensingModuleManifest.moduleId !== "bke.licensing") throw new Error("Unexpected Licensing module id.");
+          if (!licensingModuleManifest.provides.includes(LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID)) throw new Error("Commercial lease capability missing from manifest.");
+          if (commercialLeaseActions.join(",") !== "ACTIVATION,REFRESH,RENEWAL,TRANSFER,REPLACEMENT,REVOCATION_REPLACEMENT,KEY_ROTATION") throw new Error("Commercial lease action surface drifted.");
           if (
+            typeof createCommercialLeaseCapability !== "function" ||
             typeof createLicensingLicenseKeyRevealCapability !== "function" ||
+            typeof selectActiveCommercialSigningKey !== "function" ||
+            typeof nextLeaseLifecycle !== "function" ||
+            typeof requireProductVersion !== "function" ||
+            typeof deviceIdentity !== "function" ||
+            typeof refreshRequiresReplacement !== "function" ||
             typeof createAesGcmLicensingLicenseKeyDecrypter !== "function" ||
+            typeof createEd25519CommercialLeaseSigner !== "function" ||
+            typeof createPostgresCommercialLeaseStore !== "function" ||
+            typeof createPostgresCommercialSigningKeyProvider !== "function" ||
             typeof createPostgresLicensingLicenseKeyRevealRepository !== "function"
           ) throw new Error("Packed Licensing consumer exports are incomplete.");
-          console.log("Packed @bke/licensing consumer smoke GREEN");
+          console.log("Packed @bke/licensing commercial lease consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -117,11 +153,8 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-licensing-0.1.0
-          path: |
-            artifacts/bke-licensing-0.1.0.tgz
-            artifacts/bke-licensing-0.1.0.tgz.sha256
-            artifacts/package-contents.txt
+          name: bke-licensing-certified-package
+          path: artifacts/
           if-no-files-found: error
       - name: Create immutable Licensing release
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -148,4 +181,4 @@ jobs:
             "artifacts/$LICENSING_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/licensing v${version}" \
-            --notes "Certified BKE Licensing package artifact. Source, persistence, behavior, and package gates passed before release creation."
+            --notes "Certified BKE Licensing package artifact. Source, persistence, commercial lease behavior, and packed-consumer gates passed before release creation."
