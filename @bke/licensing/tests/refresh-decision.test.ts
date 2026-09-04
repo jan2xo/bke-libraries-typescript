@@ -1,31 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { refreshRequiresReplacement } from "../logic/refresh-decision";
 
-const base = {
-  requestFingerprint: "fingerprint-a",
-  existingFingerprint: "fingerprint-a",
-  requestedVersion: "1.0.0",
-  existingVersion: "1.0.0",
-  hasExistingActiveLease: true,
-  policyChanged: false,
-  versionAccepted: true,
-} as const;
+const current = Object.freeze({
+  version: "1.2.3",
+  expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+  installationId: "installation-1",
+  deviceId: "device-identity-0001",
+  signerKeyId: "key-1",
+  status: "ACTIVE",
+  serverRevision: 1,
+});
 
-describe("refreshRequiresReplacement", () => {
-  it("preserves the canonical replacement priority", () => {
-    expect(refreshRequiresReplacement({ ...base, existingFingerprint: null })).toEqual({ replacement: true, reason: "INITIAL_ISSUE" });
-    expect(refreshRequiresReplacement({ ...base, requestFingerprint: "fingerprint-b" })).toEqual({ replacement: true, reason: "BINDING_CHANGED" });
-    expect(refreshRequiresReplacement({ ...base, requestedVersion: "1.0.1" })).toEqual({ replacement: true, reason: "VERSION_CHANGED" });
-    expect(refreshRequiresReplacement({ ...base, policyChanged: true })).toEqual({ replacement: true, reason: "POLICY_CHANGED" });
-    expect(refreshRequiresReplacement({ ...base, hasExistingActiveLease: false })).toEqual({ replacement: true, reason: "LEASE_MISSING" });
-    expect(refreshRequiresReplacement(base)).toEqual({ replacement: false, reason: "UNCHANGED" });
+const expected = Object.freeze({
+  version: "1.2.3",
+  expiresAt: new Date("2026-10-01T00:00:00.000Z"),
+  installationId: "installation-1",
+  deviceId: "device-identity-0001",
+  signerKeyId: "key-1",
+});
+
+describe("commercial refresh replacement", () => {
+  it("reuses an exactly current lease", () => {
+    expect(refreshRequiresReplacement(current, expected)).toBe(false);
   });
 
-  it("rejects versions before making any replacement decision", () => {
-    expect(() => refreshRequiresReplacement({
-      ...base,
-      versionAccepted: false,
-      existingFingerprint: null,
-    })).toThrow("CLIENT_VERSION_MISMATCH");
+  it.each([
+    [{ ...current, status: "SUPERSEDED" }, expected],
+    [{ ...current, version: "1.2.2" }, expected],
+    [{ ...current, expiresAt: new Date("2026-09-30T00:00:00.000Z") }, expected],
+    [{ ...current, installationId: "installation-2" }, expected],
+    [{ ...current, deviceId: "device-identity-0002" }, expected],
+    [{ ...current, signerKeyId: "key-2" }, expected],
+    [{ ...current, serverRevision: 0 }, expected],
+  ])("requires replacement when a certified lease field drifts", (actual, target) => {
+    expect(refreshRequiresReplacement(actual, target)).toBe(true);
   });
 });
