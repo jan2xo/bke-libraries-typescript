@@ -22,7 +22,7 @@ const categorySet = new Set<string>(SUPPORT_TICKET_CATEGORIES);
 const prioritySet = new Set<string>(SUPPORT_TICKET_PRIORITIES);
 const stateSet = new Set<string>(SUPPORT_TICKET_STATES);
 
-export function supportPublicId(now = new Date(), random = randomUUID()): string {
+export function supportPublicId(now = new Date(), random: string = randomUUID()): string {
   return `BKE-SUP-${now.getUTCFullYear()}-${random.replace(/-/g, "").slice(0, 10).toUpperCase()}`;
 }
 
