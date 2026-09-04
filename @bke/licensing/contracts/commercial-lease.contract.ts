@@ -1,80 +1,70 @@
 export const LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID = "bke.licensing.commercial-lease.v1" as const;
 
-export type CommercialLeaseAction = "ISSUE" | "REFRESH";
-export type CommercialLeaseDecision = "ISSUED" | "REFRESHED" | "UNCHANGED";
+export const commercialLeaseActions = [
+  "ACTIVATION",
+  "REFRESH",
+  "RENEWAL",
+  "TRANSFER",
+  "REPLACEMENT",
+  "REVOCATION_REPLACEMENT",
+  "KEY_ROTATION",
+] as const;
 
-export type CommercialLicensePolicy = Readonly<{
-  maxDevices: number;
-  transferable: boolean;
-  refreshAfterSeconds: number;
-  hardExpirySeconds: number;
+export type CommercialLeaseAction = (typeof commercialLeaseActions)[number];
+
+export type CommercialLeasePayload = Readonly<{
+  license_id: string;
+  lease_id: string;
+  generation: number;
+  server_revision: number;
+  product_id: string;
+  installation_id: string;
+  device_id: string;
+  version: string;
+  issuer: string;
+  issued_at: string;
+  not_before: string;
+  expires_at: string;
+  key_id: string;
+  algorithm: "Ed25519";
+  revoked: boolean;
+  superseded_by: string | null;
 }>;
 
-export type CommercialProductIdentity = Readonly<{
-  packageFamily: string;
-  packageIdentityKey: string;
-  releaseIdentityKey: string;
-  contractVersion: string;
-  entitlements: readonly string[];
-}>;
-
-export type CommercialLicenseContext = Readonly<{
-  licenseId: string;
-  accountId: string;
-  licenseActive: boolean;
-  accountActive: boolean;
-  subscriptionActive: boolean;
-  versionAccepted: boolean;
-  minSupportedVersion: string;
-  policy: CommercialLicensePolicy;
-  identity: CommercialProductIdentity;
+export type CommercialLeaseEnvelope = Readonly<{
+  payload: string;
+  signature: string;
+  key_id: string;
+  algorithm: "Ed25519";
 }>;
 
 export type CommercialLeaseRequest = Readonly<{
   licenseKey: string;
-  clientVersion: string;
-  fingerprint: string;
   installationId: string;
-  idempotencyKey: string;
-  requestedAction?: CommercialLeaseAction;
+  deviceId: string;
+  operationId: string;
+  productVersion: string;
+  action?: CommercialLeaseAction;
+  label?: string;
+  operatingSystem?: string;
+  architecture?: string;
+  predecessorLeaseId?: string;
   now?: Date;
 }>;
 
-export type CommercialLeaseClaims = Readonly<{
-  sub: string;
+export type CommercialLicenseContext = Readonly<{
   licenseId: string;
-  deviceId: string;
-  productId: string;
-  productVersionId: string;
-  packageFamily: string;
-  packageIdentityKey: string;
-  releaseIdentityKey: string;
-  clientVersion: string;
-  contractVersion: string;
-  entitlements: readonly string[];
-  signingKeyId: string;
-  leaseKeyId: string;
-  leaseKeyIssuedAt: number;
-  iat: number;
-  nbf: number;
-  refreshAfter: number;
-  exp: number;
-  jti: string;
+  licenseStatus: string;
+  licenseExpiresAt: Date | null;
+  accountLifecycleState: string;
+  subscriptionStatus: string | null;
+  productId: string | null;
+  productVersionEligible: boolean;
+  versionAccepted: boolean;
+  maxSeats: number;
+  maxDevicesPerSeat: number;
 }>;
 
 export type CommercialLeaseResult = Readonly<{
-  token: string;
-  lease: Readonly<{
-    tokenId: string;
-    issuedAt: Date;
-    refreshAfter: Date;
-    expiresAt: Date;
-    signingKeyId: string;
-  }>;
-  operation: Readonly<{
-    id: string;
-    action: CommercialLeaseAction;
-    decision: CommercialLeaseDecision;
-    reasonCode: string;
-  }>;
+  lease: CommercialLeaseEnvelope;
 }>;
