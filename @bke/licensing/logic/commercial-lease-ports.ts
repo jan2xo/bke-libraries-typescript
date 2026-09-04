@@ -1,6 +1,7 @@
 import type {
   CommercialLeaseAction,
-  CommercialLeaseClaims,
+  CommercialLeaseEnvelope,
+  CommercialLeasePayload,
   CommercialLicenseContext,
 } from "../contracts/commercial-lease.contract";
 import type { CommercialSigningKeyRecord } from "./commercial-signing-registry";
@@ -9,8 +10,10 @@ export type CommercialActivationRecord = Readonly<{
   id: string;
   licenseId: string;
   deviceHash: string;
-  installationId: string | null;
-  clientVersion: string | null;
+  machineIdHint: string | null;
+  label: string | null;
+  operatingSystem: string | null;
+  architecture: string | null;
   active: boolean;
 }>;
 
@@ -27,18 +30,14 @@ export type CommercialLeaseRecord = Readonly<{
   action: string;
   operationId: string | null;
   signerKeyId: string | null;
-  refreshAfter: Date | null;
   expiresAt: Date | null;
+  leasePayload: string | null;
+  leaseSignature: string | null;
+  supersededById: string | null;
   issuedAt: Date;
 }>;
 
-export type CommercialOperationMetadata = Readonly<{
-  fingerprint: string;
-  clientVersion: string;
-  requestedAction: CommercialLeaseAction;
-  decision?: "ISSUED" | "REFRESHED" | "UNCHANGED";
-  reasonCode?: string;
-}>;
+export type CommercialOperationMetadata = Readonly<Record<string, unknown>>;
 
 export type CommercialOperationRecord = Readonly<{
   id: string;
@@ -57,45 +56,41 @@ export interface CommercialLeaseTransaction {
     operationId: string;
     licenseId: string;
     action: CommercialLeaseAction;
-    metadata: CommercialOperationMetadata;
     createdAt: Date;
   }>): Promise<CommercialOperationRecord>;
   completeOperation(input: Readonly<{
     operationId: string;
     resultLeaseId: string;
-    metadata: CommercialOperationMetadata;
     completedAt: Date;
   }>): Promise<void>;
   findLease(leaseId: string): Promise<CommercialLeaseRecord | null>;
-  findActivationByInstallation(licenseId: string, installationId: string): Promise<CommercialActivationRecord | null>;
-  findActivationByFingerprint(licenseId: string, fingerprint: string): Promise<CommercialActivationRecord | null>;
-  countActiveActivations(licenseId: string): Promise<number>;
-  createActivation(input: Readonly<{
-    id: string;
+  findLatestLease(input: Readonly<{
     licenseId: string;
-    fingerprint: string;
     installationId: string;
-    clientVersion: string;
-    isVirtualMachine: boolean;
-    isContainer: boolean;
-    now: Date;
-  }>): Promise<CommercialActivationRecord>;
-  updateActivation(input: Readonly<{
-    id: string;
-    fingerprint: string;
-    installationId: string;
-    clientVersion: string;
-    isVirtualMachine: boolean;
-    isContainer: boolean;
-    now: Date;
-  }>): Promise<CommercialActivationRecord>;
-  findLatestActiveLease(licenseId: string, deviceId: string): Promise<CommercialLeaseRecord | null>;
-  markActiveLeasesReplaced(input: Readonly<{
-    licenseId: string;
     deviceId: string;
-    supersededById: string;
-    replacedAt: Date;
-  }>): Promise<void>;
+  }>): Promise<CommercialLeaseRecord | null>;
+  findActivationByDeviceHash(
+    licenseId: string,
+    deviceHash: string,
+  ): Promise<CommercialActivationRecord | null>;
+  countActiveActivations(licenseId: string): Promise<number>;
+  upsertActivation(input: Readonly<{
+    id: string;
+    licenseId: string;
+    deviceHash: string;
+    machineIdHint: string;
+    label?: string;
+    operatingSystem?: string;
+    architecture?: string;
+    now: Date;
+  }>): Promise<CommercialActivationRecord>;
+  touchActivation(input: Readonly<{
+    id: string;
+    label?: string;
+    operatingSystem?: string;
+    architecture?: string;
+    now: Date;
+  }>): Promise<CommercialActivationRecord>;
   createLease(input: Readonly<{
     id: string;
     licenseId: string;
@@ -108,10 +103,15 @@ export interface CommercialLeaseTransaction {
     action: CommercialLeaseAction;
     operationId: string;
     signerKeyId: string;
-    refreshAfter: Date;
     expiresAt: Date;
+    leasePayload: string;
+    leaseSignature: string;
     issuedAt: Date;
   }>): Promise<CommercialLeaseRecord>;
+  supersedeLease(input: Readonly<{
+    previousLeaseRecordId: string;
+    supersededById: string;
+  }>): Promise<void>;
 }
 
 export interface CommercialLeaseStore {
@@ -119,22 +119,31 @@ export interface CommercialLeaseStore {
 }
 
 export interface CommercialLicenseContextProvider {
-  resolve(input: Readonly<{ licenseKeyHash: string; clientVersion: string }>): Promise<CommercialLicenseContext | null>;
+  resolve(input: Readonly<{
+    licenseKeyHash: string;
+    productVersion: string;
+  }>): Promise<CommercialLicenseContext | null>;
+}
+
+export interface CommercialTransferEligibilityProvider {
+  isTransferAllowed(input: Readonly<{
+    licenseId: string;
+    policyId: string;
+  }>): Promise<boolean>;
 }
 
 export interface CommercialSigningKeyProvider {
-  active(now: Date): Promise<CommercialSigningKeyRecord>;
-  resolve(keyId: string, now: Date): Promise<CommercialSigningKeyRecord>;
+  ensure(): Promise<void>;
+  active(): Promise<CommercialSigningKeyRecord>;
 }
 
 export interface CommercialLeaseSigner {
-  sign(claims: CommercialLeaseClaims, key: CommercialSigningKeyRecord): Promise<string>;
+  issue(
+    payload: CommercialLeasePayload,
+    key: CommercialSigningKeyRecord,
+  ): Promise<CommercialLeaseEnvelope>;
 }
 
 export interface CommercialLicenseKeyHasher {
   hash(licenseKey: string): string;
-}
-
-export interface CommercialDeviceClassifier {
-  classify(fingerprint: string): Readonly<{ isVirtualMachine: boolean; isContainer: boolean }>;
 }
