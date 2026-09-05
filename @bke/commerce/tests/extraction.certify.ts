@@ -40,16 +40,16 @@ if (!manifest.includes("needs: []") || !manifest.includes("CommerceModuleManifes
 if (existsSync(resolve(root, "module.ts"))) throw new Error("Digital Solutions Commerce host adapter must not ship in @bke/commerce.");
 
 const migrations = readdirSync(resolve(root, "migrations")).filter((name) => statSync(resolve(root, "migrations", name)).isDirectory()).sort();
-const expectedMigrations = ["0001_commerce_purchase_plan_baseline", "0002_commerce_offers_redemptions", "0003_commerce_orders_invoices"];
+const expectedMigrations = ["0001_commerce_purchase_plan_baseline", "0002_commerce_offers_redemptions", "0003_commerce_orders_invoices", "0004_commerce_subscription_baseline"];
 if (JSON.stringify(migrations) !== JSON.stringify(expectedMigrations)) throw new Error(`Commerce migration set drifted: ${JSON.stringify(migrations)}`);
 
 const schema = readFileSync(resolve(root, "prisma/schema.prisma"), "utf8");
 const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((match) => match[1]).sort();
-const expectedModels = ["DiscountOffer", "Invoice", "InvoiceLine", "OfferRedemption", "Order", "OrderItem", "Price", "PurchasePlan"].sort();
+const expectedModels = ["DiscountOffer", "Invoice", "InvoiceLine", "OfferRedemption", "Order", "OrderItem", "Price", "PurchasePlan", "Subscription"].sort();
 if (JSON.stringify(models) !== JSON.stringify(expectedModels)) throw new Error(`Commerce schema contains foreign/unexpected models: ${JSON.stringify(models)}`);
 
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { name?: string; version?: string; dependencies?: Record<string, string> };
-if (packageJson.name !== "@bke/commerce" || packageJson.version !== "0.3.0") throw new Error("Unexpected Commerce package identity.");
+if (packageJson.name !== "@bke/commerce" || packageJson.version !== "0.4.0") throw new Error("Unexpected Commerce package identity.");
 for (const dependency of Object.keys(packageJson.dependencies ?? {})) {
   if (dependency.startsWith("@bke/")) throw new Error(`Commerce package must not depend directly on sibling BKE library: ${dependency}`);
 }

@@ -85,3 +85,5 @@ jobs:
         run: npx tsx @bke/commerce/tests/zero-payment-fulfillment.postgres.certify.ts
       - name: Certify Commerce paid settlement with PostgreSQL
         run: npx tsx @bke/commerce/tests/settlement-reaction.postgres.certify.ts
+      - name: Certify Commerce subscription status lookup with PostgreSQL
+        run: npx tsx @bke/commerce/tests/subscription-status-lookup.postgres.certify.ts
