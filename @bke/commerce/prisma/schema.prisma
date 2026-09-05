@@ -58,6 +58,14 @@ enum CommerceInvoiceStatus {
   VOID
 }
 
+enum CommerceSubscriptionStatus {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  EXPIRED
+  CANCELLED
+}
+
 model Price {
   id              String                @id
   productId       String
@@ -93,6 +101,33 @@ model PurchasePlan {
 
   @@unique([editionId, type])
   @@index([editionId, active])
+}
+
+model Subscription {
+  id                             String                    @id @default(cuid())
+  accountId                      String
+  orderId                        String
+  productId                      String
+  editionId                      String?
+  purchasePlanId                 String?
+  status                         CommerceSubscriptionStatus @default(PENDING)
+  seats                          Int
+  currentPeriodStart             DateTime
+  currentPeriodEnd               DateTime
+  renewalReminderAt              DateTime
+  currency                       String?
+  normalRecurringAmountMinor     Int?
+  discountedRecurringAmountMinor Int?
+  promotionalDiscountBps         Int?
+  discountedCyclesTotal          Int?
+  discountedCyclesConsumed       Int                       @default(0)
+  offerId                        String?
+  offerSnapshot                  Json?
+  pricingVersion                 String?
+  createdAt                      DateTime                  @default(now())
+  updatedAt                      DateTime                  @updatedAt
+
+  @@index([accountId, status])
 }
 
 model DiscountOffer {
