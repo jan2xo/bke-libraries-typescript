@@ -53,6 +53,8 @@ jobs:
           grep -Fx 'package/package.json' artifacts/package-contents.txt
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/license-key-reveal.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/license-lookup.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-license-lookup-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/commercial-lease.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/license-key-reveal.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-lease.ts' artifacts/package-contents.txt
@@ -112,6 +114,8 @@ jobs:
             LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID,
             commercialLeaseActions,
           } from "@bke/licensing/contracts/commercial-lease.contract";
+          import type { LicensingLicenseLookup } from "@bke/licensing/contracts/license-lookup.contract";
+          import { createPostgresLicensingLicenseLookupRepository } from "@bke/licensing/prisma/repositories/postgres-license-lookup-repository";
           import { LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID } from "@bke/licensing/contracts/license-key-reveal.contract";
           import { createCommercialLeaseCapability } from "@bke/licensing/logic/commercial-lease";
           import { createLicensingLicenseKeyRevealCapability } from "@bke/licensing/logic/license-key-reveal";
@@ -145,7 +149,9 @@ jobs:
             typeof createPostgresCommercialSigningKeyProvider !== "function" ||
             typeof createPostgresLicensingLicenseKeyRevealRepository !== "function"
           ) throw new Error("Packed Licensing consumer exports are incomplete.");
-          console.log("Packed @bke/licensing commercial lease consumer smoke GREEN");
+          const lookup: LicensingLicenseLookup = createPostgresLicensingLicenseLookupRepository("postgresql://unused:unused@localhost/unused");
+          if (typeof lookup.findByKeyHash !== "function") throw new Error("Packed Licensing lookup contract missing.");
+          console.log("Packed @bke/licensing commercial lease and key-hash lookup consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
