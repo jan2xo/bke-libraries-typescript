@@ -72,3 +72,5 @@ jobs:
         run: npm run test --workspace=@bke/licensing
       - name: Certify Licensing PostgreSQL behavior
         run: npx tsx @bke/licensing/tests/license-key-reveal.postgres.certify.ts
+      - name: Certify Licensing key-hash lookup on PostgreSQL
+        run: npx tsx @bke/licensing/tests/license-lookup.postgres.certify.ts
