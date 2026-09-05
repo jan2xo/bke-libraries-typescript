@@ -63,6 +63,7 @@ jobs:
           grep -Fx 'package/logic/lease-lifecycle.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/product-identity.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/refresh-decision.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/accepted-version-policy.ts' artifacts/package-contents.txt
           grep -Fx 'package/providers/aes-gcm-license-key-decrypter.ts' artifacts/package-contents.txt
           grep -Fx 'package/providers/ed25519-commercial-lease-signer.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
@@ -90,6 +91,7 @@ jobs:
             "devDependencies": {
               "@types/node": "^24.3.0",
               "@types/pg": "^8.15.5",
+              "@types/semver": "7.8.0",
               "tsx": "^4.20.5",
               "typescript": "^5.9.2"
             }
@@ -122,6 +124,7 @@ jobs:
           import { selectActiveCommercialSigningKey } from "@bke/licensing/logic/commercial-signing-registry";
           import { nextLeaseLifecycle, requireProductVersion } from "@bke/licensing/logic/lease-lifecycle";
           import { deviceIdentity } from "@bke/licensing/logic/product-identity";
+          import { isVersionAccepted, validateAcceptedVersionRange } from "@bke/licensing/logic/accepted-version-policy";
           import { refreshRequiresReplacement } from "@bke/licensing/logic/refresh-decision";
           import { createAesGcmLicensingLicenseKeyDecrypter } from "@bke/licensing/providers/aes-gcm-license-key-decrypter";
           import { createEd25519CommercialLeaseSigner } from "@bke/licensing/providers/ed25519-commercial-lease-signer";
@@ -151,7 +154,10 @@ jobs:
           ) throw new Error("Packed Licensing consumer exports are incomplete.");
           const lookup: LicensingLicenseLookup = createPostgresLicensingLicenseLookupRepository("postgresql://unused:unused@localhost/unused");
           if (typeof lookup.findByKeyHash !== "function") throw new Error("Packed Licensing lookup contract missing.");
-          console.log("Packed @bke/licensing commercial lease and key-hash lookup consumer smoke GREEN");
+          if (!isVersionAccepted("1.2.3", "1.2.3", "2.0.0")) throw new Error("Packed version policy inclusion failed.");
+          if (isVersionAccepted("2.0.1", null, "2.0.0")) throw new Error("Packed version policy exclusion failed.");
+          if (validateAcceptedVersionRange("v1.2.3", null).minimum !== "1.2.3") throw new Error("Packed version policy normalization failed.");
+          console.log("Packed @bke/licensing commercial lease, lookup and version policy consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit

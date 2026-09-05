@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const moduleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceExtensions = new Set([".ts", ".tsx", ".js", ".mjs"]);
-const allowedRuntimeImports = new Set(["pg", "prisma/config", "vitest"]);
+const allowedRuntimeImports = new Set(["pg", "semver", "prisma/config", "vitest"]);
 const allowedModels = new Set([
   "CommercialLeaseOperation",
   "CommercialSigningKey",
