@@ -1,5 +1,6 @@
 export const CATALOG_LOOKUP_CAPABILITY_ID = "bke.catalog.lookup.v1" as const;
 export const CATALOG_MANAGEMENT_CAPABILITY_ID = "bke.catalog.management.v1" as const;
+export const CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID = "bke.catalog.licensing-version-facts.v1" as const;
 
 export const CATALOG_PRODUCT_KINDS = [
   "SOFTWARE",
@@ -48,6 +49,15 @@ export interface CatalogEditionSnapshot {
   readonly updatedAt: Date;
 }
 
+export interface CatalogLicensingVersionFactsSnapshot {
+  readonly catalogProductId: string;
+  readonly externalProductId: string | null;
+  readonly minimumAcceptedVersion: string | null;
+  readonly maximumAcceptedVersion: string | null;
+  readonly requestedVersion: string;
+  readonly versionEligible: boolean;
+}
+
 export type CatalogLookupResult<T> =
   | { readonly status: "FOUND"; readonly value: T }
   | { readonly status: "NOT_FOUND" }
@@ -61,6 +71,13 @@ export interface CatalogLookupCapability {
     | { readonly status: "FOUND"; readonly values: readonly CatalogEditionSnapshot[] }
     | { readonly status: "FAILED"; readonly code: "INVALID_INPUT" | "PERSISTENCE_UNAVAILABLE" }
   >;
+}
+
+export interface CatalogLicensingVersionFactsCapability {
+  findForCommercialLicensing(input: {
+    readonly catalogProductId: string;
+    readonly requestedVersion: string;
+  }): Promise<CatalogLookupResult<CatalogLicensingVersionFactsSnapshot>>;
 }
 
 export interface CatalogCreateProductInput {
