@@ -2,7 +2,7 @@ name: BKE Library - Catalog
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/licensing-accepted-version-policy]
     paths:
       - "@bke/catalog/**"
       - "package.json"
