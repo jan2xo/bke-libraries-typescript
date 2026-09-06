@@ -2,7 +2,7 @@ name: BKE Library - Accounts
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/licensing-transfer-policy-facts]
     paths:
       - "@bke/accounts/**"
       - "package.json"
