@@ -1,0 +1,52 @@
+name: Reconcile Accounts release lock
+
+on:
+  push:
+    branches: [feat/accounts-lifecycle-facts]
+    paths:
+      - ".github/workflows/reconcile-accounts-release-lock.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/accounts-lifecycle-facts
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Reconcile Accounts workspace lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts
+          node <<'NODE'
+          const lock = require('./package-lock.json');
+          const expected = {
+            '@bke/accounts': '0.3.0',
+            '@bke/catalog': '0.2.0',
+            '@bke/commerce': '0.5.0',
+            '@bke/licensing': '0.5.0',
+          };
+          for (const [name, version] of Object.entries(expected)) {
+            const manifest = require(`./${name}/package.json`).version;
+            if (manifest !== version) throw new Error(`${name} manifest expected ${version}, got ${manifest}`);
+            if (lock.packages?.[name]?.version !== version) throw new Error(`${name} lock expected ${version}, got ${lock.packages?.[name]?.version}`);
+          }
+          NODE
+      - name: Commit Accounts lock reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git diff --cached --quiet && { echo '::error::Accounts lock reconciliation produced no commit.'; exit 1; }
+          git commit -m "chore: reconcile Accounts 0.3 workspace lock"
+          git push origin HEAD:feat/accounts-lifecycle-facts
