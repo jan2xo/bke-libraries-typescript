@@ -2,7 +2,7 @@ name: BKE Library - Accounts
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/licensing-transfer-policy-facts]
     paths:
       - "@bke/accounts/**"
       - "package.json"
@@ -95,6 +95,7 @@ jobs:
           files=(
             individual-account-creation.postgres.certify.ts
             account-access.postgres.certify.ts
+            account-lifecycle.postgres.certify.ts
             purchase-access.postgres.certify.ts
             switchable-account-list.postgres.certify.ts
             organization-account-creation.postgres.certify.ts
