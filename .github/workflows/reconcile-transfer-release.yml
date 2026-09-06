@@ -21,13 +21,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Reconcile package versions and release evidence
+      - name: Reconcile package versions and workspace lock
         shell: bash
         run: |
           set -euo pipefail
           npm pkg set version=0.5.0 --workspace=@bke/commerce
           npm pkg set version=0.5.0 --workspace=@bke/licensing
-          sed -i 's/0\.4\.0/0.5.0/g' .github/workflows/commerce-package.yml
           npm install --package-lock-only --ignore-scripts
           node <<'NODE'
           const lock = require('./package-lock.json');
@@ -42,19 +41,13 @@ jobs:
             }
           }
           NODE
-          grep -F 'bke-commerce-0.5.0.tgz' .github/workflows/commerce-package.yml >/dev/null
-          if grep -F 'bke-commerce-0.4.0' .github/workflows/commerce-package.yml >/dev/null; then
-            echo '::error::Stale Commerce 0.4 package evidence remains.'
-            exit 1
-          fi
-      - name: Commit reconciliation and remove one-shot workflow
+      - name: Commit package version reconciliation
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/reconcile-transfer-release.yml
-          git add @bke/commerce/package.json @bke/licensing/package.json .github/workflows/commerce-package.yml package-lock.json
+          git add @bke/commerce/package.json @bke/licensing/package.json package-lock.json
           git diff --cached --quiet && { echo '::error::Release reconciliation produced no commit.'; exit 1; }
           git commit -m "chore: version transfer policy release artifacts"
           git push origin HEAD:feat/licensing-transfer-policy-facts
