@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/payments --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-payments-0.1.0.tgz"
+          test "$artifact" = "bke-payments-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "PAYMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -59,6 +59,7 @@ jobs:
             package/logic/provider-event-ingestion.ts \
             package/logic/settlement-fact.ts \
             package/logic/refund-initiation.ts \
+            package/logic/payment-errors.ts \
             package/providers/paymongo/paymongo-adapter.ts \
             package/prisma/schema.prisma \
             package/prisma/repositories/postgres-checkout-attempt-repository.ts \
@@ -118,11 +119,16 @@ jobs:
           import { createPaymentsProviderEventIngestionCapability } from "@bke/payments/logic/provider-event-ingestion";
           import { createPaymentsSettlementFactCapability } from "@bke/payments/logic/settlement-fact";
           import { createPaymentsRefundInitiationCapability } from "@bke/payments/logic/refund-initiation";
+          import { PaymentLifecycleError, paymentErrorCodes, safePaymentError } from "@bke/payments/logic/payment-errors";
           import { createPayMongoPaymentsAdapter } from "@bke/payments/providers/paymongo/paymongo-adapter";
           import { createPostgresPaymentsCheckoutAttemptRepository } from "@bke/payments/prisma/repositories/postgres-checkout-attempt-repository";
           import { paymentsModuleManifest } from "@bke/payments/module.manifest";
           const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID];
           if (ids.length !== 4 || paymentsModuleManifest.moduleId !== "payments") throw new Error("Unexpected Payments package identity.");
+          if (paymentErrorCodes.length !== 16 || paymentErrorCodes[0] !== "PAYMENT_SIGNATURE_INVALID" || paymentErrorCodes[15] !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments error taxonomy drifted.");
+          const lifecycleError = new PaymentLifecycleError("PAYMENT_PROCESSING_RETRYABLE", true);
+          if (safePaymentError(lifecycleError) !== "PAYMENT_PROCESSING_RETRYABLE" || !lifecycleError.retryable) throw new Error("Packed Payments lifecycle error behavior drifted.");
+          if (safePaymentError(new Error("opaque")) !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments safe error fallback drifted.");
           for (const value of [createPaymentsCheckoutAttemptCapability, createPaymentsProviderEventIngestionCapability, createPaymentsSettlementFactCapability, createPaymentsRefundInitiationCapability, createPayMongoPaymentsAdapter, createPostgresPaymentsCheckoutAttemptRepository]) {
             if (typeof value !== "function") throw new Error("Packed Payments consumer exports are incomplete.");
           }
@@ -134,10 +140,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-payments-0.1.0
+          name: bke-payments-0.2.0
           path: |
-            artifacts/bke-payments-0.1.0.tgz
-            artifacts/bke-payments-0.1.0.tgz.sha256
+            artifacts/bke-payments-0.2.0.tgz
+            artifacts/bke-payments-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Payments release
@@ -165,4 +171,4 @@ jobs:
             "artifacts/$PAYMENTS_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/payments v${version}" \
-            --notes "Certified BKE Payments package artifact. Generic checkout/event/settlement/refund capabilities and PayMongo adapter passed source, persistence, behavior, and package gates before release creation."
+            --notes "Certified BKE Payments package artifact. Generic checkout/event/settlement/refund capabilities, lifecycle error taxonomy, and PayMongo adapter passed source, persistence, behavior, and package gates before release creation."
