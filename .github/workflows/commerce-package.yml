@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/commerce --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-commerce-0.4.0.tgz"
+          test "$artifact" = "bke-commerce-0.5.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "COMMERCE_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -161,7 +161,7 @@ jobs:
           if (typeof createPostgresCommerceSubscriptionStatusLookupRepository !== "function") throw new Error("Packed subscription repository missing.");
           const orderItemPolicyLookup: CommerceOrderItemPolicyLookupCapability = createPostgresCommerceOrderItemPolicyLookupCapability("postgresql://unused:unused@localhost/unused");
           if (typeof orderItemPolicyLookup.findByOrderItemId !== "function") throw new Error("Packed order-item policy lookup missing.");
-          console.log("Packed @bke/commerce 0.4.0 consumer smoke GREEN");
+          console.log("Packed @bke/commerce 0.5.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -169,10 +169,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-commerce-0.4.0
+          name: bke-commerce-0.5.0
           path: |
-            artifacts/bke-commerce-0.4.0.tgz
-            artifacts/bke-commerce-0.4.0.tgz.sha256
+            artifacts/bke-commerce-0.5.0.tgz
+            artifacts/bke-commerce-0.5.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Commerce release
