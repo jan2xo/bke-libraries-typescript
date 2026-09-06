@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/catalog --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-catalog-0.1.0.tgz"
+          test "$artifact" = "bke-catalog-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "CATALOG_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -136,10 +136,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-catalog-0.1.0
+          name: bke-catalog-0.2.0
           path: |
-            artifacts/bke-catalog-0.1.0.tgz
-            artifacts/bke-catalog-0.1.0.tgz.sha256
+            artifacts/bke-catalog-0.2.0.tgz
+            artifacts/bke-catalog-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Catalog release

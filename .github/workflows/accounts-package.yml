@@ -2,7 +2,7 @@ name: BKE Library - Accounts Package
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/licensing-transfer-policy-facts]
     paths:
       - "@bke/accounts/**"
       - ".github/workflows/accounts-package.yml"
@@ -40,7 +40,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/accounts --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-accounts-0.2.0.tgz"
+          test "$artifact" = "bke-accounts-0.3.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "ACCOUNTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -118,24 +118,12 @@ jobs:
           import { createPostgresAccountsAccountLifecycleRepository } from "@bke/accounts/prisma/repositories/postgres-account-lifecycle-repository";
           import { accountsModuleManifest } from "@bke/accounts/module.manifest";
 
-          if (ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID !== "bke.accounts.account-access.v1") {
-            throw new Error("Unexpected Accounts account-access capability id from packed consumer surface.");
-          }
-          if (ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID !== "bke.accounts.account-lifecycle.v1") {
-            throw new Error("Unexpected Accounts account-lifecycle capability id from packed consumer surface.");
-          }
-          if (ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID !== "bke.accounts.purchase-access.v1") {
-            throw new Error("Unexpected Accounts purchase-access capability id from packed consumer surface.");
-          }
-          if (accountsModuleManifest.moduleId !== "accounts") {
-            throw new Error("Unexpected Accounts manifest moduleId from packed consumer surface.");
-          }
-          if (!accountsModuleManifest.provides.includes(ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID)) {
-            throw new Error("Accounts manifest does not publish account lifecycle facts.");
-          }
-          if (!accountsModuleManifest.provides.includes(ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID)) {
-            throw new Error("Accounts manifest does not publish purchase access.");
-          }
+          if (ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID !== "bke.accounts.account-access.v1") throw new Error("Unexpected Accounts account-access capability id from packed consumer surface.");
+          if (ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID !== "bke.accounts.account-lifecycle.v1") throw new Error("Unexpected Accounts account-lifecycle capability id from packed consumer surface.");
+          if (ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID !== "bke.accounts.purchase-access.v1") throw new Error("Unexpected Accounts purchase-access capability id from packed consumer surface.");
+          if (accountsModuleManifest.moduleId !== "accounts") throw new Error("Unexpected Accounts manifest moduleId from packed consumer surface.");
+          if (!accountsModuleManifest.provides.includes(ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID)) throw new Error("Accounts manifest does not publish account lifecycle facts.");
+          if (!accountsModuleManifest.provides.includes(ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID)) throw new Error("Accounts manifest does not publish purchase access.");
           if (
             typeof createAccountsAccountAccessCapability !== "function" ||
             typeof createAccountsAccountLifecycleCapability !== "function" ||
@@ -143,10 +131,7 @@ jobs:
             typeof createCryptoAccountsIdProvider !== "function" ||
             typeof createPostgresAccountsAccountAccessRepository !== "function" ||
             typeof createPostgresAccountsAccountLifecycleRepository !== "function"
-          ) {
-            throw new Error("Packed Accounts consumer exports are incomplete.");
-          }
-
+          ) throw new Error("Packed Accounts consumer exports are incomplete.");
           console.log("Packed @bke/accounts consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
@@ -156,10 +141,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-accounts-0.2.0
+          name: bke-accounts-0.3.0
           path: |
-            artifacts/bke-accounts-0.2.0.tgz
-            artifacts/bke-accounts-0.2.0.tgz.sha256
+            artifacts/bke-accounts-0.3.0.tgz
+            artifacts/bke-accounts-0.3.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
 
@@ -173,12 +158,8 @@ jobs:
           set -euo pipefail
           version="$(node -p "require('./@bke/accounts/package.json').version")"
           tag="accounts-v${version}"
-
           package_changed=false
-          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/accounts/package.json; then
-            package_changed=true
-          fi
-
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/accounts/package.json; then package_changed=true; fi
           if gh release view "$tag" >/dev/null 2>&1; then
             if [[ "$package_changed" == "true" ]]; then
               echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/accounts version."
@@ -187,7 +168,6 @@ jobs:
             echo "Release $tag already exists and package version is unchanged."
             exit 0
           fi
-
           gh release create "$tag" \
             "artifacts/$ACCOUNTS_ARTIFACT" \
             "artifacts/$ACCOUNTS_ARTIFACT.sha256" \
