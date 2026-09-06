@@ -30,10 +30,14 @@ for (const file of files) {
 }
 assert.equal(catalogModuleManifest.moduleId, "catalog");
 assert.deepEqual(catalogModuleManifest.needs, []);
-assert.deepEqual(catalogModuleManifest.provides, ["bke.catalog.lookup.v1", "bke.catalog.management.v1"]);
+assert.deepEqual(catalogModuleManifest.provides, [
+  "bke.catalog.lookup.v1",
+  "bke.catalog.management.v1",
+  "bke.catalog.licensing-version-facts.v1",
+]);
 const schema = readFileSync(`${root}/prisma/schema.prisma`, "utf8");
 const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((match) => match[1]).sort();
-assert.deepEqual(models, ["CatalogEdition", "CatalogProduct"]);
+assert.deepEqual(models, ["CatalogEdition", "CatalogProduct", "CatalogProductVersion"]);
 const migrations = readdirSync(`${root}/migrations`).filter((name) => statSync(join(`${root}/migrations`, name)).isDirectory()).sort();
-assert.deepEqual(migrations, ["0001_catalog_product_edition"]);
+assert.deepEqual(migrations, ["0001_catalog_product_edition", "0002_catalog_software_version_facts"]);
 console.log(`@bke/catalog extraction GREEN: files=${files.length} models=${models.join(",")} migrations=${migrations.join(",")}`);
