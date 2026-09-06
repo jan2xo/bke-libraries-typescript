@@ -67,7 +67,7 @@ jobs:
           tar -tzf "/tmp/licensing-pack/$(basename "$artifact")" | grep -Fx 'package/prisma/repositories/postgres-signing-key-registry-repository.ts'
       - name: Check whitespace
         run: git diff --check
-      - name: Commit verified prerequisite files
+      - name: Commit verified prerequisite code files
         shell: bash
         run: |
           set -euo pipefail
@@ -79,8 +79,6 @@ jobs:
             @bke/licensing/contracts/signing-key-registry.contract.ts \
             @bke/licensing/prisma/repositories/postgres-signing-key-registry-repository.ts \
             @bke/licensing/tests/signing-key-registry.postgres.certify.ts \
-            .github/workflows/licensing.yml \
-            .github/workflows/licensing-package.yml \
             package-lock.json
           git diff --cached --exit-code && { echo "No candidate changes produced"; exit 1; } || true
           git commit -m "feat(licensing): expose signing-key registry capability"
