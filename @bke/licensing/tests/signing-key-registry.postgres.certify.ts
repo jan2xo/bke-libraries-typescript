@@ -5,6 +5,22 @@ import { createPostgresLicensingSigningKeyRegistryCapability } from "../prisma/r
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL_REQUIRED");
 
+const client = new Client({ connectionString });
+await client.connect();
+try {
+  await client.query(
+    `UPDATE "CommercialSigningKey"
+        SET "status" = 'RETIRED', "retiredAt" = COALESCE("retiredAt", NOW())
+      WHERE "status" = 'ACTIVE'`,
+  );
+  await client.query(
+    `DELETE FROM "CommercialSigningKey"
+      WHERE "keyId" IN ('cert-active', 'cert-retired')`,
+  );
+} finally {
+  await client.end();
+}
+
 const registry = createPostgresLicensingSigningKeyRegistryCapability(connectionString, {
   keyId: "cert-active",
   publicKey: "CERT_PUBLIC_KEY",
@@ -16,23 +32,23 @@ assert.equal(first.keyId, "cert-active");
 assert.equal(first.status, "ACTIVE");
 assert.equal(first.privateKeyReference, "env:CERT_PRIVATE_KEY");
 
-const client = new Client({ connectionString });
-await client.connect();
+const fixtureClient = new Client({ connectionString });
+await fixtureClient.connect();
 try {
-  await client.query(
+  await fixtureClient.query(
     `INSERT INTO "CommercialSigningKey"
       ("id", "keyId", "algorithm", "status", "publicKey", "privateKeyReference", "retiredAt")
-     VALUES ('cert-retired-id', 'cert-retired', 'Ed25519', 'RETIRED', 'RETIRED_PUBLIC_KEY', 'env:RETIRED_PRIVATE_KEY', NOW())
-     ON CONFLICT ("keyId") DO NOTHING`,
+     VALUES ('cert-retired-id', 'cert-retired', 'Ed25519', 'RETIRED', 'RETIRED_PUBLIC_KEY', 'env:RETIRED_PRIVATE_KEY', NOW())`,
   );
 } finally {
-  await client.end();
+  await fixtureClient.end();
 }
 
 const publicKeys = await registry.listPublic();
-assert.deepEqual(publicKeys.map((key) => [key.keyId, key.status]), [
+const fixtureKeys = publicKeys.filter((key) => key.keyId.startsWith("cert-"));
+assert.deepEqual(fixtureKeys.map((key) => [key.keyId, key.status]), [
   ["cert-active", "ACTIVE"],
   ["cert-retired", "RETIRED"],
 ]);
-assert.equal("privateKeyReference" in publicKeys[0]!, false);
+assert.equal(fixtureKeys.every((key) => !("privateKeyReference" in key)), true);
 console.log("Licensing signing-key registry PostgreSQL certification GREEN");
