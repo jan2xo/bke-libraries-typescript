@@ -2,7 +2,7 @@ name: BKE Library - Catalog Package
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/licensing-accepted-version-policy]
     paths:
       - "@bke/catalog/**"
       - "package-lock.json"
