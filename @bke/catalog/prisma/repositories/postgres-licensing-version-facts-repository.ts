@@ -17,8 +17,11 @@ export function createPostgresCatalogLicensingVersionFactsRepository(
   const normalized = connectionString.trim();
   if (!normalized) throw new Error("Catalog PostgreSQL connection string is required.");
 
-  return Object.freeze({
-    async findLicensingVersionFacts(catalogProductId, requestedVersion) {
+  const repository: CatalogLicensingVersionFactsRepository = {
+    async findLicensingVersionFacts(
+      catalogProductId: string,
+      requestedVersion: string,
+    ): Promise<CatalogLicensingVersionFactsSnapshot | null> {
       const client = new Client({ connectionString: normalized });
       await client.connect();
       try {
@@ -54,5 +57,6 @@ export function createPostgresCatalogLicensingVersionFactsRepository(
         await client.end();
       }
     },
-  });
+  };
+  return Object.freeze(repository);
 }
