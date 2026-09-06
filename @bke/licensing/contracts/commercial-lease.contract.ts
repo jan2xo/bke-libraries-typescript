@@ -61,7 +61,8 @@ export type CommercialLicenseContext = Readonly<{
   subscriptionStatus: string | null;
   productId: string | null;
   productVersionEligible: boolean;
-  versionAccepted: boolean;
+  minimumAcceptedVersion: string | null;
+  maximumAcceptedVersion: string | null;
   maxSeats: number;
   maxDevicesPerSeat: number;
 }>;
