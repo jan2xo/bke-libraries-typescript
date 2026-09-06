@@ -1,0 +1,100 @@
+name: BKE Library - Licensing Commercial Context
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/licensing/**"
+      - ".github/workflows/licensing-commercial-context.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  context:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Typecheck and test Licensing
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run typecheck --workspace=@bke/licensing
+          npm run test --workspace=@bke/licensing
+      - name: Pack Licensing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          artifact="$(npm pack --workspace=@bke/licensing --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          tar -tzf "artifacts/$artifact" | grep -Fx 'package/logic/commercial-license-context.ts'
+          echo "LICENSING_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Certify blank consumer composition
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .context-smoke
+          cat > .context-smoke/package.json <<JSON
+          {
+            "private": true,
+            "type": "module",
+            "dependencies": { "@bke/licensing": "file:../artifacts/$LICENSING_ARTIFACT" },
+            "devDependencies": {
+              "@types/node": "^24.3.0",
+              "@types/pg": "^8.15.5",
+              "@types/semver": "7.8.0",
+              "tsx": "^4.20.5",
+              "typescript": "^5.9.2"
+            }
+          }
+          JSON
+          cat > .context-smoke/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": ["node"]
+            },
+            "include": ["smoke.ts"]
+          }
+          JSON
+          cat > .context-smoke/smoke.ts <<'TS'
+          import { createCommercialLicenseContextProvider } from "@bke/licensing/logic/commercial-license-context";
+
+          const provider = createCommercialLicenseContextProvider({
+            licenses: {
+              async findByKeyHash() {
+                return {
+                  id: "license-1", publicId: "public-1", keyLastFour: "1234", keyRevealedAt: null,
+                  accountId: "account-1", orderId: "order-1", orderItemId: "item-1", productId: "catalog-1",
+                  editionId: null, purchasePlanId: null, subscriptionId: "sub-1", status: "ACTIVE" as const,
+                  maxSeats: 2, maxDevicesPerSeat: 3, expiresAt: null, createdAt: new Date(0),
+                };
+              },
+            },
+            accounts: { async findByAccountId() { return { status: "FOUND" as const, value: { accountId: "account-1", lifecycleState: "ACTIVE" } }; } },
+            subscriptions: { async find() { return { status: "FOUND" as const, subscription: { id: "sub-1", status: "ACTIVE" } }; } },
+            catalog: { async findForCommercialLicensing() { return { status: "FOUND" as const, value: { catalogProductId: "catalog-1", externalProductId: "product-1", minimumAcceptedVersion: "1.0.0", maximumAcceptedVersion: "2.0.0", requestedVersion: "1.2.3", versionEligible: true } }; } },
+          });
+
+          const context = await provider.resolve({ licenseKeyHash: "hash", productVersion: "1.2.3" });
+          if (!context || context.orderItemId !== "item-1" || context.minimumAcceptedVersion !== "1.0.0" || context.maximumAcceptedVersion !== "2.0.0") {
+            throw new Error("Packed commercial context composition failed.");
+          }
+          console.log("Packed @bke/licensing commercial context consumer GREEN");
+          TS
+          npm install --prefix .context-smoke
+          npx --prefix .context-smoke tsc -p .context-smoke/tsconfig.json --noEmit
+          npx --prefix .context-smoke tsx .context-smoke/smoke.ts

@@ -9,6 +9,7 @@ import {
   type CommercialLicenseContext,
 } from "../contracts/commercial-lease.contract";
 import { transferPolicyIdFromOperationMetadata } from "../contracts/transfer-policy.contract";
+import { isVersionAccepted } from "./accepted-version-policy";
 import { nextLeaseLifecycle, requireProductVersion } from "./lease-lifecycle";
 import { deviceIdentity } from "./product-identity";
 import type {
@@ -159,7 +160,15 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
 
           const version = requireProductVersion(input.productVersion);
           if (!context.productVersionEligible) throw new Error("VERSION_NOT_ELIGIBLE");
-          if (!context.versionAccepted) throw new Error("VERSION_NOT_ACCEPTED");
+          if (
+            !isVersionAccepted(
+              version,
+              context.minimumAcceptedVersion,
+              context.maximumAcceptedVersion,
+            )
+          ) {
+            throw new Error("VERSION_NOT_ACCEPTED");
+          }
           if (!context.productId) throw new Error("PRODUCT_ID_NOT_CONFIGURED");
 
           const identity = deviceIdentity(input.deviceId);

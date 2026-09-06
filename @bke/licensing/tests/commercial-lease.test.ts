@@ -43,7 +43,8 @@ const baseContext: CommercialLicenseContext = Object.freeze({
   subscriptionStatus: "ACTIVE",
   productId: "bke-test-product",
   productVersionEligible: true,
-  versionAccepted: true,
+  minimumAcceptedVersion: null,
+  maximumAcceptedVersion: null,
   maxSeats: 1,
   maxDevicesPerSeat: 2,
 });
@@ -96,41 +97,22 @@ function fixture(options: FixtureOptions = {}) {
     async completeOperation(input) {
       const current = operations.get(input.operationId);
       if (!current) throw new Error("OPERATION_NOT_FOUND");
-      operations.set(
-        input.operationId,
-        Object.freeze({
-          ...current,
-          status: "COMPLETED",
-          resultLeaseId: input.resultLeaseId,
-        }),
-      );
+      operations.set(input.operationId, Object.freeze({ ...current, status: "COMPLETED", resultLeaseId: input.resultLeaseId }));
     },
     async findLease(leaseId) {
       return leases.get(leaseId) ?? null;
     },
     async findLatestLease(input) {
-      return (
-        [...leases.values()]
-          .filter(
-            (record) =>
-              record.licenseId === input.licenseId &&
-              record.installationId === input.installationId &&
-              record.deviceId === input.deviceId,
-          )
-          .sort(
-            (left, right) =>
-              right.generation - left.generation || right.serverRevision - left.serverRevision,
-          )[0] ?? null
-      );
+      return [...leases.values()]
+        .filter((record) => record.licenseId === input.licenseId && record.installationId === input.installationId && record.deviceId === input.deviceId)
+        .sort((left, right) => right.generation - left.generation || right.serverRevision - left.serverRevision)[0] ?? null;
     },
     async findActivationByDeviceHash(licenseId, deviceHash) {
       const record = activations.get(deviceHash);
       return record?.licenseId === licenseId ? record : null;
     },
     async countActiveActivations(licenseId) {
-      return [...activations.values()].filter(
-        (record) => record.licenseId === licenseId && record.active,
-      ).length;
+      return [...activations.values()].filter((record) => record.licenseId === licenseId && record.active).length;
     },
     async upsertActivation(input) {
       const existing = activations.get(input.deviceHash);
@@ -184,39 +166,17 @@ function fixture(options: FixtureOptions = {}) {
       return record;
     },
     async supersedeLease(input) {
-      const entry = [...leases.entries()].find(
-        ([, record]) => record.id === input.previousLeaseRecordId,
-      );
+      const entry = [...leases.entries()].find(([, record]) => record.id === input.previousLeaseRecordId);
       if (!entry) throw new Error("LEASE_NOT_FOUND");
       const [leaseId, previous] = entry;
-      leases.set(
-        leaseId,
-        Object.freeze({
-          ...previous,
-          status: "SUPERSEDED",
-          supersededById: input.supersededById,
-        }),
-      );
+      leases.set(leaseId, Object.freeze({ ...previous, status: "SUPERSEDED", supersededById: input.supersededById }));
     },
   };
 
   const dependencies: CommercialLeaseDependencies = {
-    store: {
-      async withTransaction(work) {
-        return work(transaction);
-      },
-    },
-    contexts: {
-      async resolve() {
-        return context;
-      },
-    },
-    keys: {
-      async ensure() {},
-      async active() {
-        return signingKey;
-      },
-    },
+    store: { async withTransaction(work) { return work(transaction); } },
+    contexts: { async resolve() { return context; } },
+    keys: { async ensure() {}, async active() { return signingKey; } },
     signer: {
       async issue(payload, key) {
         signCount += 1;
@@ -228,11 +188,7 @@ function fixture(options: FixtureOptions = {}) {
         });
       },
     },
-    hasher: {
-      hash(value) {
-        return createHash("sha256").update(value).digest("hex");
-      },
-    },
+    hasher: { hash(value) { return createHash("sha256").update(value).digest("hex"); } },
     transfers: {
       async isTransferAllowed(input) {
         transferInputs.push(input);
@@ -242,34 +198,13 @@ function fixture(options: FixtureOptions = {}) {
     id,
   };
 
-  function prepareOperation(
-    action: CommercialLeaseAction,
-    operationId: string,
-    metadata: CommercialOperationMetadata = Object.freeze({}),
-  ) {
-    operations.set(
-      operationId,
-      Object.freeze({
-        id: id(),
-        operationId,
-        licenseId: context.licenseId,
-        action,
-        status: "PENDING",
-        resultLeaseId: null,
-        metadata,
-      }),
-    );
+  function prepareOperation(action: CommercialLeaseAction, operationId: string, metadata: CommercialOperationMetadata = Object.freeze({})) {
+    operations.set(operationId, Object.freeze({
+      id: id(), operationId, licenseId: context.licenseId, action, status: "PENDING", resultLeaseId: null, metadata,
+    }));
   }
 
-  return {
-    capability: createCommercialLeaseCapability(dependencies),
-    operations,
-    activations,
-    leases,
-    transferInputs,
-    prepareOperation,
-    signCount: () => signCount,
-  };
+  return { capability: createCommercialLeaseCapability(dependencies), operations, activations, leases, transferInputs, prepareOperation, signCount: () => signCount };
 }
 
 function payloadOf(result: Awaited<ReturnType<ReturnType<typeof createCommercialLeaseCapability>["issue"]>>) {
@@ -280,21 +215,10 @@ describe("commercial lease capability", () => {
   it("issues an activation lease with the certified legacy payload", async () => {
     const state = fixture();
     const result = await state.capability.issue(baseRequest);
-    const payload = payloadOf(result);
-
-    expect(payload).toMatchObject({
-      license_id: "license-1",
-      generation: 1,
-      server_revision: 1,
-      product_id: "bke-test-product",
-      installation_id: "installation-123",
-      device_id: "device-identity-0001",
-      version: "1.2.3",
-      issuer: "BKE Digital Solutions",
-      key_id: "lease-key-1",
-      algorithm: "Ed25519",
-      revoked: false,
-      superseded_by: null,
+    expect(payloadOf(result)).toMatchObject({
+      license_id: "license-1", generation: 1, server_revision: 1, product_id: "bke-test-product",
+      installation_id: "installation-123", device_id: "device-identity-0001", version: "1.2.3",
+      issuer: "BKE Digital Solutions", key_id: "lease-key-1", algorithm: "Ed25519", revoked: false, superseded_by: null,
     });
     expect(state.operations.get(baseRequest.operationId)?.status).toBe("COMPLETED");
     expect(state.activations.size).toBe(1);
@@ -305,29 +229,17 @@ describe("commercial lease capability", () => {
   it("replays a completed operation from the persisted envelope", async () => {
     const state = fixture();
     const first = await state.capability.issue(baseRequest);
-    const replay = await state.capability.issue(baseRequest);
-
-    expect(replay).toEqual(first);
+    expect(await state.capability.issue(baseRequest)).toEqual(first);
     expect(state.leases.size).toBe(1);
     expect(state.signCount()).toBe(1);
   });
 
   it("increments generation/revision and supersedes the predecessor", async () => {
     const state = fixture();
-    const first = await state.capability.issue(baseRequest);
-    const firstPayload = payloadOf(first);
-    const secondRequest = {
-      ...baseRequest,
-      operationId: "operation-replacement-2",
-      action: "REPLACEMENT" as const,
-      predecessorLeaseId: String(firstPayload.lease_id),
-    };
-    state.prepareOperation("REPLACEMENT", secondRequest.operationId, {
-      predecessorLeaseId: secondRequest.predecessorLeaseId,
-    });
-
-    const second = await state.capability.issue(secondRequest);
-    const secondPayload = payloadOf(second);
+    const firstPayload = payloadOf(await state.capability.issue(baseRequest));
+    const secondRequest = { ...baseRequest, operationId: "operation-replacement-2", action: "REPLACEMENT" as const, predecessorLeaseId: String(firstPayload.lease_id) };
+    state.prepareOperation("REPLACEMENT", secondRequest.operationId, { predecessorLeaseId: secondRequest.predecessorLeaseId });
+    const secondPayload = payloadOf(await state.capability.issue(secondRequest));
     expect(secondPayload.generation).toBe(2);
     expect(secondPayload.server_revision).toBe(2);
     const firstRecord = state.leases.get(String(firstPayload.lease_id));
@@ -336,66 +248,57 @@ describe("commercial lease capability", () => {
     expect(firstRecord?.supersededById).toBe(secondRecord?.id);
   });
 
-  it("requires a prepared operation for non-activation actions", async () => {
+  it("requires a prepared operation before product-version validation", async () => {
     const state = fixture();
-    await expect(
-      state.capability.issue({ ...baseRequest, action: "REFRESH", operationId: "missing-refresh" }),
-    ).rejects.toThrow("COMMERCIAL_OPERATION_REQUIRED");
+    await expect(state.capability.issue({ ...baseRequest, action: "REFRESH", operationId: "missing-refresh", productVersion: "invalid" }))
+      .rejects.toThrow("COMMERCIAL_OPERATION_REQUIRED");
   });
 
   it("rejects a pending operation when the requested action changes", async () => {
     const state = fixture();
     state.prepareOperation("REFRESH", "refresh-1");
-    await expect(
-      state.capability.issue({ ...baseRequest, action: "ACTIVATION", operationId: "refresh-1" }),
-    ).rejects.toThrow("OPERATION_ACTION_MISMATCH");
+    await expect(state.capability.issue({ ...baseRequest, action: "ACTIVATION", operationId: "refresh-1" })).rejects.toThrow("OPERATION_ACTION_MISMATCH");
   });
 
-  it("blocks renewal when the subscription is not active", async () => {
+  it("blocks renewal before product-version validation", async () => {
     const state = fixture({ context: { ...baseContext, subscriptionStatus: "CANCELLED" } });
     state.prepareOperation("RENEWAL", "renewal-1");
-    await expect(
-      state.capability.issue({ ...baseRequest, action: "RENEWAL", operationId: "renewal-1" }),
-    ).rejects.toThrow("RENEWAL_NOT_ELIGIBLE");
+    await expect(state.capability.issue({ ...baseRequest, action: "RENEWAL", operationId: "renewal-1", productVersion: "invalid" }))
+      .rejects.toThrow("RENEWAL_NOT_ELIGIBLE");
   });
 
-  it("requires an approved transfer policy and passes the license-owned order item", async () => {
+  it("requires an approved transfer before product-version validation and carries orderItemId", async () => {
     const denied = fixture({ transferAllowed: false });
     denied.prepareOperation("TRANSFER", "transfer-1", { policyId: "policy-1" });
-    await expect(
-      denied.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-1" }),
-    ).rejects.toThrow("TRANSFER_NOT_ALLOWED");
-    expect(denied.transferInputs).toEqual([
-      { licenseId: "license-1", orderItemId: "order-item-1", policyId: "policy-1" },
-    ]);
+    await expect(denied.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-1", productVersion: "invalid" }))
+      .rejects.toThrow("TRANSFER_NOT_ALLOWED");
+    expect(denied.transferInputs).toEqual([{ licenseId: "license-1", orderItemId: "order-item-1", policyId: "policy-1" }]);
 
     const allowed = fixture({ transferAllowed: true });
     allowed.prepareOperation("TRANSFER", "transfer-2", { policyId: "policy-1" });
-    await expect(
-      allowed.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-2" }),
-    ).resolves.toMatchObject({ lease: { algorithm: "Ed25519" } });
-    expect(allowed.transferInputs).toEqual([
-      { licenseId: "license-1", orderItemId: "order-item-1", policyId: "policy-1" },
-    ]);
+    await expect(allowed.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-2" })).resolves.toMatchObject({ lease: { algorithm: "Ed25519" } });
+  });
+
+  it("checks active-version eligibility before accepted-range policy", async () => {
+    const state = fixture({ context: { ...baseContext, productVersionEligible: false, minimumAcceptedVersion: "broken" } });
+    await expect(state.capability.issue(baseRequest)).rejects.toThrow("VERSION_NOT_ELIGIBLE");
+  });
+
+  it("runs accepted-range policy at the exact V1 decision point", async () => {
+    const rejected = fixture({ context: { ...baseContext, minimumAcceptedVersion: "2.0.0" } });
+    await expect(rejected.capability.issue(baseRequest)).rejects.toThrow("VERSION_NOT_ACCEPTED");
+
+    const invalidPolicy = fixture({ context: { ...baseContext, minimumAcceptedVersion: "broken" } });
+    await expect(invalidPolicy.capability.issue(baseRequest)).rejects.toThrow("INVALID_VERSION_POLICY");
   });
 
   it("enforces maxSeats multiplied by maxDevicesPerSeat", async () => {
     const state = fixture({ context: { ...baseContext, maxSeats: 1, maxDevicesPerSeat: 1 } });
     const other = deviceIdentity("other-device-identity-0001");
-    state.activations.set(
-      other.deviceHash,
-      Object.freeze({
-        id: "existing-device",
-        licenseId: "license-1",
-        deviceHash: other.deviceHash,
-        machineIdHint: other.machineIdHint,
-        label: null,
-        operatingSystem: null,
-        architecture: null,
-        active: true,
-      }),
-    );
-
+    state.activations.set(other.deviceHash, Object.freeze({
+      id: "existing-device", licenseId: "license-1", deviceHash: other.deviceHash, machineIdHint: other.machineIdHint,
+      label: null, operatingSystem: null, architecture: null, active: true,
+    }));
     await expect(state.capability.issue(baseRequest)).rejects.toThrow("ACTIVATION_LIMIT");
   });
 
@@ -403,10 +306,9 @@ describe("commercial lease capability", () => {
     [{ ...baseContext, licenseStatus: "REVOKED" }, "INVALID_LICENSE"],
     [{ ...baseContext, accountLifecycleState: "CLOSED" }, "INVALID_LICENSE"],
     [{ ...baseContext, productVersionEligible: false }, "VERSION_NOT_ELIGIBLE"],
-    [{ ...baseContext, versionAccepted: false }, "VERSION_NOT_ACCEPTED"],
+    [{ ...baseContext, minimumAcceptedVersion: "2.0.0" }, "VERSION_NOT_ACCEPTED"],
     [{ ...baseContext, productId: null }, "PRODUCT_ID_NOT_CONFIGURED"],
   ] as const)("fails closed for invalid external licensing context", async (context, code) => {
-    const state = fixture({ context });
-    await expect(state.capability.issue(baseRequest)).rejects.toThrow(code);
+    await expect(fixture({ context }).capability.issue(baseRequest)).rejects.toThrow(code);
   });
 });
