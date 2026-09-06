@@ -1,6 +1,6 @@
 {
   "name": "@bke/licensing",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Reusable BKE Licensing capability library",
   "type": "module",
   "engines": {
