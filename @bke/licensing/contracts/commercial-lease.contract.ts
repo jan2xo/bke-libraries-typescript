@@ -54,6 +54,7 @@ export type CommercialLeaseRequest = Readonly<{
 
 export type CommercialLicenseContext = Readonly<{
   licenseId: string;
+  orderItemId: string;
   licenseStatus: string;
   licenseExpiresAt: Date | null;
   accountLifecycleState: string;
