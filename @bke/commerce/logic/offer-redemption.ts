@@ -6,6 +6,7 @@ import type {
   CommerceTransitionOfferRedemptionResult,
 } from "../contracts/offer-redemption.contract";
 import type { CommerceOfferRedemptionRepository } from "./offer-redemption-repository";
+import { applyCommerceOfferDiscount } from "./pricing-policy";
 
 export function normalizeCommerceOfferCode(code: string): string {
   return code.trim().toUpperCase();
@@ -15,10 +16,10 @@ export function calculateCommerceOfferDiscount(input: {
   readonly baseMinor: number;
   readonly discountBps: number;
 }): { readonly discountMinor: number; readonly finalMinor: number } {
-  const discountMinor = Math.floor((input.baseMinor * input.discountBps) / 10_000);
+  const priced = applyCommerceOfferDiscount(input.baseMinor, input.discountBps);
   return {
-    discountMinor,
-    finalMinor: input.baseMinor - discountMinor,
+    discountMinor: priced.discountAmountMinor,
+    finalMinor: priced.finalAmountMinor,
   };
 }
 
@@ -52,7 +53,7 @@ function validateReserveInput(input: CommerceReserveOfferRedemptionInput): boole
     isValidOptionalId(input.editionId) &&
     isValidOptionalId(input.purchasePlanId) &&
     Number.isSafeInteger(input.baseMinor) &&
-    input.baseMinor >= 0 &&
+    input.baseMinor >= 1 &&
     input.currency.trim().length > 0 &&
     input.currency.trim().length <= 16 &&
     input.pricingVersion.trim().length > 0 &&
