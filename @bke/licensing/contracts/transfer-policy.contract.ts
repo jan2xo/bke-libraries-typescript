@@ -14,6 +14,11 @@ export interface LicensingTransferPolicyCapability {
   findByPolicyId(policyId: string): Promise<LicensingTransferPolicyLookupResult>;
 }
 
+export function transferPolicyIdFromOperationMetadata(metadata: unknown): string {
+  if (typeof metadata !== "object" || metadata === null || !("policyId" in metadata)) return "";
+  return String((metadata as { policyId?: unknown }).policyId);
+}
+
 export function isTransferAllowed(input: {
   readonly requestedPolicyId: string;
   readonly orderItemPolicyId: string | null | undefined;
