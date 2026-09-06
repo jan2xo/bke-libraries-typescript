@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "@bke/accounts/package.json"
+      - "@bke/accounts/**"
       - ".github/workflows/accounts-package.yml"
   push:
     branches: [main]
@@ -54,12 +54,15 @@ jobs:
           grep -Fx 'package/package.json' artifacts/package-contents.txt
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/account-access.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/account-lifecycle.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/purchase-access.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/account-access.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/account-lifecycle.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/purchase-access.ts' artifacts/package-contents.txt
           grep -Fx 'package/providers/crypto-accounts-id-provider.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-account-access-repository.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-account-lifecycle-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0001_accounts_baseline/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/docs/USAGE.md' artifacts/package-contents.txt
 
@@ -105,15 +108,21 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import { ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID } from "@bke/accounts/contracts/account-access.contract";
+          import { ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID } from "@bke/accounts/contracts/account-lifecycle.contract";
           import { ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID } from "@bke/accounts/contracts/purchase-access.contract";
           import { createAccountsAccountAccessCapability } from "@bke/accounts/logic/account-access";
+          import { createAccountsAccountLifecycleCapability } from "@bke/accounts/logic/account-lifecycle";
           import { createAccountsPurchaseAccessCapability } from "@bke/accounts/logic/purchase-access";
           import { createCryptoAccountsIdProvider } from "@bke/accounts/providers/crypto-accounts-id-provider";
           import { createPostgresAccountsAccountAccessRepository } from "@bke/accounts/prisma/repositories/postgres-account-access-repository";
+          import { createPostgresAccountsAccountLifecycleRepository } from "@bke/accounts/prisma/repositories/postgres-account-lifecycle-repository";
           import { accountsModuleManifest } from "@bke/accounts/module.manifest";
 
           if (ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID !== "bke.accounts.account-access.v1") {
             throw new Error("Unexpected Accounts account-access capability id from packed consumer surface.");
+          }
+          if (ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID !== "bke.accounts.account-lifecycle.v1") {
+            throw new Error("Unexpected Accounts account-lifecycle capability id from packed consumer surface.");
           }
           if (ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID !== "bke.accounts.purchase-access.v1") {
             throw new Error("Unexpected Accounts purchase-access capability id from packed consumer surface.");
@@ -121,14 +130,19 @@ jobs:
           if (accountsModuleManifest.moduleId !== "accounts") {
             throw new Error("Unexpected Accounts manifest moduleId from packed consumer surface.");
           }
+          if (!accountsModuleManifest.provides.includes(ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID)) {
+            throw new Error("Accounts manifest does not publish account lifecycle facts.");
+          }
           if (!accountsModuleManifest.provides.includes(ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID)) {
             throw new Error("Accounts manifest does not publish purchase access.");
           }
           if (
             typeof createAccountsAccountAccessCapability !== "function" ||
+            typeof createAccountsAccountLifecycleCapability !== "function" ||
             typeof createAccountsPurchaseAccessCapability !== "function" ||
             typeof createCryptoAccountsIdProvider !== "function" ||
-            typeof createPostgresAccountsAccountAccessRepository !== "function"
+            typeof createPostgresAccountsAccountAccessRepository !== "function" ||
+            typeof createPostgresAccountsAccountLifecycleRepository !== "function"
           ) {
             throw new Error("Packed Accounts consumer exports are incomplete.");
           }
