@@ -52,7 +52,7 @@ export function createCommercialLicenseContextProvider(
   dependencies: CommercialLicenseContextDependencies,
 ): CommercialLicenseContextProvider {
   return Object.freeze({
-    async resolve(input): Promise<CommercialLicenseContext | null> {
+    async resolve(input: Readonly<{ licenseKeyHash: string; productVersion: string }>): Promise<CommercialLicenseContext | null> {
       const license = await dependencies.licenses.findByKeyHash({
         licenseKeyHash: input.licenseKeyHash,
       });
