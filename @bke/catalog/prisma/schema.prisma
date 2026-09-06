@@ -3,23 +3,26 @@ datasource db {
 }
 
 model CatalogProduct {
-  id          String   @id
-  slug        String   @unique
-  productId   String?  @unique
-  name        String
-  summary     String
-  description String
-  kind        String   @default("SOFTWARE")
-  category    String   @default("General")
-  featured    Boolean  @default(false)
-  imageKey    String?
-  tags        String[] @default([])
-  active      Boolean  @default(true)
-  publishedAt DateTime?
-  archivedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  editions    CatalogEdition[]
+  id                     String   @id
+  slug                   String   @unique
+  productId              String?  @unique
+  minimumAcceptedVersion String?
+  maximumAcceptedVersion String?
+  name                   String
+  summary                String
+  description            String
+  kind                   String   @default("SOFTWARE")
+  category               String   @default("General")
+  featured               Boolean  @default(false)
+  imageKey               String?
+  tags                   String[] @default([])
+  active                 Boolean  @default(true)
+  publishedAt            DateTime?
+  archivedAt             DateTime?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  editions               CatalogEdition[]
+  versions               CatalogProductVersion[]
 
   @@index([kind, active])
   @@index([active, publishedAt])
@@ -43,4 +46,16 @@ model CatalogEdition {
 
   @@unique([productId, slug])
   @@index([productId, active, sortOrder])
+}
+
+model CatalogProductVersion {
+  id        String   @id
+  productId String
+  version   String
+  lifecycle String   @default("DRAFT")
+  active    Boolean  @default(true)
+  product   CatalogProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, version])
+  @@index([productId, active])
 }
