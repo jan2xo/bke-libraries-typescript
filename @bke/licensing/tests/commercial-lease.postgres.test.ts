@@ -21,6 +21,7 @@ const now = new Date("2026-09-05T00:00:00.000Z");
 
 const context: CommercialLicenseContext = Object.freeze({
   licenseId: "postgres-license-1",
+  orderItemId: "order-item-1",
   licenseStatus: "ACTIVE",
   licenseExpiresAt: null,
   accountLifecycleState: "ACTIVE",
@@ -60,7 +61,7 @@ describePostgres("commercial lease PostgreSQL runtime", () => {
           "7890",
           "account-1",
           "order-1",
-          "order-item-1",
+          context.orderItemId,
           "product-record-1",
         ],
       );
