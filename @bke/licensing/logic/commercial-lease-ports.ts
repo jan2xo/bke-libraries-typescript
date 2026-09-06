@@ -128,6 +128,7 @@ export interface CommercialLicenseContextProvider {
 export interface CommercialTransferEligibilityProvider {
   isTransferAllowed(input: Readonly<{
     licenseId: string;
+    orderItemId: string;
     policyId: string;
   }>): Promise<boolean>;
 }
