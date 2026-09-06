@@ -17,8 +17,6 @@ export interface CatalogProductSnapshot {
   readonly id: string;
   readonly slug: string;
   readonly productId: string | null;
-  readonly minimumAcceptedVersion: string | null;
-  readonly maximumAcceptedVersion: string | null;
   readonly name: string;
   readonly summary: string;
   readonly description: string;
