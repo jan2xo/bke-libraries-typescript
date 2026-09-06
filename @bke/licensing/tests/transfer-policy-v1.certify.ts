@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { isTransferAllowed, type LicensingTransferPolicySnapshot } from "../contracts/transfer-policy.contract";
+import {
+  isTransferAllowed,
+  transferPolicyIdFromOperationMetadata,
+  type LicensingTransferPolicySnapshot,
+} from "../contracts/transfer-policy.contract";
+
+function v1TransferPolicyIdFromMetadata(metadata: unknown): string {
+  return typeof metadata === "object" && metadata && "policyId" in metadata
+    ? String((metadata as { policyId?: unknown }).policyId)
+    : "";
+}
 
 function v1TransferAllowed(input: {
   requestedPolicyId: string;
@@ -10,6 +20,29 @@ function v1TransferAllowed(input: {
   if (input.orderItemPolicyId !== input.requestedPolicyId) return false;
   if (!input.policy || input.policy.policyId !== input.orderItemPolicyId) return false;
   return input.policy.transferable === true;
+}
+
+const metadataCases: unknown[] = [
+  undefined,
+  null,
+  "policy-a",
+  {},
+  { policyId: "" },
+  { policyId: "policy-a" },
+  { policyId: " policy-a " },
+  { policyId: null },
+  { policyId: undefined },
+  { policyId: 0 },
+  { policyId: false },
+];
+let metadataComparisons = 0;
+for (const metadata of metadataCases) {
+  assert.equal(
+    transferPolicyIdFromOperationMetadata(metadata),
+    v1TransferPolicyIdFromMetadata(metadata),
+    `metadata mismatch: ${String(metadata)}`,
+  );
+  metadataComparisons += 1;
 }
 
 const ids = ["policy-a", "policy-b", "", " policy-a ", "x' OR '1'='1"];
@@ -35,4 +68,5 @@ for (const requestedPolicyId of ids) {
 }
 
 assert.equal(comparisons, 330);
-console.log(`Licensing V1 transfer-policy differential GREEN: ${comparisons} outcomes matched exactly`);
+assert.equal(metadataComparisons, 11);
+console.log(`Licensing V1 transfer-policy differential GREEN: ${comparisons} decision outcomes + ${metadataComparisons} metadata coercions matched exactly`);
