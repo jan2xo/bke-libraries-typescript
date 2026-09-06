@@ -3,7 +3,13 @@ import type {
   CatalogLicensingVersionFactsSnapshot,
   CatalogLookupResult,
 } from "../contracts/catalog.contract";
-import type { CatalogRepository } from "./catalog-repository";
+
+export interface CatalogLicensingVersionFactsRepository {
+  findLicensingVersionFacts(
+    catalogProductId: string,
+    requestedVersion: string,
+  ): Promise<CatalogLicensingVersionFactsSnapshot | null>;
+}
 
 export function isExactActiveProductVersionEligible(
   versions: readonly { readonly version: string; readonly active: boolean }[],
@@ -17,7 +23,7 @@ function persistenceFailure(): CatalogLookupResult<CatalogLicensingVersionFactsS
 }
 
 export function createCatalogLicensingVersionFactsCapability(
-  repository: CatalogRepository,
+  repository: CatalogLicensingVersionFactsRepository,
 ): CatalogLicensingVersionFactsCapability {
   return Object.freeze({
     async findForCommercialLicensing(input) {
