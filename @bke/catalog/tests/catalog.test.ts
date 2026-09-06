@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID,
   CATALOG_LOOKUP_CAPABILITY_ID,
   CATALOG_MANAGEMENT_CAPABILITY_ID,
   CATALOG_PRODUCT_KINDS,
@@ -110,11 +111,12 @@ function memoryRepository(): CatalogRepository {
 }
 
 describe("catalog capability", () => {
-  it("declares independent lookup and management capabilities", () => {
+  it("declares independent lookup, management, and licensing facts capabilities", () => {
     expect(catalogModuleManifest.needs).toEqual([]);
     expect(catalogModuleManifest.provides).toEqual([
       CATALOG_LOOKUP_CAPABILITY_ID,
       CATALOG_MANAGEMENT_CAPABILITY_ID,
+      CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID,
     ]);
   });
 
