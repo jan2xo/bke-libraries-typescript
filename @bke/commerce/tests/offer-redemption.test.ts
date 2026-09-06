@@ -23,8 +23,8 @@ const snapshot: CommerceOfferRedemptionSnapshot = {
   discountBps: 1250,
   discountedBillingCycles: null,
   baseMinor: 999,
-  discountMinor: 124,
-  finalMinor: 875,
+  discountMinor: 125,
+  finalMinor: 874,
   currency: "PHP",
   pricingVersion: "price-v1",
   reservedAt: now,
@@ -37,10 +37,10 @@ describe("Commerce offer redemption logic", () => {
     expect(normalizeCommerceOfferCode("  launch-25  ")).toBe("LAUNCH-25");
   });
 
-  it("calculates basis-point discounts in integer minor units without over-discounting", () => {
+  it("uses the canonical V1 final-amount half-up rounding rule", () => {
     expect(calculateCommerceOfferDiscount({ baseMinor: 999, discountBps: 1250 })).toEqual({
-      discountMinor: 124,
-      finalMinor: 875,
+      discountMinor: 125,
+      finalMinor: 874,
     });
   });
 
@@ -99,6 +99,17 @@ describe("Commerce offer redemption logic", () => {
     });
 
     expect(result).toEqual({ status: "FAILED", code: "INVALID_INPUT" });
+    expect(reserve).not.toHaveBeenCalled();
+
+    const zeroBase = await capability.reserve({
+      code: "LAUNCH-25",
+      accountId: "account-1",
+      orderId: "order-1",
+      baseMinor: 0,
+      currency: "PHP",
+      pricingVersion: "price-v1",
+    });
+    expect(zeroBase).toEqual({ status: "FAILED", code: "INVALID_INPUT" });
     expect(reserve).not.toHaveBeenCalled();
   });
 
