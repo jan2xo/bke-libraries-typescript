@@ -2,7 +2,6 @@ import type {
   CatalogCreateEditionInput,
   CatalogCreateProductInput,
   CatalogEditionSnapshot,
-  CatalogLicensingVersionFactsSnapshot,
   CatalogProductSnapshot,
   CatalogUpdateEditionInput,
   CatalogUpdateProductInput,
@@ -13,10 +12,6 @@ export interface CatalogRepository {
   findProductBySlug(slug: string): Promise<CatalogProductSnapshot | null>;
   findEditionById(id: string): Promise<CatalogEditionSnapshot | null>;
   listEditions(productId: string): Promise<readonly CatalogEditionSnapshot[]>;
-  findLicensingVersionFacts(
-    catalogProductId: string,
-    requestedVersion: string,
-  ): Promise<CatalogLicensingVersionFactsSnapshot | null>;
 
   createProduct(id: string, input: CatalogCreateProductInput): Promise<CatalogProductSnapshot>;
   updateProduct(input: CatalogUpdateProductInput): Promise<CatalogProductSnapshot | null>;
