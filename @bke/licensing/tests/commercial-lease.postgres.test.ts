@@ -28,7 +28,8 @@ const context: CommercialLicenseContext = Object.freeze({
   subscriptionStatus: "ACTIVE",
   productId: "bke-postgres-product",
   productVersionEligible: true,
-  versionAccepted: true,
+  minimumAcceptedVersion: null,
+  maximumAcceptedVersion: null,
   maxSeats: 1,
   maxDevicesPerSeat: 2,
 });
@@ -54,16 +55,7 @@ describePostgres("commercial lease PostgreSQL runtime", () => {
           ("id", "publicId", "keyHash", "keyLastFour", "accountId", "orderId", "orderItemId", "productId",
            "status", "maxSeats", "maxDevicesPerSeat")
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', 1, 2)`,
-        [
-          context.licenseId,
-          "postgres-public-license-1",
-          keyHash,
-          "7890",
-          "account-1",
-          "order-1",
-          context.orderItemId,
-          "product-record-1",
-        ],
+        [context.licenseId, "postgres-public-license-1", keyHash, "7890", "account-1", "order-1", context.orderItemId, "product-record-1"],
       );
     } finally {
       await client.end();
@@ -89,21 +81,11 @@ describePostgres("commercial lease PostgreSQL runtime", () => {
       signer,
       contexts: {
         async resolve(input) {
-          return input.licenseKeyHash === keyHash && input.productVersion === "1.0.0"
-            ? context
-            : null;
+          return input.licenseKeyHash === keyHash && input.productVersion === "1.0.0" ? context : null;
         },
       },
-      hasher: {
-        hash(value) {
-          return createHash("sha256").update(value).digest("hex");
-        },
-      },
-      transfers: {
-        async isTransferAllowed() {
-          return false;
-        },
-      },
+      hasher: { hash(value) { return createHash("sha256").update(value).digest("hex"); } },
+      transfers: { async isTransferAllowed() { return false; } },
     });
 
     const firstRequest = Object.freeze({
@@ -120,35 +102,19 @@ describePostgres("commercial lease PostgreSQL runtime", () => {
     expect(replay).toEqual(first);
     expect(verifyCommercialLeaseEnvelope(first.lease, publicKey)).toBe(true);
 
-    const firstPayload = JSON.parse(first.lease.payload) as {
-      lease_id: string;
-      generation: number;
-      server_revision: number;
-    };
+    const firstPayload = JSON.parse(first.lease.payload) as { lease_id: string; generation: number; server_revision: number };
     expect(firstPayload.generation).toBe(1);
     expect(firstPayload.server_revision).toBe(1);
 
-    const second = await capability.issue({
-      ...firstRequest,
-      operationId: "postgres-operation-2",
-    });
-    const secondPayload = JSON.parse(second.lease.payload) as {
-      lease_id: string;
-      generation: number;
-      server_revision: number;
-    };
+    const second = await capability.issue({ ...firstRequest, operationId: "postgres-operation-2" });
+    const secondPayload = JSON.parse(second.lease.payload) as { lease_id: string; generation: number; server_revision: number };
     expect(secondPayload.generation).toBe(2);
     expect(secondPayload.server_revision).toBe(2);
 
     const client = new Client({ connectionString: connectionString! });
     await client.connect();
     try {
-      const counts = await client.query<{
-        activations: string;
-        leases: string;
-        operations: string;
-        keys: string;
-      }>(`
+      const counts = await client.query<{ activations: string; leases: string; operations: string; keys: string }>(`
         SELECT
           (SELECT COUNT(*)::text FROM "DeviceActivation") AS activations,
           (SELECT COUNT(*)::text FROM "LicenseLeaseRecord") AS leases,
