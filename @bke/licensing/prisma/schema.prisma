@@ -142,3 +142,12 @@ model CommercialSigningKey {
 
   @@index([status])
 }
+
+model LicensePolicy {
+  id           String  @id
+  productId    String
+  name         String
+  transferable Boolean @default(false)
+
+  @@index([productId])
+}
