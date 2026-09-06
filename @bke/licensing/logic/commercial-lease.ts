@@ -146,7 +146,13 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
           if (action === "TRANSFER") {
             const policyId = transferPolicyIdFromOperationMetadata(operation.metadata);
             if (!policyId) throw new Error("TRANSFER_NOT_ALLOWED");
-            if (!(await dependencies.transfers.isTransferAllowed({ licenseId: context.licenseId, policyId }))) {
+            if (
+              !(await dependencies.transfers.isTransferAllowed({
+                licenseId: context.licenseId,
+                orderItemId: context.orderItemId,
+                policyId,
+              }))
+            ) {
               throw new Error("TRANSFER_NOT_ALLOWED");
             }
           }
