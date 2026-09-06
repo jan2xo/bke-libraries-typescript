@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/commerce --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-commerce-0.3.0.tgz"
+          test "$artifact" = "bke-commerce-0.4.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "COMMERCE_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -53,6 +53,9 @@ jobs:
             package/module.manifest.ts \
             package/contracts/purchase-plan-pricing.contract.ts \
             package/contracts/purchase-plan-lookup.contract.ts \
+            package/contracts/subscription-status-lookup.contract.ts \
+            package/logic/subscription-status-lookup.ts \
+            package/prisma/repositories/postgres-subscription-status-lookup-repository.ts \
             package/contracts/offer-redemption.contract.ts \
             package/contracts/order-invoice-creation.contract.ts \
             package/contracts/checkout-offer-pricing.contract.ts \
@@ -78,7 +81,8 @@ jobs:
             package/prisma/repositories/postgres-zero-payment-fulfillment-repository.ts \
             package/migrations/0001_commerce_purchase_plan_baseline/migration.sql \
             package/migrations/0002_commerce_offers_redemptions/migration.sql \
-            package/migrations/0003_commerce_orders_invoices/migration.sql; do
+            package/migrations/0003_commerce_orders_invoices/migration.sql \
+            package/migrations/0004_commerce_subscription_baseline/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
@@ -120,6 +124,9 @@ jobs:
           }
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
+          import { createCommerceSubscriptionStatusLookupCapability } from "@bke/commerce/logic/subscription-status-lookup";
+          import { createPostgresCommerceSubscriptionStatusLookupRepository } from "@bke/commerce/prisma/repositories/postgres-subscription-status-lookup-repository";
+          import type { CommerceSubscriptionStatusLookupCapability } from "@bke/commerce/contracts/subscription-status-lookup.contract";
           import { COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID } from "@bke/commerce/contracts/purchase-plan-pricing.contract";
           import { COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID } from "@bke/commerce/contracts/purchase-plan-lookup.contract";
           import { COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID } from "@bke/commerce/contracts/offer-redemption.contract";
@@ -145,7 +152,10 @@ jobs:
           for (const value of [createCommercePurchasePlanPricingCapability, createCommercePurchasePlanLookupCapability, createCommerceOfferRedemptionCapability, createCommerceOrderInvoiceCreationCapability, createCommerceCheckoutOfferPricingCapability, createCommerceCheckoutOrchestrationCapability, createCommerceSettlementReactionCapability, createCommerceZeroPaymentFulfillmentCapability, createPostgresCommercePurchasePlanLookupRepository, createPostgresCommerceCheckoutOfferPricingRepository, createPostgresCommerceZeroPaymentFulfillmentRepository]) {
             if (typeof value !== "function") throw new Error("Packed Commerce consumer exports are incomplete.");
           }
-          console.log("Packed @bke/commerce 0.3.0 consumer smoke GREEN");
+          const subscriptionLookup: CommerceSubscriptionStatusLookupCapability = createCommerceSubscriptionStatusLookupCapability({ findById: async () => null });
+          if ((await subscriptionLookup.find({ subscriptionId: "unknown" })).status !== "NOT_FOUND") throw new Error("Packed subscription lookup failed.");
+          if (typeof createPostgresCommerceSubscriptionStatusLookupRepository !== "function") throw new Error("Packed subscription repository missing.");
+          console.log("Packed @bke/commerce 0.4.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -153,10 +163,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-commerce-0.3.0
+          name: bke-commerce-0.4.0
           path: |
-            artifacts/bke-commerce-0.3.0.tgz
-            artifacts/bke-commerce-0.3.0.tgz.sha256
+            artifacts/bke-commerce-0.4.0.tgz
+            artifacts/bke-commerce-0.4.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Commerce release

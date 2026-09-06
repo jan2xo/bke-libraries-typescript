@@ -28,7 +28,7 @@ Commerce owns:
 - `Order` / `OrderItem` and immutable commercial snapshots;
 - `Invoice` / `InvoiceLine`;
 - `DiscountOffer` / `OfferRedemption`;
-- `Subscription` recurring commercial state when that capability is implemented;
+- `Subscription` scalar persistence and read-only status/period lookup; recurring lifecycle transitions remain unimplemented;
 - commercial checkout orchestration and the commercial reaction to an already-verified Payments settlement fact.
 
 Commerce currently provides deterministic purchase-plan pricing, PurchasePlan lookup, offer/redemption handling, Order+Invoice creation, and checkout orchestration.
