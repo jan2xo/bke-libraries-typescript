@@ -1,9 +1,11 @@
 {
   "name": "@bke/licensing",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Reusable BKE Licensing capability library",
   "type": "module",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "files": [
     "contracts",
     "logic",
@@ -30,5 +32,8 @@
     "prisma:validate": "prisma validate --config prisma.config.ts",
     "prisma:deploy": "prisma migrate deploy --config prisma.config.ts"
   },
-  "dependencies": { "pg": "^8.16.3" }
+  "dependencies": {
+    "pg": "^8.16.3",
+    "semver": "7.8.5"
+  }
 }
