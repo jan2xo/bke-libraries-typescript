@@ -55,9 +55,12 @@ jobs:
             package/contracts/module.contract.ts \
             package/logic/catalog.ts \
             package/logic/catalog-repository.ts \
+            package/logic/licensing-version-facts.ts \
             package/prisma/schema.prisma \
             package/prisma/repositories/postgres-catalog-repository.ts \
-            package/migrations/0001_catalog_product_edition/migration.sql; do
+            package/prisma/repositories/postgres-licensing-version-facts-repository.ts \
+            package/migrations/0001_catalog_product_edition/migration.sql \
+            package/migrations/0002_catalog_software_version_facts/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
@@ -100,19 +103,29 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import {
+            CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID,
             CATALOG_LOOKUP_CAPABILITY_ID,
             CATALOG_MANAGEMENT_CAPABILITY_ID,
             CATALOG_PRODUCT_KINDS,
           } from "@bke/catalog/contracts/catalog.contract";
           import { createCatalogLookupCapability, createCatalogManagementCapability } from "@bke/catalog/logic/catalog";
+          import { createCatalogLicensingVersionFactsCapability } from "@bke/catalog/logic/licensing-version-facts";
           import { createPostgresCatalogRepository } from "@bke/catalog/prisma/repositories/postgres-catalog-repository";
+          import { createPostgresCatalogLicensingVersionFactsRepository } from "@bke/catalog/prisma/repositories/postgres-licensing-version-facts-repository";
           import { catalogModuleManifest } from "@bke/catalog/module.manifest";
 
           if (CATALOG_LOOKUP_CAPABILITY_ID !== "bke.catalog.lookup.v1") throw new Error("Catalog lookup identity mismatch.");
           if (CATALOG_MANAGEMENT_CAPABILITY_ID !== "bke.catalog.management.v1") throw new Error("Catalog management identity mismatch.");
+          if (CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID !== "bke.catalog.licensing-version-facts.v1") throw new Error("Catalog licensing facts identity mismatch.");
           if (!CATALOG_PRODUCT_KINDS.includes("SCRIPT") || !CATALOG_PRODUCT_KINDS.includes("DIGITAL_ASSET")) throw new Error("Catalog kinds incomplete.");
           if (catalogModuleManifest.moduleId !== "catalog" || catalogModuleManifest.needs.length !== 0) throw new Error("Catalog manifest mismatch.");
-          for (const value of [createCatalogLookupCapability, createCatalogManagementCapability, createPostgresCatalogRepository]) {
+          for (const value of [
+            createCatalogLookupCapability,
+            createCatalogManagementCapability,
+            createCatalogLicensingVersionFactsCapability,
+            createPostgresCatalogRepository,
+            createPostgresCatalogLicensingVersionFactsRepository,
+          ]) {
             if (typeof value !== "function") throw new Error("Packed Catalog consumer exports are incomplete.");
           }
           console.log("Packed @bke/catalog consumer smoke GREEN");
