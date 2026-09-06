@@ -3,8 +3,19 @@
   "version": "0.2.0",
   "description": "Reusable BKE Product and Edition catalog identity, lookup, management, and module-owned PostgreSQL persistence capabilities",
   "type": "module",
-  "engines": { "node": ">=22.12.0" },
-  "files": ["contracts", "logic", "prisma", "migrations", "docs", "module.manifest.ts", "prisma.config.ts", "README.md"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "files": [
+    "contracts",
+    "logic",
+    "prisma",
+    "migrations",
+    "docs",
+    "module.manifest.ts",
+    "prisma.config.ts",
+    "README.md"
+  ],
   "exports": {
     "./contracts/*": "./contracts/*.ts",
     "./logic/*": "./logic/*.ts",
@@ -19,5 +30,7 @@
     "prisma:validate": "prisma validate --config prisma.config.ts",
     "prisma:deploy": "prisma migrate deploy --config prisma.config.ts"
   },
-  "dependencies": { "pg": "^8.16.3" }
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
 }
