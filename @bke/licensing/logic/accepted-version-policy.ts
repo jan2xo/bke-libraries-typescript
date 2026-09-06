@@ -1,5 +1,13 @@
 import semver from "semver";
 
+/**
+ * Validate the normalized semantic-version syntax used by accepted-version
+ * policy inputs. Host request schemas may trim before calling this predicate.
+ */
+export function isAcceptedVersionSyntax(value: string): boolean {
+  return semver.valid(value) !== null;
+}
+
 export function validateAcceptedVersionRange(
   minimum: string | null | undefined,
   maximum: string | null | undefined,
