@@ -36,6 +36,7 @@ const signingKey: CommercialSigningKeyRecord = Object.freeze({
 
 const baseContext: CommercialLicenseContext = Object.freeze({
   licenseId: "license-1",
+  orderItemId: "order-item-1",
   licenseStatus: "ACTIVE",
   licenseExpiresAt: null,
   accountLifecycleState: "ACTIVE",
@@ -70,6 +71,7 @@ function fixture(options: FixtureOptions = {}) {
   const operations = new Map<string, CommercialOperationRecord>();
   const activations = new Map<string, CommercialActivationRecord>();
   const leases = new Map<string, CommercialLeaseRecord>();
+  const transferInputs: Array<Readonly<{ licenseId: string; orderItemId: string; policyId: string }>> = [];
   let sequence = 0;
   let signCount = 0;
   const id = () => `generated-${++sequence}`;
@@ -232,7 +234,8 @@ function fixture(options: FixtureOptions = {}) {
       },
     },
     transfers: {
-      async isTransferAllowed() {
+      async isTransferAllowed(input) {
+        transferInputs.push(input);
         return options.transferAllowed ?? false;
       },
     },
@@ -263,6 +266,7 @@ function fixture(options: FixtureOptions = {}) {
     operations,
     activations,
     leases,
+    transferInputs,
     prepareOperation,
     signCount: () => signCount,
   };
@@ -355,18 +359,24 @@ describe("commercial lease capability", () => {
     ).rejects.toThrow("RENEWAL_NOT_ELIGIBLE");
   });
 
-  it("requires an approved transfer policy", async () => {
+  it("requires an approved transfer policy and passes the license-owned order item", async () => {
     const denied = fixture({ transferAllowed: false });
     denied.prepareOperation("TRANSFER", "transfer-1", { policyId: "policy-1" });
     await expect(
       denied.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-1" }),
     ).rejects.toThrow("TRANSFER_NOT_ALLOWED");
+    expect(denied.transferInputs).toEqual([
+      { licenseId: "license-1", orderItemId: "order-item-1", policyId: "policy-1" },
+    ]);
 
     const allowed = fixture({ transferAllowed: true });
     allowed.prepareOperation("TRANSFER", "transfer-2", { policyId: "policy-1" });
     await expect(
       allowed.capability.issue({ ...baseRequest, action: "TRANSFER", operationId: "transfer-2" }),
     ).resolves.toMatchObject({ lease: { algorithm: "Ed25519" } });
+    expect(allowed.transferInputs).toEqual([
+      { licenseId: "license-1", orderItemId: "order-item-1", policyId: "policy-1" },
+    ]);
   });
 
   it("enforces maxSeats multiplied by maxDevicesPerSeat", async () => {
