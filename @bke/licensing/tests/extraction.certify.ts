@@ -13,6 +13,7 @@ const allowedModels = new Set([
   "LicenseAssignment",
   "LicenseEvent",
   "LicenseLeaseRecord",
+  "LicensePolicy",
 ]);
 const violations: string[] = [];
 
@@ -77,6 +78,8 @@ const requiredPaths = [
   "prisma.config.ts",
   "prisma/schema.prisma",
   "migrations/0001_licensing_baseline/migration.sql",
+  "migrations/0002_commercial_lease_runtime/migration.sql",
+  "migrations/0003_transfer_policy_facts/migration.sql",
   "contracts",
   "logic",
   "providers",

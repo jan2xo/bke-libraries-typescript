@@ -58,6 +58,8 @@ jobs:
           cmp /tmp/licensing-source.sql @bke/licensing/migrations/0001_licensing_baseline/migration.sql
       - name: Certify Licensing extraction boundary
         run: npx tsx @bke/licensing/tests/extraction.certify.ts
+      - name: Certify V1 transfer-policy parity
+        run: npx tsx @bke/licensing/tests/transfer-policy-v1.certify.ts
       - name: Typecheck Licensing
         run: npm run typecheck --workspace=@bke/licensing
       - name: Validate Licensing Prisma schema
@@ -74,3 +76,5 @@ jobs:
         run: npx tsx @bke/licensing/tests/license-key-reveal.postgres.certify.ts
       - name: Certify Licensing key-hash lookup on PostgreSQL
         run: npx tsx @bke/licensing/tests/license-lookup.postgres.certify.ts
+      - name: Certify Licensing transfer-policy lookup on PostgreSQL
+        run: npx tsx @bke/licensing/tests/transfer-policy.postgres.certify.ts

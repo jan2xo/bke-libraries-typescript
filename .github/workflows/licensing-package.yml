@@ -54,7 +54,9 @@ jobs:
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/license-key-reveal.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/license-lookup.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/transfer-policy.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-license-lookup-repository.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-transfer-policy-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/commercial-lease.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/license-key-reveal.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-lease.ts' artifacts/package-contents.txt
@@ -72,6 +74,7 @@ jobs:
           grep -Fx 'package/prisma/repositories/postgres-commercial-signing-key-provider.ts' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0001_licensing_baseline/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0002_commercial_lease_runtime/migration.sql' artifacts/package-contents.txt
+          grep -Fx 'package/migrations/0003_transfer_policy_facts/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/docs/EXTRACTION-SOURCE.md' artifacts/package-contents.txt
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
             echo '::error::Tests or dependency caches must not ship in @bke/licensing.'
@@ -118,6 +121,8 @@ jobs:
           } from "@bke/licensing/contracts/commercial-lease.contract";
           import type { LicensingLicenseLookup } from "@bke/licensing/contracts/license-lookup.contract";
           import { createPostgresLicensingLicenseLookupRepository } from "@bke/licensing/prisma/repositories/postgres-license-lookup-repository";
+          import { LICENSING_TRANSFER_POLICY_CAPABILITY_ID, isTransferAllowed, type LicensingTransferPolicyCapability } from "@bke/licensing/contracts/transfer-policy.contract";
+          import { createPostgresLicensingTransferPolicyCapability } from "@bke/licensing/prisma/repositories/postgres-transfer-policy-repository";
           import { LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID } from "@bke/licensing/contracts/license-key-reveal.contract";
           import { createCommercialLeaseCapability } from "@bke/licensing/logic/commercial-lease";
           import { createLicensingLicenseKeyRevealCapability } from "@bke/licensing/logic/license-key-reveal";
@@ -135,8 +140,10 @@ jobs:
 
           if (LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID !== "bke.licensing.license-key-reveal.v1") throw new Error("Unexpected reveal capability id.");
           if (LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID !== "bke.licensing.commercial-lease.v1") throw new Error("Unexpected commercial lease capability id.");
+          if (LICENSING_TRANSFER_POLICY_CAPABILITY_ID !== "bke.licensing.transfer-policy.v1") throw new Error("Unexpected transfer policy capability id.");
           if (licensingModuleManifest.moduleId !== "bke.licensing") throw new Error("Unexpected Licensing module id.");
           if (!licensingModuleManifest.provides.includes(LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID)) throw new Error("Commercial lease capability missing from manifest.");
+          if (!licensingModuleManifest.provides.includes(LICENSING_TRANSFER_POLICY_CAPABILITY_ID)) throw new Error("Transfer policy capability missing from manifest.");
           if (commercialLeaseActions.join(",") !== "ACTIVATION,REFRESH,RENEWAL,TRANSFER,REPLACEMENT,REVOCATION_REPLACEMENT,KEY_ROTATION") throw new Error("Commercial lease action surface drifted.");
           if (
             typeof createCommercialLeaseCapability !== "function" ||
@@ -150,14 +157,20 @@ jobs:
             typeof createEd25519CommercialLeaseSigner !== "function" ||
             typeof createPostgresCommercialLeaseStore !== "function" ||
             typeof createPostgresCommercialSigningKeyProvider !== "function" ||
-            typeof createPostgresLicensingLicenseKeyRevealRepository !== "function"
+            typeof createPostgresLicensingLicenseKeyRevealRepository !== "function" ||
+            typeof createPostgresLicensingTransferPolicyCapability !== "function" ||
+            typeof isTransferAllowed !== "function"
           ) throw new Error("Packed Licensing consumer exports are incomplete.");
           const lookup: LicensingLicenseLookup = createPostgresLicensingLicenseLookupRepository("postgresql://unused:unused@localhost/unused");
           if (typeof lookup.findByKeyHash !== "function") throw new Error("Packed Licensing lookup contract missing.");
+          const transferPolicy: LicensingTransferPolicyCapability = createPostgresLicensingTransferPolicyCapability("postgresql://unused:unused@localhost/unused");
+          if (typeof transferPolicy.findByPolicyId !== "function") throw new Error("Packed transfer policy lookup missing.");
+          if (!isTransferAllowed({ requestedPolicyId: "policy-a", orderItemPolicyId: "policy-a", policy: { policyId: "policy-a", transferable: true } })) throw new Error("Packed transfer policy allow case failed.");
+          if (isTransferAllowed({ requestedPolicyId: "policy-a", orderItemPolicyId: "policy-b", policy: { policyId: "policy-b", transferable: true } })) throw new Error("Packed transfer policy mismatch case failed.");
           if (!isVersionAccepted("1.2.3", "1.2.3", "2.0.0")) throw new Error("Packed version policy inclusion failed.");
           if (isVersionAccepted("2.0.1", null, "2.0.0")) throw new Error("Packed version policy exclusion failed.");
           if (validateAcceptedVersionRange("v1.2.3", null).minimum !== "1.2.3") throw new Error("Packed version policy normalization failed.");
-          console.log("Packed @bke/licensing commercial lease, lookup and version policy consumer smoke GREEN");
+          console.log("Packed @bke/licensing commercial lease, lookup, version and transfer policy consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit

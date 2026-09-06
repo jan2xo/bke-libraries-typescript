@@ -8,6 +8,7 @@ import {
   type CommercialLeaseResult,
   type CommercialLicenseContext,
 } from "../contracts/commercial-lease.contract";
+import { transferPolicyIdFromOperationMetadata } from "../contracts/transfer-policy.contract";
 import { nextLeaseLifecycle, requireProductVersion } from "./lease-lifecycle";
 import { deviceIdentity } from "./product-identity";
 import type {
@@ -143,7 +144,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
           }
 
           if (action === "TRANSFER") {
-            const policyId = metadataValue(operation.metadata, "policyId") ?? "";
+            const policyId = transferPolicyIdFromOperationMetadata(operation.metadata);
             if (!policyId) throw new Error("TRANSFER_NOT_ALLOWED");
             if (!(await dependencies.transfers.isTransferAllowed({ licenseId: context.licenseId, policyId }))) {
               throw new Error("TRANSFER_NOT_ALLOWED");
