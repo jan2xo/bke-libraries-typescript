@@ -25,8 +25,11 @@ function persistenceFailure(): CatalogLookupResult<CatalogLicensingVersionFactsS
 export function createCatalogLicensingVersionFactsCapability(
   repository: CatalogLicensingVersionFactsRepository,
 ): CatalogLicensingVersionFactsCapability {
-  return Object.freeze({
-    async findForCommercialLicensing(input) {
+  const capability: CatalogLicensingVersionFactsCapability = {
+    async findForCommercialLicensing(input: {
+      readonly catalogProductId: string;
+      readonly requestedVersion: string;
+    }): Promise<CatalogLookupResult<CatalogLicensingVersionFactsSnapshot>> {
       const catalogProductId = input.catalogProductId.trim();
       if (!catalogProductId || input.requestedVersion.length === 0) {
         return { status: "FAILED", code: "INVALID_INPUT" };
@@ -41,5 +44,6 @@ export function createCatalogLicensingVersionFactsCapability(
         return persistenceFailure();
       }
     },
-  });
+  };
+  return Object.freeze(capability);
 }
