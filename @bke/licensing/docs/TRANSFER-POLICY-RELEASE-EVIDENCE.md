@@ -33,7 +33,9 @@ This layer is released as:
 - `@bke/commerce` `0.5.0`
 - `@bke/licensing` `0.5.0`
 
-Package-lock workspace metadata is reconciled to those versions. The final commercial-context composition layer must use a later Licensing version and must not reuse `0.5.0`.
+The branch also reconciles inherited `@bke/catalog` metadata to the already-published `0.2.0` release before merge. Package-lock workspace metadata therefore matches Catalog `0.2.0`, Commerce `0.5.0`, and Licensing `0.5.0` on the certifying head.
+
+The final commercial-context composition layer must use a later Licensing version and must not reuse `0.5.0`.
 
 ## Certification requirement
 
