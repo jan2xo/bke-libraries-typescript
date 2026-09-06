@@ -1,0 +1,87 @@
+name: TEMP Licensing Signing Key Registry
+
+on:
+  push:
+    branches:
+      - tmp/licensing-signing-key-registry
+    paths:
+      - ".github/workflows/tmp-signing-key-registry-patch.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: bke
+          POSTGRES_PASSWORD: bke
+          POSTGRES_DB: bke_licensing_library
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bke -d bke_licensing_library"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_licensing_library
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp/licensing-signing-key-registry
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install current locked dependencies
+        run: npm ci
+      - name: Apply asserted prerequisite patch
+        run: python3 scripts/tmp-signing-key-registry-patch.py
+      - name: Regenerate workspace lock
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Reinstall regenerated lock
+        run: npm ci
+      - name: Typecheck Licensing
+        run: npm run typecheck --workspace=@bke/licensing
+      - name: Validate Licensing Prisma schema
+        run: npm run prisma:validate --workspace=@bke/licensing
+      - name: Apply Licensing migrations
+        run: npm run prisma:deploy --workspace=@bke/licensing
+      - name: Certify signing-key registry PostgreSQL behavior
+        run: npx tsx @bke/licensing/tests/signing-key-registry.postgres.certify.ts
+      - name: Test Licensing logic
+        run: npm run test --workspace=@bke/licensing
+      - name: Pack Licensing package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/licensing-pack
+          mkdir -p /tmp/licensing-pack
+          artifact="$(npm pack --workspace=@bke/licensing --pack-destination /tmp/licensing-pack --silent | tail -n 1)"
+          test "$(basename "$artifact")" = "bke-licensing-0.7.0.tgz"
+          tar -tzf "/tmp/licensing-pack/$(basename "$artifact")" | grep -Fx 'package/contracts/signing-key-registry.contract.ts'
+          tar -tzf "/tmp/licensing-pack/$(basename "$artifact")" | grep -Fx 'package/prisma/repositories/postgres-signing-key-registry-repository.ts'
+      - name: Check whitespace
+        run: git diff --check
+      - name: Commit verified prerequisite files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            @bke/licensing/package.json \
+            @bke/licensing/module.manifest.ts \
+            @bke/licensing/contracts/signing-key-registry.contract.ts \
+            @bke/licensing/prisma/repositories/postgres-signing-key-registry-repository.ts \
+            @bke/licensing/tests/signing-key-registry.postgres.certify.ts \
+            .github/workflows/licensing.yml \
+            .github/workflows/licensing-package.yml \
+            package-lock.json
+          git diff --cached --exit-code && { echo "No candidate changes produced"; exit 1; } || true
+          git commit -m "feat(licensing): expose signing-key registry capability"
+          git push origin HEAD:tmp/licensing-signing-key-registry
