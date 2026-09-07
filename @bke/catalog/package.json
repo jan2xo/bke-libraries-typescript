@@ -1,6 +1,6 @@
 {
   "name": "@bke/catalog",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reusable BKE Product and Edition catalog identity, lookup, management, and module-owned PostgreSQL persistence capabilities",
   "type": "module",
   "engines": {

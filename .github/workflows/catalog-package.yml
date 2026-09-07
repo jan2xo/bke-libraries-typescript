@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/catalog --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-catalog-0.2.0.tgz"
+          test "$artifact" = "bke-catalog-0.3.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "CATALOG_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -59,6 +59,7 @@ jobs:
             package/prisma/schema.prisma \
             package/prisma/repositories/postgres-catalog-repository.ts \
             package/prisma/repositories/postgres-licensing-version-facts-repository.ts \
+            package/prisma/repositories/legacy-schema-licensing-version-facts-repository.ts \
             package/migrations/0001_catalog_product_edition/migration.sql \
             package/migrations/0002_catalog_software_version_facts/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
@@ -112,6 +113,7 @@ jobs:
           import { createCatalogLicensingVersionFactsCapability } from "@bke/catalog/logic/licensing-version-facts";
           import { createPostgresCatalogRepository } from "@bke/catalog/prisma/repositories/postgres-catalog-repository";
           import { createPostgresCatalogLicensingVersionFactsRepository } from "@bke/catalog/prisma/repositories/postgres-licensing-version-facts-repository";
+          import { createLegacySchemaCatalogLicensingVersionFactsRepository } from "@bke/catalog/prisma/repositories/legacy-schema-licensing-version-facts-repository";
           import { catalogModuleManifest } from "@bke/catalog/module.manifest";
 
           if (CATALOG_LOOKUP_CAPABILITY_ID !== "bke.catalog.lookup.v1") throw new Error("Catalog lookup identity mismatch.");
@@ -125,6 +127,7 @@ jobs:
             createCatalogLicensingVersionFactsCapability,
             createPostgresCatalogRepository,
             createPostgresCatalogLicensingVersionFactsRepository,
+            createLegacySchemaCatalogLicensingVersionFactsRepository,
           ]) {
             if (typeof value !== "function") throw new Error("Packed Catalog consumer exports are incomplete.");
           }
@@ -136,10 +139,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-catalog-0.2.0
+          name: bke-catalog-0.3.0
           path: |
-            artifacts/bke-catalog-0.2.0.tgz
-            artifacts/bke-catalog-0.2.0.tgz.sha256
+            artifacts/bke-catalog-0.3.0.tgz
+            artifacts/bke-catalog-0.3.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Catalog release
@@ -167,4 +170,4 @@ jobs:
             "artifacts/$CATALOG_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/catalog v${version}" \
-            --notes "Certified BKE Catalog package artifact. Product/Edition identity, lookup, management, SCRIPT/DIGITAL_ASSET kinds, module-owned PostgreSQL persistence, and package portability passed source, behavior, persistence, and package gates before release creation."
+            --notes "Certified BKE Catalog package artifact. Product/Edition identity, lookup, management, software-version facts, native PostgreSQL persistence, legacy Product/ProductVersion convergence adapter, and package portability passed source, behavior, persistence, and package gates before release creation."

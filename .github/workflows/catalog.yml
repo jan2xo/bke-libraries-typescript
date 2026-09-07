@@ -60,6 +60,8 @@ jobs:
         run: npx tsx @bke/catalog/tests/extraction.certify.ts
       - name: Certify V1 commercial software-version fact parity
         run: npx tsx @bke/catalog/tests/v1-commercial-version-facts.certify.ts
+      - name: Certify legacy Product schema compatibility
+        run: npx tsx @bke/catalog/tests/legacy-schema-adapter.certify.ts
       - name: Typecheck Catalog
         run: npm run typecheck --workspace=@bke/catalog
       - name: Validate Catalog Prisma schema
