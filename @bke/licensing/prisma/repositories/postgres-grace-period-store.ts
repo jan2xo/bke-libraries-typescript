@@ -35,7 +35,7 @@ function transactionFor(client: Client): LicensingGraceTransaction {
   });
 
   return Object.freeze({
-    async findState(productKey) {
+    async findState(productKey: LicensingGraceProduct) {
       const result = await client.query<GraceRow>(
         `SELECT "productKey", "graceEnabled"
            FROM "ProductGraceOverride"
@@ -46,7 +46,7 @@ function transactionFor(client: Client): LicensingGraceTransaction {
       return record(result.rows[0]);
     },
 
-    async upsertState(productKey, graceEnabled) {
+    async upsertState(productKey: LicensingGraceProduct, graceEnabled: boolean) {
       const now = new Date();
       await client.query(
         `INSERT INTO "ProductGraceOverride" ("id", "productKey", "graceEnabled", "createdAt", "updatedAt")
@@ -67,7 +67,7 @@ export function createPostgresLicensingGracePeriodStore(connectionString: string
   if (!normalized) throw new Error("Licensing PostgreSQL connection string is required.");
 
   return Object.freeze({
-    async findState(productKey) {
+    async findState(productKey: LicensingGraceProduct) {
       return withClient(normalized, async (client) => {
         const result = await client.query<GraceRow>(
           `SELECT "productKey", "graceEnabled"

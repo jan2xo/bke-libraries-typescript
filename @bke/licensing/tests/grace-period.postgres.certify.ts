@@ -1,5 +1,6 @@
 import { Client } from "pg";
-import type { LicensingGraceMutationEffect } from "../logic/grace-period-ports";
+import type { LicensingGraceMutation } from "../contracts/grace-period.contract";
+import type { LicensingGraceAtomicEffectTransaction, LicensingGraceMutationEffect } from "../logic/grace-period-ports";
 import { createLicensingGracePeriodCapability } from "../logic/grace-period";
 import { createPostgresLicensingGracePeriodStore } from "../prisma/repositories/postgres-grace-period-store";
 
@@ -14,9 +15,9 @@ try {
   await reset.end();
 }
 
-const observed: unknown[] = [];
+const observed: LicensingGraceMutation[] = [];
 const effect: LicensingGraceMutationEffect = Object.freeze({
-  async record(mutation, transaction) {
+  async record(mutation: LicensingGraceMutation, transaction: LicensingGraceAtomicEffectTransaction) {
     await transaction.execute("SELECT 1");
     observed.push(mutation);
   },

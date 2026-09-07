@@ -26,7 +26,7 @@ export function createLicensingGracePeriodCapability(input: Readonly<{
   mutationEffect: LicensingGraceMutationEffect;
 }>): LicensingGracePeriodCapability {
   return Object.freeze({
-    async readState(productKey) {
+    async readState(productKey: LicensingGraceProduct) {
       try {
         const row = await input.store.findState(productKey);
         return row?.graceEnabled === true;
@@ -44,7 +44,11 @@ export function createLicensingGracePeriodCapability(input: Readonly<{
       return Object.freeze(result);
     },
 
-    async setState({ productKey, graceEnabled, operationSource }) {
+    async setState({ productKey, graceEnabled, operationSource }: Readonly<{
+      productKey: LicensingGraceProduct;
+      graceEnabled: boolean;
+      operationSource: string;
+    }>) {
       return input.store.withTransaction(async (transaction) => {
         const existing = await transaction.findState(productKey);
         const oldValue = existing?.graceEnabled ?? false;

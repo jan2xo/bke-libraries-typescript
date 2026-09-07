@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LicensingGraceProduct } from "../contracts/grace-period.contract";
+import type { LicensingGraceMutation, LicensingGraceProduct } from "../contracts/grace-period.contract";
 import { createLicensingGracePeriodCapability, parseLicensingGraceBoolean, parseLicensingGraceProduct } from "../logic/grace-period";
 import type {
   LicensingGraceMutationEffect,
@@ -14,11 +14,13 @@ function memoryStore(seed: Partial<Record<LicensingGraceProduct, boolean>> = {})
     state.has(productKey) ? Object.freeze({ productKey, graceEnabled: state.get(productKey) === true }) : null;
 
   return Object.freeze({
-    async findState(productKey) {
+    async findState(productKey: LicensingGraceProduct) {
       return row(productKey);
     },
-    async findStates(productKeys) {
-      return productKeys.map((productKey) => row(productKey)).filter((value): value is LicensingGraceRecord => value !== null);
+    async findStates(productKeys: readonly LicensingGraceProduct[]) {
+      return productKeys
+        .map((productKey: LicensingGraceProduct) => row(productKey))
+        .filter((value: LicensingGraceRecord | null): value is LicensingGraceRecord => value !== null);
     },
     async withTransaction<T>(work: (transaction: LicensingGraceTransaction) => Promise<T>): Promise<T> {
       const working = new Map(state);
@@ -69,9 +71,9 @@ describe("Licensing grace period", () => {
   });
 
   it("returns the old value and emits the mutation effect before commit", async () => {
-    const mutations: unknown[] = [];
+    const mutations: LicensingGraceMutation[] = [];
     const effect: LicensingGraceMutationEffect = Object.freeze({
-      async record(mutation) { mutations.push(mutation); },
+      async record(mutation: LicensingGraceMutation) { mutations.push(mutation); },
     });
     const capability = createLicensingGracePeriodCapability({ store: memoryStore({ airstack: true }), mutationEffect: effect });
     await expect(capability.setState({ productKey: "airstack", graceEnabled: false, operationSource: "VPS_CLI" })).resolves.toBe(true);
