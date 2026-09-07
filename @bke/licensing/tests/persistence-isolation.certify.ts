@@ -12,6 +12,7 @@ const expectedTables = new Set([
   "LicenseEvent",
   "LicenseLeaseRecord",
   "LicensePolicy",
+  "ProductGraceOverride",
   "_prisma_migrations",
 ]);
 
@@ -64,7 +65,7 @@ try {
   }
 
   console.log(
-    "Licensing persistence isolation GREEN: eight owned business tables, internal-only foreign keys, one owned enum, and no foreign-domain tables",
+    "Licensing persistence isolation GREEN: nine owned business tables, internal-only foreign keys, one owned enum, and no foreign-domain tables",
   );
 } finally {
   await client.end();

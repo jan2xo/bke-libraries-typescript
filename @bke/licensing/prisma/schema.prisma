@@ -151,3 +151,11 @@ model LicensePolicy {
 
   @@index([productId])
 }
+
+model ProductGraceOverride {
+  id           String   @id
+  productKey   String   @unique
+  graceEnabled Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
+}

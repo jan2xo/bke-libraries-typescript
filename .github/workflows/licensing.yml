@@ -80,3 +80,5 @@ jobs:
         run: npx tsx @bke/licensing/tests/transfer-policy.postgres.certify.ts
       - name: Certify Licensing signing-key registry on PostgreSQL
         run: npx tsx @bke/licensing/tests/signing-key-registry.postgres.certify.ts
+      - name: Certify Licensing grace-period behavior on PostgreSQL
+        run: npx tsx @bke/licensing/tests/grace-period.postgres.certify.ts
