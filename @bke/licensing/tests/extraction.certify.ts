@@ -14,6 +14,7 @@ const allowedModels = new Set([
   "LicenseEvent",
   "LicenseLeaseRecord",
   "LicensePolicy",
+  "ProductGraceOverride",
 ]);
 const violations: string[] = [];
 
@@ -80,6 +81,7 @@ const requiredPaths = [
   "migrations/0001_licensing_baseline/migration.sql",
   "migrations/0002_commercial_lease_runtime/migration.sql",
   "migrations/0003_transfer_policy_facts/migration.sql",
+  "migrations/0004_grace_period_overrides/migration.sql",
   "contracts",
   "logic",
   "providers",

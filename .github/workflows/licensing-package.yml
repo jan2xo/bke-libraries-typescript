@@ -56,6 +56,7 @@ jobs:
           grep -Fx 'package/contracts/license-lookup.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/transfer-policy.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/signing-key-registry.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/grace-period.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-license-lookup-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-transfer-policy-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-signing-key-registry-repository.ts' artifacts/package-contents.txt
@@ -64,6 +65,8 @@ jobs:
           grep -Fx 'package/logic/commercial-lease.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-lease-ports.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-signing-registry.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/grace-period.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/grace-period-ports.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/lease-lifecycle.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/product-identity.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/refresh-decision.ts' artifacts/package-contents.txt
@@ -74,9 +77,11 @@ jobs:
           grep -Fx 'package/prisma/repositories/postgres-license-key-reveal-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-commercial-lease-store.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-commercial-signing-key-provider.ts' artifacts/package-contents.txt
+          grep -Fx 'package/prisma/repositories/postgres-grace-period-store.ts' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0001_licensing_baseline/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0002_commercial_lease_runtime/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0003_transfer_policy_facts/migration.sql' artifacts/package-contents.txt
+          grep -Fx 'package/migrations/0004_grace_period_overrides/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/docs/EXTRACTION-SOURCE.md' artifacts/package-contents.txt
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
             echo '::error::Tests or dependency caches must not ship in @bke/licensing.'
@@ -121,6 +126,7 @@ jobs:
             LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID,
             commercialLeaseActions,
           } from "@bke/licensing/contracts/commercial-lease.contract";
+          import { LICENSING_GRACE_PERIOD_CAPABILITY_ID } from "@bke/licensing/contracts/grace-period.contract";
           import type { LicensingLicenseLookup } from "@bke/licensing/contracts/license-lookup.contract";
           import { createPostgresLicensingLicenseLookupRepository } from "@bke/licensing/prisma/repositories/postgres-license-lookup-repository";
           import { LICENSING_TRANSFER_POLICY_CAPABILITY_ID, isTransferAllowed, type LicensingTransferPolicyCapability } from "@bke/licensing/contracts/transfer-policy.contract";
@@ -129,6 +135,7 @@ jobs:
           import { createPostgresLicensingSigningKeyRegistryCapability } from "@bke/licensing/prisma/repositories/postgres-signing-key-registry-repository";
           import { LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID } from "@bke/licensing/contracts/license-key-reveal.contract";
           import { createCommercialLeaseCapability } from "@bke/licensing/logic/commercial-lease";
+          import { createLicensingGracePeriodCapability, parseLicensingGraceBoolean, parseLicensingGraceProduct } from "@bke/licensing/logic/grace-period";
           import { createLicensingLicenseKeyRevealCapability } from "@bke/licensing/logic/license-key-reveal";
           import { selectActiveCommercialSigningKey } from "@bke/licensing/logic/commercial-signing-registry";
           import { nextLeaseLifecycle, requireProductVersion } from "@bke/licensing/logic/lease-lifecycle";
@@ -139,6 +146,7 @@ jobs:
           import { createEd25519CommercialLeaseSigner } from "@bke/licensing/providers/ed25519-commercial-lease-signer";
           import { createPostgresCommercialLeaseStore } from "@bke/licensing/prisma/repositories/postgres-commercial-lease-store";
           import { createPostgresCommercialSigningKeyProvider } from "@bke/licensing/prisma/repositories/postgres-commercial-signing-key-provider";
+          import { createPostgresLicensingGracePeriodStore } from "@bke/licensing/prisma/repositories/postgres-grace-period-store";
           import { createPostgresLicensingLicenseKeyRevealRepository } from "@bke/licensing/prisma/repositories/postgres-license-key-reveal-repository";
           import { licensingModuleManifest } from "@bke/licensing/module.manifest";
 
@@ -146,13 +154,19 @@ jobs:
           if (LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID !== "bke.licensing.commercial-lease.v1") throw new Error("Unexpected commercial lease capability id.");
           if (LICENSING_TRANSFER_POLICY_CAPABILITY_ID !== "bke.licensing.transfer-policy.v1") throw new Error("Unexpected transfer policy capability id.");
           if (LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID !== "bke.licensing.signing-key-registry.v1") throw new Error("Unexpected signing-key registry capability id.");
+          if (LICENSING_GRACE_PERIOD_CAPABILITY_ID !== "bke.licensing.grace-period.v1") throw new Error("Unexpected grace-period capability id.");
           if (licensingModuleManifest.moduleId !== "bke.licensing") throw new Error("Unexpected Licensing module id.");
           if (!licensingModuleManifest.provides.includes(LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID)) throw new Error("Commercial lease capability missing from manifest.");
           if (!licensingModuleManifest.provides.includes(LICENSING_TRANSFER_POLICY_CAPABILITY_ID)) throw new Error("Transfer policy capability missing from manifest.");
           if (!licensingModuleManifest.provides.includes(LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID)) throw new Error("Signing-key registry capability missing from manifest.");
+          if (!licensingModuleManifest.provides.includes(LICENSING_GRACE_PERIOD_CAPABILITY_ID)) throw new Error("Grace-period capability missing from manifest.");
           if (commercialLeaseActions.join(",") !== "ACTIVATION,REFRESH,RENEWAL,TRANSFER,REPLACEMENT,REVOCATION_REPLACEMENT,KEY_ROTATION") throw new Error("Commercial lease action surface drifted.");
           if (
             typeof createCommercialLeaseCapability !== "function" ||
+            typeof createLicensingGracePeriodCapability !== "function" ||
+            typeof parseLicensingGraceBoolean !== "function" ||
+            typeof parseLicensingGraceProduct !== "function" ||
+            typeof createPostgresLicensingGracePeriodStore !== "function" ||
             typeof createLicensingLicenseKeyRevealCapability !== "function" ||
             typeof selectActiveCommercialSigningKey !== "function" ||
             typeof nextLeaseLifecycle !== "function" ||
@@ -179,7 +193,8 @@ jobs:
           if (!isVersionAccepted("1.2.3", "1.2.3", "2.0.0")) throw new Error("Packed version policy inclusion failed.");
           if (isVersionAccepted("2.0.1", null, "2.0.0")) throw new Error("Packed version policy exclusion failed.");
           if (validateAcceptedVersionRange("v1.2.3", null).minimum !== "1.2.3") throw new Error("Packed version policy normalization failed.");
-          console.log("Packed @bke/licensing commercial lease, lookup, version, transfer policy and signing-key registry consumer smoke GREEN");
+          if (parseLicensingGraceProduct("airstack") !== "airstack" || parseLicensingGraceBoolean("true") !== true) throw new Error("Packed grace-period parser parity failed.");
+          console.log("Packed @bke/licensing commercial lease, lookup, version, transfer policy, signing-key registry and grace-period consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -215,4 +230,4 @@ jobs:
             "artifacts/$LICENSING_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/licensing v${version}" \
-            --notes "Certified BKE Licensing package artifact. Source, persistence, commercial lease behavior, and packed-consumer gates passed before release creation."
+            --notes "Certified BKE Licensing package artifact. Source, persistence, commercial lease behavior, grace-period behavior, and packed-consumer gates passed before release creation."
