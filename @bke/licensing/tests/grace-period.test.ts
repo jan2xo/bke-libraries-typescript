@@ -59,7 +59,7 @@ describe("Licensing grace period", () => {
     await expect(capability.readStatuses()).resolves.toEqual({ airstack: true, renderdock: false });
   });
 
-  it("fails closed for a single-state read when persistence fails", async () => {
+  it("fails closed for single-state and multi-state reads when persistence fails", async () => {
     const failingStore: LicensingGracePeriodStore = {
       async findState() { throw new Error("db unavailable"); },
       async findStates() { throw new Error("db unavailable"); },
@@ -67,7 +67,7 @@ describe("Licensing grace period", () => {
     };
     const capability = createLicensingGracePeriodCapability({ store: failingStore, mutationEffect: noopEffect });
     await expect(capability.readState("airstack")).resolves.toBe(false);
-    await expect(capability.readStatuses()).rejects.toThrow("db unavailable");
+    await expect(capability.readStatuses()).resolves.toEqual({ airstack: false, renderdock: false });
   });
 
   it("returns the old value and emits the mutation effect before commit", async () => {
