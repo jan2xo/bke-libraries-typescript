@@ -1,0 +1,39 @@
+name: Temporary Legal Lock Refresh
+
+on:
+  push:
+    branches: [feat/legal-document-catalog-v0.4]
+    paths:
+      - "@bke/legal/package.json"
+      - ".github/workflows/temp-legal-lock-refresh.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/legal-document-catalog-v0.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Refresh workspace lockfile
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Commit exact npm lock update
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- package-lock.json; then
+            echo "package-lock.json already matches package metadata"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git commit -m "chore: refresh Legal 0.4.0 package lock"
+          git push origin HEAD:feat/legal-document-catalog-v0.4
