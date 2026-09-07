@@ -36,12 +36,16 @@ export function createLicensingGracePeriodCapability(input: Readonly<{
     },
 
     async readStatuses(): Promise<LicensingGraceStatuses> {
-      const rows = await input.store.findStates(LICENSING_GRACE_PRODUCTS);
-      const result: Record<LicensingGraceProduct, boolean> = { airstack: false, renderdock: false };
-      for (const row of rows) {
-        if (isLicensingGraceProduct(row.productKey)) result[row.productKey] = row.graceEnabled;
+      try {
+        const rows = await input.store.findStates(LICENSING_GRACE_PRODUCTS);
+        const result: Record<LicensingGraceProduct, boolean> = { airstack: false, renderdock: false };
+        for (const row of rows) {
+          if (isLicensingGraceProduct(row.productKey)) result[row.productKey] = row.graceEnabled;
+        }
+        return Object.freeze(result);
+      } catch {
+        return Object.freeze({ airstack: false, renderdock: false });
       }
-      return Object.freeze(result);
     },
 
     async setState({ productKey, graceEnabled, operationSource }: Readonly<{
