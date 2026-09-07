@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/legal --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-legal-0.3.0.tgz"
+          test "$artifact" = "bke-legal-0.4.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "LEGAL_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -57,6 +57,7 @@ jobs:
             package/contracts/module.contract.ts \
             package/logic/acceptance.ts \
             package/logic/checkout-requirements.ts \
+            package/logic/document-catalog.ts \
             package/logic/render.ts \
             package/logic/reacceptance-status.ts \
             package/prisma/schema.prisma \
@@ -112,6 +113,7 @@ jobs:
           import { LEGAL_REACCEPTANCE_STATUS_CAPABILITY_ID } from "@bke/legal/contracts/reacceptance-status.contract";
           import { createLegalAcceptanceCapability } from "@bke/legal/logic/acceptance";
           import { createLegalCheckoutRequirementsCapability } from "@bke/legal/logic/checkout-requirements";
+          import { LEGAL_DOCUMENT_DEFINITIONS, REGISTRATION_LEGAL_TYPES, CHECKOUT_LEGAL_TYPES, SUBSCRIPTION_LEGAL_TYPES } from "@bke/legal/logic/document-catalog";
           import { legalRenderedContentSha256 } from "@bke/legal/logic/render";
           import { createLegalReacceptanceStatusCapability } from "@bke/legal/logic/reacceptance-status";
           import { createPostgresLegalAcceptanceRepository } from "@bke/legal/prisma/repositories/postgres-acceptance-repository";
@@ -122,10 +124,14 @@ jobs:
           if (LEGAL_CHECKOUT_REQUIREMENTS_CAPABILITY_ID !== "bke.legal.checkout-requirements.v1") throw new Error("Unexpected Legal checkout capability id.");
           if (LEGAL_REACCEPTANCE_STATUS_CAPABILITY_ID !== "bke.legal.reacceptance-status.v1") throw new Error("Unexpected Legal reacceptance capability id.");
           if (legalModuleManifest.moduleId !== "legal" || legalModuleManifest.provides.length !== 3) throw new Error("Unexpected Legal module manifest.");
+          if (LEGAL_DOCUMENT_DEFINITIONS.TERMS_OF_SERVICE.slug !== "terms") throw new Error("Packed Legal document catalog is incomplete.");
+          if (REGISTRATION_LEGAL_TYPES.join(",") !== "TERMS_OF_SERVICE,PRIVACY_POLICY") throw new Error("Unexpected registration legal group.");
+          if (CHECKOUT_LEGAL_TYPES.join(",") !== "SOFTWARE_LICENSE_AGREEMENT,REFUND_POLICY") throw new Error("Unexpected checkout legal group.");
+          if (SUBSCRIPTION_LEGAL_TYPES.join(",") !== "SUBSCRIPTION_TERMS") throw new Error("Unexpected subscription legal group.");
           for (const value of [createLegalAcceptanceCapability, createLegalCheckoutRequirementsCapability, legalRenderedContentSha256, createLegalReacceptanceStatusCapability, createPostgresLegalAcceptanceRepository, createPostgresLegalCheckoutRequirementsRepository, createPostgresLegalReacceptanceStatusRepository]) {
             if (typeof value !== "function") throw new Error("Packed Legal consumer exports are incomplete.");
           }
-          console.log("Packed @bke/legal 0.3.0 consumer smoke GREEN");
+          console.log("Packed @bke/legal 0.4.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -133,10 +139,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-legal-0.3.0
+          name: bke-legal-0.4.0
           path: |
-            artifacts/bke-legal-0.3.0.tgz
-            artifacts/bke-legal-0.3.0.tgz.sha256
+            artifacts/bke-legal-0.4.0.tgz
+            artifacts/bke-legal-0.4.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Legal release
@@ -164,4 +170,4 @@ jobs:
             "artifacts/$LEGAL_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/legal v${version}" \
-            --notes "Certified BKE Legal package artifact. Acceptance, rendered evidence, checkout requirements, reacceptance, persistence, and package gates passed before release creation."
+            --notes "Certified BKE Legal package artifact. Acceptance, rendered evidence, checkout requirements, reacceptance, canonical document catalog, persistence, and package gates passed before release creation."

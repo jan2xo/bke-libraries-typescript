@@ -1,6 +1,6 @@
 {
   "name": "@bke/legal",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Reusable BKE Legal acceptance, checkout requirements, rendered evidence, and reacceptance capability library",
   "type": "module",
   "engines": { "node": ">=22.12.0" },
