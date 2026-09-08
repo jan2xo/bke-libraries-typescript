@@ -40,7 +40,7 @@ if (!manifest.includes("needs: []") || !manifest.includes("CommerceModuleManifes
 if (existsSync(resolve(root, "module.ts"))) throw new Error("Digital Solutions Commerce host adapter must not ship in @bke/commerce.");
 
 const migrations = readdirSync(resolve(root, "migrations")).filter((name) => statSync(resolve(root, "migrations", name)).isDirectory()).sort();
-const expectedMigrations = ["0001_commerce_purchase_plan_baseline", "0002_commerce_offers_redemptions", "0003_commerce_orders_invoices", "0004_commerce_subscription_baseline"];
+const expectedMigrations = ["0001_commerce_purchase_plan_baseline", "0002_commerce_offers_redemptions", "0003_commerce_orders_invoices", "0004_commerce_subscription_baseline", "0005_commerce_renewal_order_linkage"];
 if (JSON.stringify(migrations) !== JSON.stringify(expectedMigrations)) throw new Error(`Commerce migration set drifted: ${JSON.stringify(migrations)}`);
 
 const schema = readFileSync(resolve(root, "prisma/schema.prisma"), "utf8");
