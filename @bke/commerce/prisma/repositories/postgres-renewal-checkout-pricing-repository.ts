@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import type { CommercePrepareRenewalCheckoutResult } from "../../contracts/renewal-checkout-pricing.contract";
 import { calculateCommerceOfferDiscount } from "../../logic/offer-redemption";
@@ -153,7 +154,7 @@ export function createPostgresCommerceRenewalCheckoutPricingRepository(
                   discountedBillingCycles: subscription.discountedCyclesTotal,
                 },
               }
-            : { offer: undefined }),
+            : {}),
         };
 
         await client.query(
@@ -203,8 +204,8 @@ export function createPostgresCommerceRenewalCheckoutPricingRepository(
           const description = `Promotional discount — ${name}${code} (${(Number(subscription.promotionalDiscountBps) / 100).toFixed(2)}%)`;
           await client.query(
             `INSERT INTO "InvoiceLine" ("id", "invoiceId", "description", "quantity", "unitAmountMinor", "totalMinor")
-             VALUES (gen_random_uuid()::text, $1, $2, 1, $3, $3)`,
-            [invoice.id, description, -discount.discountMinor],
+             VALUES ($1, $2, $3, 1, $4, $4)`,
+            [randomUUID(), invoice.id, description, -discount.discountMinor],
           );
         }
 
