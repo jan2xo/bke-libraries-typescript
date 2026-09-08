@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/commerce --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-commerce-0.5.0.tgz"
+          test "$artifact" = "bke-commerce-0.6.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "COMMERCE_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -84,7 +84,8 @@ jobs:
             package/migrations/0001_commerce_purchase_plan_baseline/migration.sql \
             package/migrations/0002_commerce_offers_redemptions/migration.sql \
             package/migrations/0003_commerce_orders_invoices/migration.sql \
-            package/migrations/0004_commerce_subscription_baseline/migration.sql; do
+            package/migrations/0004_commerce_subscription_baseline/migration.sql \
+            package/migrations/0005_commerce_renewal_order_linkage/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
@@ -161,7 +162,7 @@ jobs:
           if (typeof createPostgresCommerceSubscriptionStatusLookupRepository !== "function") throw new Error("Packed subscription repository missing.");
           const orderItemPolicyLookup: CommerceOrderItemPolicyLookupCapability = createPostgresCommerceOrderItemPolicyLookupCapability("postgresql://unused:unused@localhost/unused");
           if (typeof orderItemPolicyLookup.findByOrderItemId !== "function") throw new Error("Packed order-item policy lookup missing.");
-          console.log("Packed @bke/commerce 0.5.0 consumer smoke GREEN");
+          console.log("Packed @bke/commerce 0.6.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -169,10 +170,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-commerce-0.5.0
+          name: bke-commerce-0.6.0
           path: |
-            artifacts/bke-commerce-0.5.0.tgz
-            artifacts/bke-commerce-0.5.0.tgz.sha256
+            artifacts/bke-commerce-0.6.0.tgz
+            artifacts/bke-commerce-0.6.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Commerce release
@@ -200,4 +201,4 @@ jobs:
             "artifacts/$COMMERCE_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/commerce v${version}" \
-            --notes "Certified BKE Commerce package artifact. Offer-aware checkout pricing supports explicit offer ID/code and automatic public promotion discovery, persists repriced order/invoice snapshots, and finalizes reserved offer redemptions during zero-payment fulfillment or paid settlement. Commerce source, behavior, persistence, and package gates passed before release creation."
+            --notes "Certified BKE Commerce package artifact. Commerce owns canonical checkout pricing, order/invoice persistence, renewal order linkage, offer-aware checkout behavior, zero-payment fulfillment, and paid settlement reaction. Commerce source, behavior, persistence, migration, and package gates passed before release creation."

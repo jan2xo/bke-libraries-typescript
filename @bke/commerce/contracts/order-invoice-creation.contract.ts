@@ -30,6 +30,7 @@ export interface CommerceOrderInvoiceLineInput {
 
 export interface CommerceCreateOrderInvoiceInput {
   readonly accountId: string;
+  readonly renewalSubscriptionId?: string | null;
   readonly orderNumber: string;
   readonly invoiceNumber: string;
   readonly currency: string;

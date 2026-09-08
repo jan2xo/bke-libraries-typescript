@@ -13,6 +13,7 @@ const capability = createCommerceOrderInvoiceCreationCapability(
 
 const input = {
   accountId: "opaque-account",
+  renewalSubscriptionId: "opaque-renewal-subscription",
   orderNumber: "ORD-CERT-1",
   invoiceNumber: "INV-CERT-1",
   currency: "PHP",
@@ -83,12 +84,14 @@ try {
     invoiceTotal: number;
     itemTotal: number;
     lineTotal: number;
+    renewalSubscriptionId: string | null;
     billingSnapshot: unknown;
     customerSnapshot: unknown;
   }>(
     `SELECT o."subtotalMinor" AS "orderSubtotal", o."totalMinor" AS "orderTotal",
             i."subtotalMinor" AS "invoiceSubtotal", i."totalMinor" AS "invoiceTotal",
             oi."totalMinor" AS "itemTotal", il."totalMinor" AS "lineTotal",
+            o."renewalSubscriptionId" AS "renewalSubscriptionId",
             o."billingSnapshot" AS "billingSnapshot", i."customerSnapshot" AS "customerSnapshot"
        FROM "Order" o
        JOIN "OrderItem" oi ON oi."orderId" = o."id"
@@ -97,8 +100,17 @@ try {
       WHERE o."number" = 'ORD-CERT-1'`,
   );
   const persisted = row.rows[0];
-  if (!persisted || persisted.orderSubtotal !== 1800 || persisted.orderTotal !== 1920 || persisted.invoiceSubtotal !== 1800 || persisted.invoiceTotal !== 1920 || persisted.itemTotal !== 1800 || persisted.lineTotal !== 1800) {
-    throw new Error(`Unexpected persisted totals: ${JSON.stringify(persisted)}`);
+  if (
+    !persisted ||
+    persisted.orderSubtotal !== 1800 ||
+    persisted.orderTotal !== 1920 ||
+    persisted.invoiceSubtotal !== 1800 ||
+    persisted.invoiceTotal !== 1920 ||
+    persisted.itemTotal !== 1800 ||
+    persisted.lineTotal !== 1800 ||
+    persisted.renewalSubscriptionId !== "opaque-renewal-subscription"
+  ) {
+    throw new Error(`Unexpected persisted order/invoice state: ${JSON.stringify(persisted)}`);
   }
 
   const duplicate = await capability.create({ ...input, invoiceNumber: "INV-CERT-2" });
@@ -110,7 +122,23 @@ try {
     throw new Error("Duplicate order attempt must not leave a partial invoice.");
   }
 
-  console.log("Commerce Order + Invoice atomic creation + immutable snapshots GREEN");
+  const ordinary = await capability.create({
+    ...input,
+    renewalSubscriptionId: undefined,
+    orderNumber: "ORD-CERT-2",
+    invoiceNumber: "INV-CERT-2",
+  });
+  if (ordinary.status !== "CREATED") {
+    throw new Error(`Expected ordinary order creation: ${JSON.stringify(ordinary)}`);
+  }
+  const ordinaryRow = await client.query<{ renewalSubscriptionId: string | null }>(
+    `SELECT "renewalSubscriptionId" AS "renewalSubscriptionId" FROM "Order" WHERE "number" = 'ORD-CERT-2'`,
+  );
+  if (ordinaryRow.rows[0]?.renewalSubscriptionId !== null) {
+    throw new Error(`Ordinary order must keep renewal linkage null: ${JSON.stringify(ordinaryRow.rows[0])}`);
+  }
+
+  console.log("Commerce Order + Invoice atomic creation + renewal linkage GREEN");
 } finally {
   await client.end();
 }

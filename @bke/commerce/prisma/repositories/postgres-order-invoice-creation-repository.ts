@@ -48,12 +48,13 @@ export function createPostgresCommerceOrderInvoiceCreationRepository(
 
         await client.query(
           `INSERT INTO "Order"
-             ("id", "number", "accountId", "status", "currency", "subtotalMinor", "taxMinor", "totalMinor", "billingSnapshot")
-           VALUES ($1, $2, $3, 'PENDING', $4, $5, $6, $7, $8::jsonb)`,
+             ("id", "number", "accountId", "renewalSubscriptionId", "status", "currency", "subtotalMinor", "taxMinor", "totalMinor", "billingSnapshot")
+           VALUES ($1, $2, $3, $4, 'PENDING', $5, $6, $7, $8, $9::jsonb)`,
           [
             orderId,
             input.orderNumber,
             input.accountId,
+            input.renewalSubscriptionId ?? null,
             input.currency,
             totals.subtotalMinor,
             input.taxMinor,
