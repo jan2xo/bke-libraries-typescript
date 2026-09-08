@@ -183,21 +183,23 @@ model OfferRedemption {
 }
 
 model Order {
-  id              String              @id
-  number          String              @unique
-  accountId       String
-  status          CommerceOrderStatus @default(PENDING)
-  currency        String
-  subtotalMinor   Int
-  taxMinor        Int
-  totalMinor      Int
-  billingSnapshot Json
-  createdAt       DateTime            @default(now())
-  paidAt          DateTime?
-  items           OrderItem[]
-  invoice         Invoice?
+  id                    String              @id
+  number                String              @unique
+  accountId             String
+  renewalSubscriptionId String?
+  status                CommerceOrderStatus @default(PENDING)
+  currency              String
+  subtotalMinor         Int
+  taxMinor              Int
+  totalMinor            Int
+  billingSnapshot       Json
+  createdAt             DateTime            @default(now())
+  paidAt                DateTime?
+  items                 OrderItem[]
+  invoice               Invoice?
 
   @@index([accountId, createdAt])
+  @@index([renewalSubscriptionId])
 }
 
 model OrderItem {
