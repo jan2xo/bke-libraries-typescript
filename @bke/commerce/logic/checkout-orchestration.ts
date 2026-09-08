@@ -6,6 +6,7 @@ import type {
   CommerceStartCheckoutResult,
 } from "../contracts/checkout-orchestration.contract";
 import type { CommerceOrderInvoiceCreationCapability } from "../contracts/order-invoice-creation.contract";
+import type { CommerceRenewalCheckoutPricingCapability } from "../contracts/renewal-checkout-pricing.contract";
 import type { CommerceZeroPaymentFulfillmentCapability } from "../contracts/zero-payment-fulfillment.contract";
 import type {
   CommerceAccountPurchaseAuthorizer,
@@ -38,6 +39,7 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
   readonly accountAuthorizer: CommerceAccountPurchaseAuthorizer;
   readonly legalChecker: CommerceLegalAcceptanceChecker;
   readonly orderInvoiceCreation: CommerceOrderInvoiceCreationCapability;
+  readonly renewalCheckoutPricing?: CommerceRenewalCheckoutPricingCapability;
   readonly checkoutOfferPricing: CommerceCheckoutOfferPricingCapability;
   readonly zeroPaymentFulfillment: CommerceZeroPaymentFulfillmentCapability;
   readonly paymentStarter: CommercePaymentCheckoutStarter;
@@ -98,10 +100,36 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
         };
       }
 
-      const pricing = await dependencies.checkoutOfferPricing.price({
-        orderId: created.value.orderId,
-        offerIdentifier: input.offerIdentifier,
-      });
+      const renewal = dependencies.renewalCheckoutPricing
+        ? await dependencies.renewalCheckoutPricing.prepare({ orderId: created.value.orderId })
+        : ({ status: "READY", renewal: false } as const);
+      if (renewal.status === "REJECTED") {
+        return { status: "REJECTED", code: "ORDER_CONFLICT" };
+      }
+      if (renewal.status === "FAILED") {
+        return {
+          status: "FAILED",
+          code:
+            renewal.code === "INVALID_INPUT"
+              ? "INVALID_INPUT"
+              : "COMMERCE_PERSISTENCE_UNAVAILABLE",
+        };
+      }
+
+      const pricing = renewal.renewal && renewal.scheduledOfferApplied
+        ? {
+            status: "PRICED" as const,
+            value: {
+              orderId: created.value.orderId,
+              subtotalMinor: renewal.subtotalMinor,
+              totalMinor: renewal.totalMinor,
+              offer: null,
+            },
+          }
+        : await dependencies.checkoutOfferPricing.price({
+            orderId: created.value.orderId,
+            offerIdentifier: input.offerIdentifier,
+          });
       if (pricing.status === "REJECTED") {
         if (pricing.code === "ORDER_NOT_FOUND" || pricing.code === "ORDER_NOT_ELIGIBLE") {
           return { status: "REJECTED", code: "ORDER_CONFLICT" };
@@ -158,7 +186,8 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
         };
       }
 
-      const items = pricing.value.offer
+      const renewalPriced = renewal.renewal && renewal.scheduledOfferApplied;
+      const items = pricing.value.offer || renewalPriced
         ? [
             {
               name: input.order.lines[0]?.productName ?? "Order",
