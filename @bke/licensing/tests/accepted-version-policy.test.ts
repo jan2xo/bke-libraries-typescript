@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { isVersionAccepted, validateAcceptedVersionRange } from "../logic/accepted-version-policy";
+import {
+  isAcceptedVersionSyntax,
+  isVersionAccepted,
+  validateAcceptedVersionRange,
+} from "../logic/accepted-version-policy";
 
 describe("accepted software version policy", () => {
+  it("exposes the semantic-version syntax used by host input validation", () => {
+    expect(isAcceptedVersionSyntax("1.2.3")).toBe(true);
+    expect(isAcceptedVersionSyntax("v1.2.3")).toBe(true);
+    expect(isAcceptedVersionSyntax("1.2.3-beta.1")).toBe(true);
+    expect(isAcceptedVersionSyntax("1.2.3+build.8")).toBe(true);
+    expect(isAcceptedVersionSyntax("1.2")).toBe(false);
+    expect(isAcceptedVersionSyntax("not-a-version")).toBe(false);
+  });
+
   it("treats missing and empty bounds as unbounded", () => {
     expect(validateAcceptedVersionRange(undefined, "")).toEqual({ minimum: null, maximum: null });
     expect(isVersionAccepted("1.2.3", null, undefined)).toBe(true);
