@@ -15,10 +15,18 @@ export function calculateCommerceOfferDiscount(input: {
   readonly baseMinor: number;
   readonly discountBps: number;
 }): { readonly discountMinor: number; readonly finalMinor: number } {
-  const discountMinor = Math.floor((input.baseMinor * input.discountBps) / 10_000);
+  if (!Number.isSafeInteger(input.baseMinor) || input.baseMinor < 0) {
+    throw new Error("INVALID_OFFER_BASE_AMOUNT");
+  }
+  if (!Number.isInteger(input.discountBps) || input.discountBps < 0 || input.discountBps > 10_000) {
+    throw new Error("INVALID_OFFER_DISCOUNT");
+  }
+  const numerator = BigInt(input.baseMinor) * BigInt(10_000 - input.discountBps);
+  const finalMinor = Number((numerator + 5_000n) / 10_000n);
+  if (!Number.isSafeInteger(finalMinor)) throw new Error("MONEY_OVERFLOW");
   return {
-    discountMinor,
-    finalMinor: input.baseMinor - discountMinor,
+    discountMinor: input.baseMinor - finalMinor,
+    finalMinor,
   };
 }
 
