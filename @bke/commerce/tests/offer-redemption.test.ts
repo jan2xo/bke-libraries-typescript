@@ -23,8 +23,8 @@ const snapshot: CommerceOfferRedemptionSnapshot = {
   discountBps: 1250,
   discountedBillingCycles: null,
   baseMinor: 999,
-  discountMinor: 124,
-  finalMinor: 875,
+  discountMinor: 125,
+  finalMinor: 874,
   currency: "PHP",
   pricingVersion: "price-v1",
   reservedAt: now,
@@ -37,11 +37,35 @@ describe("Commerce offer redemption logic", () => {
     expect(normalizeCommerceOfferCode("  launch-25  ")).toBe("LAUNCH-25");
   });
 
-  it("calculates basis-point discounts in integer minor units without over-discounting", () => {
+  it("uses the V1 half-up final-amount rule for basis-point discounts", () => {
     expect(calculateCommerceOfferDiscount({ baseMinor: 999, discountBps: 1250 })).toEqual({
-      discountMinor: 124,
-      finalMinor: 875,
+      discountMinor: 125,
+      finalMinor: 874,
     });
+    expect(calculateCommerceOfferDiscount({ baseMinor: 1, discountBps: 5000 })).toEqual({
+      discountMinor: 0,
+      finalMinor: 1,
+    });
+    expect(calculateCommerceOfferDiscount({ baseMinor: 10_000, discountBps: 10_000 })).toEqual({
+      discountMinor: 10_000,
+      finalMinor: 0,
+    });
+  });
+
+  it("matches the legacy V1 discount formula across representative minor-unit values", () => {
+    const legacy = (baseMinor: number, discountBps: number) => {
+      const finalMinor = Number(
+        (BigInt(baseMinor) * BigInt(10_000 - discountBps) + 5_000n) / 10_000n,
+      );
+      return { discountMinor: baseMinor - finalMinor, finalMinor };
+    };
+    for (const baseMinor of [1, 2, 3, 99, 100, 101, 999, 1_000, 49_900, 999_900]) {
+      for (const discountBps of [0, 1, 333, 500, 1000, 1250, 2500, 5000, 9999, 10_000]) {
+        expect(calculateCommerceOfferDiscount({ baseMinor, discountBps })).toEqual(
+          legacy(baseMinor, discountBps),
+        );
+      }
+    }
   });
 
   it("allows only the legacy redemption lifecycle transitions", () => {
@@ -71,7 +95,7 @@ describe("Commerce offer redemption logic", () => {
     const result = await capability.reserve({
       code: " launch-25 ",
       accountId: " account-1 ",
-      orderId: " order-1 ",
+      orderId: "order-1",
       baseMinor: 999,
       currency: " php ",
       pricingVersion: "price-v1",
