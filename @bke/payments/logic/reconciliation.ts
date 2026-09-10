@@ -37,7 +37,7 @@ export function createPaymentsReconciliationCapability(
   if (!providerName) throw new Error("Payments reconciliation provider name is required.");
 
   return Object.freeze({
-    async run(input): Promise<PaymentsRunReconciliationResult> {
+    async run(input: { readonly commercialReference: string; readonly runById: string }): Promise<PaymentsRunReconciliationResult> {
       const commercialReference = input.commercialReference.trim();
       const runById = input.runById.trim();
       if (!commercialReference || !runById) return { status: "FAILED", code: "INVALID_INPUT" };
@@ -72,7 +72,7 @@ export function createPaymentsReconciliationCapability(
           lastErrorCode: null,
         });
         return { status: "RECONCILED", value };
-      } catch (error) {
+      } catch {
         try {
           await repository.create({
             id: randomUUID(),
@@ -96,7 +96,7 @@ export function createPaymentsReconciliationCapability(
       }
     },
 
-    async acknowledge(input): Promise<PaymentsAcknowledgeReconciliationResult> {
+    async acknowledge(input: { readonly reconciliationId: string; readonly actorId: string }): Promise<PaymentsAcknowledgeReconciliationResult> {
       const reconciliationId = input.reconciliationId.trim();
       const actorId = input.actorId.trim();
       if (!reconciliationId || !actorId) return { status: "FAILED", code: "INVALID_INPUT" };
