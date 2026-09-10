@@ -1,5 +1,8 @@
 import { Client } from "pg";
-import type { CommercePublicPromotionPreviewRepository } from "../../logic/public-promotion-preview-repository";
+import type {
+  CommercePublicPromotionPreviewRepository,
+  CommercePublicPromotionPreviewRequest,
+} from "../../logic/public-promotion-preview-repository";
 
 interface PromotionRow {
   readonly id: string;
@@ -15,7 +18,7 @@ export function createPostgresCommercePublicPromotionPreviewRepository(
   if (!normalized) throw new Error("Commerce PostgreSQL connection string is required.");
 
   return Object.freeze({
-    async findBest(input) {
+    async findBest(input: CommercePublicPromotionPreviewRequest) {
       const client = new Client({ connectionString: normalized });
       await client.connect();
       try {
