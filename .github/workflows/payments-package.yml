@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/payments --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-payments-0.4.0.tgz"
+          test "$artifact" = "bke-payments-0.5.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "PAYMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -121,7 +121,7 @@ jobs:
           import { PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID } from "@bke/payments/contracts/provider-event-ingestion.contract";
           import { PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID } from "@bke/payments/contracts/settlement-fact.contract";
           import { PAYMENTS_REFUND_INITIATION_CAPABILITY_ID } from "@bke/payments/contracts/refund-initiation.contract";
-          import { PAYMENTS_RECONCILIATION_CAPABILITY_ID } from "@bke/payments/contracts/reconciliation.contract";
+          import { PAYMENTS_RECONCILIATION_CAPABILITY_ID, type PaymentsReconciliationCapability } from "@bke/payments/contracts/reconciliation.contract";
           import { createPaymentsCheckoutAttemptCapability } from "@bke/payments/logic/checkout-attempt";
           import { createPaymentsProviderEventIngestionCapability } from "@bke/payments/logic/provider-event-ingestion";
           import { createPaymentsSettlementFactCapability } from "@bke/payments/logic/settlement-fact";
@@ -134,6 +134,8 @@ jobs:
           import { paymentsModuleManifest } from "@bke/payments/module.manifest";
           const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID, PAYMENTS_RECONCILIATION_CAPABILITY_ID];
           if (ids.length !== 5 || paymentsModuleManifest.moduleId !== "payments") throw new Error("Unexpected Payments package identity.");
+          const read: PaymentsReconciliationCapability["listRecent"] | undefined = undefined;
+          void read;
           if (paymentErrorCodes.length !== 16 || paymentErrorCodes[0] !== "PAYMENT_SIGNATURE_INVALID" || paymentErrorCodes[15] !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments error taxonomy drifted.");
           const lifecycleError = new PaymentLifecycleError("PAYMENT_PROCESSING_RETRYABLE", true);
           if (safePaymentError(lifecycleError) !== "PAYMENT_PROCESSING_RETRYABLE" || !lifecycleError.retryable) throw new Error("Packed Payments lifecycle error behavior drifted.");
@@ -149,10 +151,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-payments-0.4.0
+          name: bke-payments-0.5.0
           path: |
-            artifacts/bke-payments-0.4.0.tgz
-            artifacts/bke-payments-0.4.0.tgz.sha256
+            artifacts/bke-payments-0.5.0.tgz
+            artifacts/bke-payments-0.5.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Payments release
