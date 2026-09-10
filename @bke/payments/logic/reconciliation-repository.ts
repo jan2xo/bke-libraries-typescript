@@ -21,4 +21,5 @@ export interface PaymentsReconciliationRepository {
   findLatestSettlementFactByCommercialReference(commercialReference: string): Promise<PaymentsSettlementFactSnapshot | null>;
   create(input: PaymentsReconciliationRecordInput): Promise<PaymentsReconciliationSnapshot>;
   acknowledge(id: string, actorId: string): Promise<PaymentsReconciliationSnapshot | null>;
+  listRecent(limit: number): Promise<readonly PaymentsReconciliationSnapshot[]>;
 }
