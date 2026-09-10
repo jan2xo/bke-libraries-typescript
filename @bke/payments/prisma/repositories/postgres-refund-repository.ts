@@ -84,6 +84,19 @@ export function createPostgresPaymentsRefundRepository(connectionString: string)
       });
     },
 
+    async findLatestSettlementFactByCommercialReference(commercialReference: string) {
+      return withClient(async (client) => {
+        const result = await client.query(
+          `SELECT * FROM "PaymentSettlementFact"
+            WHERE "commercialReference" = $1
+            ORDER BY "settledAt" DESC, "createdAt" DESC, "id" DESC
+            LIMIT 1`,
+          [commercialReference],
+        );
+        return result.rowCount === 1 ? toSettlement(result.rows[0]) : null;
+      });
+    },
+
     async claim(input: PaymentsRefundOperationClaim) {
       return withClient(async (client) => {
         await client.query("BEGIN ISOLATION LEVEL SERIALIZABLE");

@@ -32,6 +32,9 @@ function repository(): PaymentsRefundRepository {
     async findSettlementFact(id) {
       return id === settlement.settlementFactId ? settlement : null;
     },
+    async findLatestSettlementFactByCommercialReference(commercialReference) {
+      return commercialReference === settlement.commercialReference ? settlement : null;
+    },
     async claim(input: PaymentsRefundOperationClaim) {
       const existing = records.get(input.sourceReference);
       if (existing) return { outcome: "CLAIMED", created: false, record: existing };
@@ -87,11 +90,11 @@ function repository(): PaymentsRefundRepository {
   };
 }
 
-function provider(onCall?: (idempotencyKey: string) => void): PaymentsRefundProvider {
+function provider(onCall?: (idempotencyKey: string, amountMinor: number) => void): PaymentsRefundProvider {
   return {
     name: "fakepay",
     async createRefund(input) {
-      onCall?.(input.idempotencyKey);
+      onCall?.(input.idempotencyKey, input.amountMinor);
       return {
         externalRefundId: `refund-${input.idempotencyKey}`,
         status: "pending",
@@ -123,6 +126,37 @@ describe("Payments refund initiation", () => {
     expect(second.status === "REFUND" && second.disposition).toBe("EXISTING");
     expect(keys).toHaveLength(1);
     expect(first.status === "REFUND" && keys[0]).toBe(first.status === "REFUND" ? first.value.refundOperationId : "");
+  });
+
+  it("initiates a full refund from the latest settlement selected by commercial reference", async () => {
+    const amounts: number[] = [];
+    const capability = createPaymentsRefundInitiationCapability(
+      repository(),
+      provider((_key, amountMinor) => amounts.push(amountMinor)),
+    );
+
+    const result = await capability.initiateFullByCommercialReference({
+      sourceReference: "order-refund:ORDER-1",
+      commercialReference: "ORDER-1",
+      reason: "requested_by_customer",
+      notes: "full refund",
+    });
+
+    expect(result.status).toBe("REFUND");
+    expect(result.status === "REFUND" && result.value.settlementFactId).toBe("settlement-1");
+    expect(result.status === "REFUND" && result.value.amountMinor).toBe(300_000);
+    expect(amounts).toEqual([300_000]);
+  });
+
+  it("fails closed when no settlement exists for a commercial reference", async () => {
+    const capability = createPaymentsRefundInitiationCapability(repository(), provider());
+    await expect(
+      capability.initiateFullByCommercialReference({
+        sourceReference: "order-refund:missing",
+        commercialReference: "ORDER-MISSING",
+        reason: "other",
+      }),
+    ).resolves.toEqual({ status: "REJECTED", code: "SETTLEMENT_NOT_FOUND" });
   });
 
   it("rejects conflicting reuse of a source reference", async () => {

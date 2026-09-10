@@ -11,6 +11,13 @@ export interface PaymentsInitiateRefundInput {
   readonly notes?: string;
 }
 
+export interface PaymentsInitiateFullRefundByCommercialReferenceInput {
+  readonly sourceReference: string;
+  readonly commercialReference: string;
+  readonly reason: PaymentsRefundReason;
+  readonly notes?: string;
+}
+
 export interface PaymentsRefundOperationSnapshot {
   readonly refundOperationId: string;
   readonly sourceReference: string;
@@ -33,4 +40,7 @@ export type PaymentsInitiateRefundResult =
 
 export interface PaymentsRefundInitiationCapability {
   initiate(input: PaymentsInitiateRefundInput): Promise<PaymentsInitiateRefundResult>;
+  initiateFullByCommercialReference(
+    input: PaymentsInitiateFullRefundByCommercialReferenceInput,
+  ): Promise<PaymentsInitiateRefundResult>;
 }
