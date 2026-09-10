@@ -1,0 +1,129 @@
+import { Client } from "pg";
+import type { PaymentsReconciliationSnapshot } from "../../contracts/reconciliation.contract";
+import type { PaymentsSettlementFactSnapshot } from "../../contracts/settlement-fact.contract";
+import type {
+  PaymentsReconciliationRecordInput,
+  PaymentsReconciliationRepository,
+} from "../../logic/reconciliation-repository";
+
+type ReconciliationRow = {
+  id: string;
+  commercialReference: string;
+  settlementFactId: string | null;
+  provider: string;
+  externalPaymentId: string | null;
+  classification: PaymentsReconciliationSnapshot["classification"];
+  differences: string[];
+  localStatus: string;
+  providerStatus: string | null;
+  state: PaymentsReconciliationSnapshot["state"];
+  correlationId: string;
+  runById: string;
+  acknowledgedAt: Date | string | null;
+  acknowledgedById: string | null;
+  lastErrorCode: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+};
+
+function toSettlement(row: any): PaymentsSettlementFactSnapshot {
+  return Object.freeze({
+    settlementFactId: row.id,
+    providerEventRecordId: row.providerEventRecordId,
+    checkoutAttemptId: row.checkoutAttemptId,
+    provider: row.provider,
+    eventId: row.eventId,
+    externalPaymentId: row.externalPaymentId,
+    externalCheckoutId: row.externalCheckoutId,
+    commercialReference: row.commercialReference,
+    amountMinor: Number(row.amountMinor),
+    currency: row.currency,
+    livemode: row.livemode,
+    settledAt: new Date(row.settledAt),
+    createdAt: new Date(row.createdAt),
+  });
+}
+
+function toRecord(row: ReconciliationRow): PaymentsReconciliationSnapshot {
+  return Object.freeze({
+    reconciliationId: row.id,
+    commercialReference: row.commercialReference,
+    settlementFactId: row.settlementFactId,
+    provider: row.provider,
+    externalPaymentId: row.externalPaymentId,
+    classification: row.classification,
+    differences: Object.freeze([...(row.differences ?? [])]),
+    localStatus: row.localStatus,
+    providerStatus: row.providerStatus,
+    state: row.state,
+    correlationId: row.correlationId,
+    runById: row.runById,
+    acknowledgedAt: row.acknowledgedAt ? new Date(row.acknowledgedAt) : null,
+    acknowledgedById: row.acknowledgedById,
+    lastErrorCode: row.lastErrorCode,
+    createdAt: new Date(row.createdAt),
+    updatedAt: new Date(row.updatedAt),
+  });
+}
+
+export function createPostgresPaymentsReconciliationRepository(connectionString: string): PaymentsReconciliationRepository {
+  const normalized = connectionString.trim();
+  if (!normalized) throw new Error("Payments PostgreSQL connection string is required.");
+
+  async function withClient<T>(operation: (client: Client) => Promise<T>): Promise<T> {
+    const client = new Client({ connectionString: normalized });
+    await client.connect();
+    try { return await operation(client); } finally { await client.end(); }
+  }
+
+  return Object.freeze({
+    async findLatestSettlementFactByCommercialReference(commercialReference: string) {
+      return withClient(async (client) => {
+        const result = await client.query(
+          `SELECT * FROM "PaymentSettlementFact"
+           WHERE "commercialReference" = $1
+           ORDER BY "settledAt" DESC, "createdAt" DESC, "id" DESC
+           LIMIT 1`,
+          [commercialReference],
+        );
+        return result.rowCount === 1 ? toSettlement(result.rows[0]) : null;
+      });
+    },
+
+    async create(input: PaymentsReconciliationRecordInput) {
+      return withClient(async (client) => {
+        const result = await client.query<ReconciliationRow>(
+          `INSERT INTO "PaymentReconciliationRecord" (
+             "id", "commercialReference", "settlementFactId", "provider", "externalPaymentId",
+             "classification", "differences", "localStatus", "providerStatus", "state",
+             "correlationId", "runById", "lastErrorCode"
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13)
+           RETURNING *`,
+          [
+            input.id, input.commercialReference, input.settlementFactId, input.provider,
+            input.externalPaymentId, input.classification, JSON.stringify(input.differences),
+            input.localStatus, input.providerStatus, input.state, input.correlationId,
+            input.runById, input.lastErrorCode,
+          ],
+        );
+        return toRecord(result.rows[0]!);
+      });
+    },
+
+    async acknowledge(id: string, actorId: string) {
+      return withClient(async (client) => {
+        const result = await client.query<ReconciliationRow>(
+          `UPDATE "PaymentReconciliationRecord"
+             SET "state" = 'ACKNOWLEDGED',
+                 "acknowledgedAt" = CURRENT_TIMESTAMP,
+                 "acknowledgedById" = $2,
+                 "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = $1
+           RETURNING *`,
+          [id, actorId],
+        );
+        return result.rowCount === 1 ? toRecord(result.rows[0]!) : null;
+      });
+    },
+  });
+}
