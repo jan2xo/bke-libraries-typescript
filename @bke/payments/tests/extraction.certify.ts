@@ -10,6 +10,7 @@ const allowedModels = new Set([
   "PaymentProviderEvent",
   "PaymentSettlementFact",
   "PaymentRefundOperation",
+  "PaymentReconciliationRecord",
 ]);
 const violations: string[] = [];
 
@@ -85,6 +86,7 @@ const requiredPaths = [
   "migrations/0002_payments_provider_event_baseline/migration.sql",
   "migrations/0003_payments_settlement_fact_baseline/migration.sql",
   "migrations/0004_payments_refund_operation_baseline/migration.sql",
+  "migrations/0005_payments_reconciliation_baseline/migration.sql",
   "prisma/repositories",
   "contracts",
   "logic",
@@ -179,5 +181,5 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `Payments extraction boundary GREEN: ${packageSources.length} package-owned source files; four private models; four migrations; PayMongo adapter included; host module.ts and module-composition.test.ts excluded`,
+  `Payments extraction boundary GREEN: ${packageSources.length} package-owned source files; five private models; five migrations; PayMongo adapter included; host module.ts and module-composition.test.ts excluded`,
 );

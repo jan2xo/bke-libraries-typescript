@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/payments --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-payments-0.3.0.tgz"
+          test "$artifact" = "bke-payments-0.4.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "PAYMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -55,10 +55,14 @@ jobs:
             package/contracts/provider-event-ingestion.contract.ts \
             package/contracts/settlement-fact.contract.ts \
             package/contracts/refund-initiation.contract.ts \
+            package/contracts/reconciliation.contract.ts \
             package/logic/checkout-attempt.ts \
             package/logic/provider-event-ingestion.ts \
             package/logic/settlement-fact.ts \
             package/logic/refund-initiation.ts \
+            package/logic/reconciliation.ts \
+            package/logic/reconciliation-provider.ts \
+            package/logic/reconciliation-repository.ts \
             package/logic/payment-errors.ts \
             package/providers/paymongo/paymongo-adapter.ts \
             package/prisma/schema.prisma \
@@ -66,10 +70,12 @@ jobs:
             package/prisma/repositories/postgres-provider-event-repository.ts \
             package/prisma/repositories/postgres-settlement-fact-repository.ts \
             package/prisma/repositories/postgres-refund-repository.ts \
+            package/prisma/repositories/postgres-reconciliation-repository.ts \
             package/migrations/0001_payments_checkout_attempt_baseline/migration.sql \
             package/migrations/0002_payments_provider_event_baseline/migration.sql \
             package/migrations/0003_payments_settlement_fact_baseline/migration.sql \
-            package/migrations/0004_payments_refund_operation_baseline/migration.sql; do
+            package/migrations/0004_payments_refund_operation_baseline/migration.sql \
+            package/migrations/0005_payments_reconciliation_baseline/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
@@ -115,21 +121,24 @@ jobs:
           import { PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID } from "@bke/payments/contracts/provider-event-ingestion.contract";
           import { PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID } from "@bke/payments/contracts/settlement-fact.contract";
           import { PAYMENTS_REFUND_INITIATION_CAPABILITY_ID } from "@bke/payments/contracts/refund-initiation.contract";
+          import { PAYMENTS_RECONCILIATION_CAPABILITY_ID } from "@bke/payments/contracts/reconciliation.contract";
           import { createPaymentsCheckoutAttemptCapability } from "@bke/payments/logic/checkout-attempt";
           import { createPaymentsProviderEventIngestionCapability } from "@bke/payments/logic/provider-event-ingestion";
           import { createPaymentsSettlementFactCapability } from "@bke/payments/logic/settlement-fact";
           import { createPaymentsRefundInitiationCapability } from "@bke/payments/logic/refund-initiation";
+          import { createPaymentsReconciliationCapability } from "@bke/payments/logic/reconciliation";
           import { PaymentLifecycleError, paymentErrorCodes, safePaymentError } from "@bke/payments/logic/payment-errors";
           import { createPayMongoPaymentsAdapter } from "@bke/payments/providers/paymongo/paymongo-adapter";
           import { createPostgresPaymentsCheckoutAttemptRepository } from "@bke/payments/prisma/repositories/postgres-checkout-attempt-repository";
+          import { createPostgresPaymentsReconciliationRepository } from "@bke/payments/prisma/repositories/postgres-reconciliation-repository";
           import { paymentsModuleManifest } from "@bke/payments/module.manifest";
-          const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID];
-          if (ids.length !== 4 || paymentsModuleManifest.moduleId !== "payments") throw new Error("Unexpected Payments package identity.");
+          const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID, PAYMENTS_RECONCILIATION_CAPABILITY_ID];
+          if (ids.length !== 5 || paymentsModuleManifest.moduleId !== "payments") throw new Error("Unexpected Payments package identity.");
           if (paymentErrorCodes.length !== 16 || paymentErrorCodes[0] !== "PAYMENT_SIGNATURE_INVALID" || paymentErrorCodes[15] !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments error taxonomy drifted.");
           const lifecycleError = new PaymentLifecycleError("PAYMENT_PROCESSING_RETRYABLE", true);
           if (safePaymentError(lifecycleError) !== "PAYMENT_PROCESSING_RETRYABLE" || !lifecycleError.retryable) throw new Error("Packed Payments lifecycle error behavior drifted.");
           if (safePaymentError(new Error("opaque")) !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments safe error fallback drifted.");
-          for (const value of [createPaymentsCheckoutAttemptCapability, createPaymentsProviderEventIngestionCapability, createPaymentsSettlementFactCapability, createPaymentsRefundInitiationCapability, createPayMongoPaymentsAdapter, createPostgresPaymentsCheckoutAttemptRepository]) {
+          for (const value of [createPaymentsCheckoutAttemptCapability, createPaymentsProviderEventIngestionCapability, createPaymentsSettlementFactCapability, createPaymentsRefundInitiationCapability, createPaymentsReconciliationCapability, createPayMongoPaymentsAdapter, createPostgresPaymentsCheckoutAttemptRepository, createPostgresPaymentsReconciliationRepository]) {
             if (typeof value !== "function") throw new Error("Packed Payments consumer exports are incomplete.");
           }
           console.log("Packed @bke/payments consumer smoke GREEN");
@@ -140,10 +149,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-payments-0.3.0
+          name: bke-payments-0.4.0
           path: |
-            artifacts/bke-payments-0.3.0.tgz
-            artifacts/bke-payments-0.3.0.tgz.sha256
+            artifacts/bke-payments-0.4.0.tgz
+            artifacts/bke-payments-0.4.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Payments release
@@ -171,4 +180,4 @@ jobs:
             "artifacts/$PAYMENTS_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/payments v${version}" \
-            --notes "Certified BKE Payments package artifact. Generic checkout/event/settlement/refund capabilities, lifecycle error taxonomy, and PayMongo adapter passed source, persistence, behavior, and package gates before release creation."
+            --notes "Certified BKE Payments package artifact. Generic checkout/event/settlement/refund/reconciliation capabilities, lifecycle error taxonomy, and PayMongo adapter passed source, persistence, behavior, and package gates before release creation."

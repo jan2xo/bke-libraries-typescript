@@ -14,6 +14,7 @@ import type {
   PaymentsRefundProviderInput,
   PaymentsRefundProviderResult,
 } from "../../logic/refund-provider";
+import type { PaymentsReconciliationProvider } from "../../logic/reconciliation-provider";
 
 const DEFAULT_API_BASE_URL = "https://api.paymongo.com/v1";
 const SIGNATURE_MAX_AGE_SECONDS = 300;
@@ -50,7 +51,8 @@ export interface PayMongoAdapterConfiguration {
 
 export type PayMongoPaymentsAdapter = PaymentsCheckoutProvider &
   PaymentsProviderEventVerifier &
-  PaymentsRefundProvider;
+  PaymentsRefundProvider &
+  PaymentsReconciliationProvider;
 
 function assertConfiguration(config: PayMongoAdapterConfiguration) {
   const secretKey = config.secretKey.trim();
@@ -301,6 +303,52 @@ export function createPayMongoPaymentsAdapter(
         amountMinor: attributes.amount,
         externalPaymentId: attributes.payment_id,
       };
+    },
+
+    async retrievePayment(externalPaymentId: string) {
+      const id = externalPaymentId.trim();
+      if (!id) throw new Error("PAYMENT_PROVIDER_UNAVAILABLE");
+      const response = await config.request(`${config.baseUrl}/payments/${encodeURIComponent(id)}`, {
+        method: "GET",
+        headers: { Authorization: auth },
+      });
+      if (!response.ok) throw new Error("PAYMENT_PROVIDER_UNAVAILABLE");
+      const body = (await response.json()) as {
+        data?: {
+          id?: string;
+          attributes?: {
+            amount?: number;
+            currency?: string;
+            status?: string;
+            livemode?: boolean;
+          };
+        };
+      };
+      const paymentId = body.data?.id?.trim() ?? "";
+      const attrs = body.data?.attributes;
+      if (
+        !paymentId ||
+        typeof attrs?.amount !== "number" ||
+        typeof attrs.currency !== "string" ||
+        typeof attrs.livemode !== "boolean"
+      ) {
+        throw new Error("PAYMENT_PROVIDER_UNAVAILABLE");
+      }
+      const status =
+        attrs.status === "paid"
+          ? "paid"
+          : attrs.status === "failed"
+            ? "failed"
+            : attrs.status === "refunded"
+              ? "refunded"
+              : "pending";
+      return Object.freeze({
+        externalPaymentId: paymentId,
+        amountMinor: attrs.amount,
+        currency: attrs.currency.toUpperCase(),
+        status,
+        livemode: attrs.livemode,
+      });
     },
   });
 }
