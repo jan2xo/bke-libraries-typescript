@@ -15,6 +15,12 @@ enum PaymentRefundOperationState {
   FAILED
 }
 
+enum PaymentReconciliationState {
+  MATCHED
+  OPEN
+  ACKNOWLEDGED
+}
+
 model PaymentCheckoutAttempt {
   id                  String                        @id
   sourceReference     String                        @unique
@@ -105,4 +111,29 @@ model PaymentRefundOperation {
   @@index([externalPaymentId])
   @@index([state])
   @@index([createdAt])
+}
+
+model PaymentReconciliationRecord {
+  id                 String                     @id
+  commercialReference String
+  settlementFactId   String?
+  provider           String
+  externalPaymentId  String?
+  classification     String
+  differences        Json
+  localStatus        String
+  providerStatus     String?
+  state              PaymentReconciliationState @default(OPEN)
+  correlationId      String                     @unique
+  runById            String
+  acknowledgedAt     DateTime?
+  acknowledgedById   String?
+  lastErrorCode      String?
+  createdAt          DateTime                   @default(now())
+  updatedAt          DateTime                   @updatedAt
+
+  @@index([commercialReference, createdAt])
+  @@index([settlementFactId])
+  @@index([provider, externalPaymentId])
+  @@index([state])
 }
