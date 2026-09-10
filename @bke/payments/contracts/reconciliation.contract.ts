@@ -47,7 +47,12 @@ export type PaymentsAcknowledgeReconciliationResult =
   | { readonly status: "REJECTED"; readonly code: "RECONCILIATION_NOT_FOUND" }
   | { readonly status: "FAILED"; readonly code: "INVALID_INPUT" | "PERSISTENCE_UNAVAILABLE" };
 
+export type PaymentsListReconciliationsResult =
+  | { readonly status: "LISTED"; readonly values: readonly PaymentsReconciliationSnapshot[] }
+  | { readonly status: "FAILED"; readonly code: "INVALID_INPUT" | "PERSISTENCE_UNAVAILABLE" };
+
 export interface PaymentsReconciliationCapability {
   run(input: { readonly commercialReference: string; readonly runById: string }): Promise<PaymentsRunReconciliationResult>;
   acknowledge(input: { readonly reconciliationId: string; readonly actorId: string }): Promise<PaymentsAcknowledgeReconciliationResult>;
+  listRecent(input?: { readonly limit?: number }): Promise<PaymentsListReconciliationsResult>;
 }
