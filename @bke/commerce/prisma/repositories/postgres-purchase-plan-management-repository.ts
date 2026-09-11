@@ -3,6 +3,8 @@ import { Client, type PoolClient } from "pg";
 import type { CommerceManagedPurchasePlanSnapshot } from "../../contracts/purchase-plan-management.contract";
 import type { CommercePurchasePlanManagementRepository } from "../../logic/purchase-plan-management";
 
+type PurchasePlanManagementSyncInput = Parameters<CommercePurchasePlanManagementRepository["sync"]>[0];
+
 interface ManagedPlanRow {
   id: string;
   editionId: string;
@@ -75,7 +77,7 @@ export function createPostgresCommercePurchasePlanManagementRepository(
   }
 
   return Object.freeze({
-    async sync(input) {
+    async sync(input: PurchasePlanManagementSyncInput) {
       const client = new Client({ connectionString: normalizedConnectionString });
       await client.connect();
       try {
