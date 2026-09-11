@@ -1,6 +1,6 @@
 {
   "name": "@bke/catalog",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Reusable BKE Product and Edition catalog identity, lookup, management, and module-owned PostgreSQL persistence capabilities",
   "type": "module",
   "engines": {
@@ -26,7 +26,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run tests/catalog.test.ts tests/licensing-version-facts.test.ts",
+    "test": "vitest run tests/catalog.test.ts tests/licensing-version-facts.test.ts tests/product-identity-policy.test.ts",
     "prisma:validate": "prisma validate --config prisma.config.ts",
     "prisma:deploy": "prisma migrate deploy --config prisma.config.ts"
   },
