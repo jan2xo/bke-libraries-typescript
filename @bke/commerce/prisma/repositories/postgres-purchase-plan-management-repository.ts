@@ -53,9 +53,12 @@ async function upsertPlan(
     `INSERT INTO "PurchasePlan" (
        "id", "editionId", "type", "currency", "amountMinor", "annualDiscountBps",
        "renewalBehavior", "active", "monthlySourcePlanId", "updatedAt"
-     ) VALUES ($1, $2, $3, 'PHP', COALESCE($4, 100), NULL, $5, $6, NULL, CURRENT_TIMESTAMP)
+     ) VALUES ($1, $2, $3, 'PHP', COALESCE($4::integer, 100), NULL, $5, $6, NULL, CURRENT_TIMESTAMP)
      ON CONFLICT ("editionId", "type") DO UPDATE SET
-       "amountMinor" = COALESCE(EXCLUDED."amountMinor", "PurchasePlan"."amountMinor"),
+       "amountMinor" = CASE
+         WHEN $4::integer IS NULL THEN "PurchasePlan"."amountMinor"
+         ELSE $4::integer
+       END,
        "annualDiscountBps" = NULL,
        "renewalBehavior" = EXCLUDED."renewalBehavior",
        "active" = EXCLUDED."active",
