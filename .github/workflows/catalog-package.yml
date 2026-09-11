@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/catalog --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-catalog-0.3.0.tgz"
+          test "$artifact" = "bke-catalog-0.4.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "CATALOG_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -56,6 +56,7 @@ jobs:
             package/logic/catalog.ts \
             package/logic/catalog-repository.ts \
             package/logic/licensing-version-facts.ts \
+            package/logic/product-identity-policy.ts \
             package/prisma/schema.prisma \
             package/prisma/repositories/postgres-catalog-repository.ts \
             package/prisma/repositories/postgres-licensing-version-facts-repository.ts \
@@ -111,6 +112,7 @@ jobs:
           } from "@bke/catalog/contracts/catalog.contract";
           import { createCatalogLookupCapability, createCatalogManagementCapability } from "@bke/catalog/logic/catalog";
           import { createCatalogLicensingVersionFactsCapability } from "@bke/catalog/logic/licensing-version-facts";
+          import { assertCatalogProductIdChangeAllowed, isCatalogProductId, normalizeCatalogProductId } from "@bke/catalog/logic/product-identity-policy";
           import { createPostgresCatalogRepository } from "@bke/catalog/prisma/repositories/postgres-catalog-repository";
           import { createPostgresCatalogLicensingVersionFactsRepository } from "@bke/catalog/prisma/repositories/postgres-licensing-version-facts-repository";
           import { createLegacySchemaCatalogLicensingVersionFactsRepository } from "@bke/catalog/prisma/repositories/legacy-schema-licensing-version-facts-repository";
@@ -121,6 +123,8 @@ jobs:
           if (CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID !== "bke.catalog.licensing-version-facts.v1") throw new Error("Catalog licensing facts identity mismatch.");
           if (!CATALOG_PRODUCT_KINDS.includes("SCRIPT") || !CATALOG_PRODUCT_KINDS.includes("DIGITAL_ASSET")) throw new Error("Catalog kinds incomplete.");
           if (catalogModuleManifest.moduleId !== "catalog" || catalogModuleManifest.needs.length !== 0) throw new Error("Catalog manifest mismatch.");
+          if (!isCatalogProductId("bke-air-stack") || normalizeCatalogProductId(" bke-air-stack ") !== "bke-air-stack") throw new Error("Catalog product identity policy mismatch.");
+          if (assertCatalogProductIdChangeAllowed({ existingProductId: "bke-air-stack", requestedProductId: "bke-air-stack", lifecycleLocked: true }) !== "bke-air-stack") throw new Error("Catalog immutable identity policy mismatch.");
           for (const value of [
             createCatalogLookupCapability,
             createCatalogManagementCapability,
@@ -139,10 +143,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-catalog-0.3.0
+          name: bke-catalog-0.4.0
           path: |
-            artifacts/bke-catalog-0.3.0.tgz
-            artifacts/bke-catalog-0.3.0.tgz.sha256
+            artifacts/bke-catalog-0.4.0.tgz
+            artifacts/bke-catalog-0.4.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Catalog release
@@ -170,4 +174,4 @@ jobs:
             "artifacts/$CATALOG_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/catalog v${version}" \
-            --notes "Certified BKE Catalog package artifact. Product/Edition identity, lookup, management, software-version facts, native PostgreSQL persistence, legacy Product/ProductVersion convergence adapter, and package portability passed source, behavior, persistence, and package gates before release creation."
+            --notes "Certified BKE Catalog package artifact. Product/Edition identity, exact stable product-ID policy, lookup, management, software-version facts, native PostgreSQL persistence, legacy Product/ProductVersion convergence adapter, and package portability passed source, behavior, persistence, and package gates before release creation."
