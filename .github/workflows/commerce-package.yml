@@ -235,7 +235,7 @@ jobs:
           if ((await subscriptionLookup.find({ subscriptionId: "unknown" })).status !== "NOT_FOUND") throw new Error("Packed subscription lookup failed.");
           const orderItemPolicyLookup: CommerceOrderItemPolicyLookupCapability = createPostgresCommerceOrderItemPolicyLookupCapability("postgresql://unused:unused@localhost/unused");
           if (typeof orderItemPolicyLookup.findByOrderItemId !== "function") throw new Error("Packed order-item policy lookup missing.");
-          console.log("Packed @bke/commerce 0.11.0 edition-plan, payment-outcome, and subscription-lifecycle consumer smoke GREEN");
+          console.log("Packed @bke/commerce 0.12.0 edition-plan, payment-outcome, and subscription-lifecycle consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
