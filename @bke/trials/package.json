@@ -1,0 +1,18 @@
+{
+  "name": "@bke/trials",
+  "version": "0.1.0",
+  "description": "Reusable BKE product-trial eligibility, timing, grace, revocation, and orchestration-intent policy",
+  "type": "module",
+  "engines": { "node": ">=22.12.0" },
+  "files": ["contracts", "logic", "module.manifest.ts", "README.md"],
+  "exports": {
+    "./contracts/*": "./contracts/*.ts",
+    "./logic/*": "./logic/*.ts",
+    "./module.manifest": "./module.manifest.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run tests/trial-policy.test.ts"
+  }
+}
