@@ -71,7 +71,10 @@ jobs:
             package/contracts/edition-plan-management.contract.ts \
             package/logic/edition-plan-management.ts \
             package/contracts/payment-outcome-reaction.contract.ts \
-            package/logic/payment-outcome-reaction.ts; do
+            package/logic/payment-outcome-reaction.ts \
+            package/contracts/subscription-lifecycle-management.contract.ts \
+            package/logic/subscription-lifecycle-management.ts \
+            package/prisma/repositories/postgres-subscription-lifecycle-management-repository.ts; do
             grep -Fx "$required_new" artifacts/package-contents.txt >/dev/null
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
@@ -115,6 +118,7 @@ jobs:
           cat > .package-smoke/smoke.ts <<'TS'
           import { COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID, type CommerceEditionPlanRepository } from "@bke/commerce/contracts/edition-plan-management.contract";
           import { COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID } from "@bke/commerce/contracts/payment-outcome-reaction.contract";
+          import { COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID } from "@bke/commerce/contracts/subscription-lifecycle-management.contract";
           import { COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID } from "@bke/commerce/contracts/purchase-plan-pricing.contract";
           import { COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID } from "@bke/commerce/contracts/purchase-plan-lookup.contract";
           import { COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID } from "@bke/commerce/contracts/offer-redemption.contract";
@@ -128,6 +132,7 @@ jobs:
           import type { CommerceSubscriptionStatusLookupCapability } from "@bke/commerce/contracts/subscription-status-lookup.contract";
           import { createCommerceEdition, normalizeCommerceEditionPlanInput, synchronizeCommerceEditionPlans, validateCommerceEditionPlanSelection } from "@bke/commerce/logic/edition-plan-management";
           import { createCommercePaymentOutcomeReactionCapability } from "@bke/commerce/logic/payment-outcome-reaction";
+          import { createCommerceSubscriptionLifecycleManagementCapability } from "@bke/commerce/logic/subscription-lifecycle-management";
           import { createCommercePurchasePlanPricingCapability } from "@bke/commerce/logic/purchase-plan-pricing";
           import { createCommercePurchasePlanLookupCapability } from "@bke/commerce/logic/purchase-plan-lookup";
           import { createCommerceOfferRedemptionCapability } from "@bke/commerce/logic/offer-redemption";
@@ -141,6 +146,7 @@ jobs:
           import { createPostgresCommercePurchasePlanLookupRepository } from "@bke/commerce/prisma/repositories/postgres-purchase-plan-lookup-repository";
           import { createPostgresCommerceSubscriptionStatusLookupRepository } from "@bke/commerce/prisma/repositories/postgres-subscription-status-lookup-repository";
           import { createPostgresCommerceOrderItemPolicyLookupCapability } from "@bke/commerce/prisma/repositories/postgres-order-item-policy-lookup-repository";
+          import { createPostgresCommerceSubscriptionLifecycleRepository } from "@bke/commerce/prisma/repositories/postgres-subscription-lifecycle-management-repository";
           import { commerceModuleManifest } from "@bke/commerce/module.manifest";
 
           const ids = [
@@ -156,14 +162,16 @@ jobs:
             COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID,
             COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID,
             COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID,
+            COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID,
           ];
           if (
-            ids.length !== 12 ||
+            ids.length !== 13 ||
             commerceModuleManifest.moduleId !== "commerce" ||
             commerceModuleManifest.needs.length !== 0 ||
-            commerceModuleManifest.provides.length !== 12 ||
+            commerceModuleManifest.provides.length !== 13 ||
             !commerceModuleManifest.provides.includes(COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID) ||
-            !commerceModuleManifest.provides.includes(COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID)
+            !commerceModuleManifest.provides.includes(COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID) ||
+            !commerceModuleManifest.provides.includes(COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID)
           ) throw new Error("Unexpected Commerce package identity.");
 
           for (const value of [
@@ -172,6 +180,7 @@ jobs:
             synchronizeCommerceEditionPlans,
             validateCommerceEditionPlanSelection,
             createCommercePaymentOutcomeReactionCapability,
+            createCommerceSubscriptionLifecycleManagementCapability,
             createCommercePurchasePlanPricingCapability,
             createCommercePurchasePlanLookupCapability,
             createCommerceOfferRedemptionCapability,
@@ -185,6 +194,7 @@ jobs:
             createPostgresCommercePurchasePlanLookupRepository,
             createPostgresCommerceSubscriptionStatusLookupRepository,
             createPostgresCommerceOrderItemPolicyLookupCapability,
+            createPostgresCommerceSubscriptionLifecycleRepository,
           ]) {
             if (typeof value !== "function") throw new Error("Packed Commerce consumer exports are incomplete.");
           }
@@ -215,11 +225,17 @@ jobs:
           const refund = paymentOutcome.plan({ kind: "REFUND_UPDATED", orderStatus: "PAID", refundStatus: "succeeded", hasExternalRefundId: true });
           if (refund.status !== "APPLY" || refund.kind !== "REFUND_SUCCEEDED" || !refund.revokeLicensing) throw new Error("Packed refund-outcome reaction failed.");
 
+          const lifecycle = createCommerceSubscriptionLifecycleManagementCapability({
+            start: async () => { throw new Error("not-used"); },
+            renew: async () => null,
+          });
+          if ((await lifecycle.renew({ subscriptionId: "missing", intervalUnit: "MONTH", intervalCount: 1, now: new Date("2026-01-01T00:00:00Z") })).status !== "FAILED") throw new Error("Packed subscription lifecycle failed.");
+
           const subscriptionLookup: CommerceSubscriptionStatusLookupCapability = createCommerceSubscriptionStatusLookupCapability({ findById: async () => null });
           if ((await subscriptionLookup.find({ subscriptionId: "unknown" })).status !== "NOT_FOUND") throw new Error("Packed subscription lookup failed.");
           const orderItemPolicyLookup: CommerceOrderItemPolicyLookupCapability = createPostgresCommerceOrderItemPolicyLookupCapability("postgresql://unused:unused@localhost/unused");
           if (typeof orderItemPolicyLookup.findByOrderItemId !== "function") throw new Error("Packed order-item policy lookup missing.");
-          console.log("Packed @bke/commerce 0.10.0 edition-plan and payment-outcome consumer smoke GREEN");
+          console.log("Packed @bke/commerce 0.11.0 edition-plan, payment-outcome, and subscription-lifecycle consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -258,4 +274,4 @@ jobs:
             "artifacts/$COMMERCE_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/commerce v${version}" \
-            --notes "Certified BKE Commerce package artifact. Commerce owns canonical purchase-plan and offer pricing, edition-plan management, payment-outcome reaction policy, public promotion preview, renewal pricing, order/invoice persistence, renewal order linkage, zero-payment fulfillment, and paid settlement reaction. Commerce source, behavior, persistence, migration, and package gates passed before release creation."
+            --notes "Certified BKE Commerce package artifact. Commerce owns canonical purchase-plan and offer pricing, edition-plan management, payment-outcome reaction policy, subscription lifecycle management, public promotion preview, renewal pricing, order/invoice persistence, renewal order linkage, zero-payment fulfillment, and paid settlement reaction. Commerce source, behavior, persistence, migration, and package gates passed before release creation."
