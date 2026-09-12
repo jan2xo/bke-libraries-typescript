@@ -7,6 +7,27 @@ import type {
 export function createCommercePaymentOutcomeReactionCapability(): CommercePaymentOutcomeReactionCapability {
   return Object.freeze({
     plan(input: CommercePaymentOutcomeInput): CommercePaymentOutcomePlan {
+      if (input.kind === "PAYMENT_PAID") {
+        if (input.orderStatus !== "PENDING" && input.orderStatus !== "CANCELLED") {
+          return { status: "NOOP", reason: "ORDER_NOT_SETTLEMENT_MUTABLE" };
+        }
+        return {
+          status: "APPLY",
+          kind: "PAYMENT_PAID",
+          upsertPaymentPaid: true,
+          markOrderPaid: true,
+          markAttemptCompleted: input.hasPaymentAttempt,
+          finalizeInvoice: true,
+          applyOfferRedemption: true,
+          issueEntitlements: true,
+          emailTypes: ["ORDER_CONFIRMED", "INVOICE_READY", "LICENSES_READY"] as const,
+          auditAction:
+            input.orderStatus === "CANCELLED"
+              ? "PAYMENT_SETTLED_AFTER_LOCAL_CANCELLATION"
+              : "PAYMENT_SETTLED",
+        };
+      }
+
       if (input.kind === "PAYMENT_FAILED") {
         if (input.orderStatus !== "PENDING" && input.orderStatus !== "CANCELLED") {
           return { status: "NOOP", reason: "ORDER_NOT_FAILURE_MUTABLE" };
