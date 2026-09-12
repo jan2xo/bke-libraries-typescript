@@ -1,13 +1,13 @@
 # @bke/licensing
 
-Reusable BKE Licensing capability extracted from Digital Solutions V2.
+Reusable BKE Licensing capability library.
 
-Certified staging source: `1ca7abf353ffcce0f904c7b935763ad3f0c0616c`.
+The package owns licensing policy, contracts, persistence adapters, and licensing-specific operational state. Consumers may compose package capabilities inside broader application transactions when cross-domain atomicity must remain host-owned.
 
-## Boundary
+## Entitlement management
 
-- **What I need:** opaque license/runtime identifiers and encrypted key material.
-- **What I own:** licensing persistence, key-reveal policy, decryption and clock seams.
-- **What I give:** `bke.licensing.license-key-reveal.v1`.
+`bke.licensing.entitlement-management.v1` owns validation and normalization for license issuance and subscription-license renewal intent, including renewal expiration semantics and renewal-operation facts.
 
-Entitlements and checkout orchestration stay outside this package.
+The current capability intentionally exposes a repository port so a consumer such as BKE Digital Solutions can bind Licensing mutations into an existing cross-domain transaction without moving Commerce or host orchestration into this package.
+
+A standalone PostgreSQL repository for this capability is not currently shipped. Do not claim persistence-complete or release-ready entitlement-management support until that adapter is certified.
