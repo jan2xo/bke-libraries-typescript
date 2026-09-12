@@ -1,0 +1,132 @@
+name: BKE Library - Trials
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/trials/**"
+      - "package-lock.json"
+      - ".github/workflows/trials.yml"
+  push:
+    branches: [main]
+    paths:
+      - "@bke/trials/**"
+      - "package-lock.json"
+      - ".github/workflows/trials.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  trials:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Certify Trials extraction boundary
+        run: npx tsx @bke/trials/tests/extraction.certify.ts
+      - name: Typecheck Trials
+        run: npm run typecheck --workspace=@bke/trials
+      - name: Test Trials logic
+        run: npm run test --workspace=@bke/trials
+      - name: Pack Trials package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+          version="$(node -p "require('./@bke/trials/package.json').version")"
+          artifact="$(npm pack --workspace=@bke/trials --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "bke-trials-${version}.tgz"
+          test -s "artifacts/$artifact"
+          sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "TRIALS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+          echo "TRIALS_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Certify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf "artifacts/$TRIALS_ARTIFACT" > artifacts/package-contents.txt
+          for required in \
+            package/package.json \
+            package/module.manifest.ts \
+            package/contracts/trial-policy.contract.ts \
+            package/logic/trial-policy.ts; do
+            grep -Fx "$required" artifacts/package-contents.txt
+          done
+          if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
+            echo '::error::Tests or dependency caches must not ship in @bke/trials.'
+            exit 1
+          fi
+      - name: Install tarball in blank consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .package-smoke
+          mkdir -p .package-smoke
+          cat > .package-smoke/package.json <<JSON
+          {"private":true,"type":"module","dependencies":{"@bke/trials":"file:../artifacts/$TRIALS_ARTIFACT"},"devDependencies":{"@types/node":"^24.3.0","tsx":"^4.20.5","typescript":"^5.9.2"}}
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {"compilerOptions":{"target":"ES2022","lib":["ES2022","DOM"],"module":"ESNext","moduleResolution":"Bundler","strict":true,"noEmit":true,"skipLibCheck":true,"types":["node"]},"include":["smoke.ts"]}
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import { TRIAL_POLICY_CAPABILITY_ID } from "@bke/trials/contracts/trial-policy.contract";
+          import { createTrialGrantPlan, createTrialChangePlan } from "@bke/trials/logic/trial-policy";
+          import { trialsModuleManifest } from "@bke/trials/module.manifest";
+          if (TRIAL_POLICY_CAPABILITY_ID !== "trials.policy.v1" || trialsModuleManifest.provides.length !== 1) throw new Error("Trials package identity mismatch");
+          const facts = { productId:"p", editionId:"e", productName:"P", editionName:"E", features:[], maxUsers:1, maxDevicesPerUser:1, updatePolicy:"LIFETIME" } as const;
+          const plan = createTrialGrantPlan({ source:"SELF_SERVICE", graceDays:2, now:new Date("2026-09-12T00:00:00Z"), facts });
+          if (plan.trialDays !== 7 || plan.selfServiceYear !== 2026 || plan.order.totalMinor !== 0) throw new Error("Trials grant smoke failed");
+          const change = createTrialChangePlan({ state:{ revokedAt:null, trialEndsAt:plan.trialEndsAt, graceEndsAt:plan.graceEndsAt }, action:"SET_GRACE", graceDays:3, now:new Date("2026-09-12T00:00:00Z") });
+          if (change.action !== "SET_GRACE" || change.licenseStatus !== "ACTIVE") throw new Error("Trials change smoke failed");
+          console.log("Packed @bke/trials consumer smoke GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - name: Upload certified package evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: bke-trials-${{ env.TRIALS_VERSION }}
+          path: |
+            artifacts/${{ env.TRIALS_ARTIFACT }}
+            artifacts/${{ env.TRIALS_ARTIFACT }}.sha256
+            artifacts/package-contents.txt
+          if-no-files-found: error
+      - name: Create immutable Trials release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./@bke/trials/package.json').version")"
+          tag="trials-v${version}"
+          package_changed=false
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/trials/package.json; then package_changed=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if [[ "$package_changed" == "true" ]]; then
+              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/trials version."
+              exit 1
+            fi
+            echo "Release $tag already exists and package version is unchanged."
+            exit 0
+          fi
+          gh release create "$tag" "artifacts/$TRIALS_ARTIFACT" "artifacts/$TRIALS_ARTIFACT.sha256" --target "$GITHUB_SHA" --title "@bke/trials v${version}" --notes "Certified BKE Trials policy package. Seven-day trial timing, grace policy, self-service annual reuse guard, zero-value order intent, entitlement/license intent, revoke idempotence, and grace/license-status reaction passed extraction, behavior, typecheck, and package portability gates before release creation."
