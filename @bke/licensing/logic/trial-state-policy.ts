@@ -4,6 +4,10 @@ import {
   type LicensingTrialStatePolicyCapability,
 } from "../contracts/trial-state-policy.contract";
 
+type CreateWindowInput = Parameters<LicensingTrialStatePolicyCapability["createWindow"]>[0];
+type ChangeGraceInput = Parameters<LicensingTrialStatePolicyCapability["changeGrace"]>[0];
+type RevokeInput = Parameters<LicensingTrialStatePolicyCapability["revoke"]>[0];
+
 function addUtcDays(value: Date, days: number) {
   return new Date(value.getTime() + days * 86_400_000);
 }
@@ -14,7 +18,7 @@ function validGraceDays(value: number) {
 
 export function createLicensingTrialStatePolicyCapability(): LicensingTrialStatePolicyCapability {
   return Object.freeze({
-    createWindow(input) {
+    createWindow(input: CreateWindowInput) {
       const graceDays = input.graceDays ?? 0;
       if (!validGraceDays(graceDays)) {
         return { status: "FAILED", code: "INVALID_GRACE_PERIOD" } as const;
@@ -31,7 +35,7 @@ export function createLicensingTrialStatePolicyCapability(): LicensingTrialState
       } as const;
     },
 
-    changeGrace(input) {
+    changeGrace(input: ChangeGraceInput) {
       if (!validGraceDays(input.graceDays)) {
         return { status: "FAILED", code: "INVALID_GRACE_PERIOD" } as const;
       }
@@ -49,7 +53,7 @@ export function createLicensingTrialStatePolicyCapability(): LicensingTrialState
       } as const;
     },
 
-    revoke(input) {
+    revoke(input: RevokeInput) {
       const alreadyRevoked = Boolean(input.revokedAt);
       return {
         status: "OK",
