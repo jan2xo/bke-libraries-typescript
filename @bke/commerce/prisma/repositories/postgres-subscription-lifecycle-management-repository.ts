@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Client, type PoolClient } from "pg";
+import { Client } from "pg";
 import type { CommerceSubscriptionLifecycleSnapshot } from "../../contracts/subscription-lifecycle-management.contract";
 import {
   commerceSubscriptionPeriod,
@@ -62,7 +62,7 @@ function mapSubscription(row: SubscriptionRow): CommerceSubscriptionLifecycleSna
   };
 }
 
-async function lockSubscription(client: PoolClient, subscriptionId: string): Promise<SubscriptionRow | null> {
+async function lockSubscription(client: Client, subscriptionId: string): Promise<SubscriptionRow | null> {
   const result = await client.query<SubscriptionRow>(
     `SELECT ${columns} FROM "Subscription" WHERE "id" = $1 FOR UPDATE`,
     [subscriptionId],
