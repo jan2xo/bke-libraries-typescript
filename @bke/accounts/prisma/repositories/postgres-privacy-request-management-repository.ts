@@ -7,6 +7,9 @@ import type {
   AccountsPrivacyRequestManagementRepository,
 } from "../../logic/privacy-request-management";
 
+type CreateInput = Parameters<AccountsPrivacyRequestManagementRepository["create"]>[0];
+type TransitionInput = Parameters<AccountsPrivacyRequestManagementRepository["transition"]>[0];
+
 async function withClient<T>(
   connectionString: string,
   run: (client: Client) => Promise<T>,
@@ -29,7 +32,7 @@ export function createPostgresAccountsPrivacyRequestManagementRepository(
   }
 
   return Object.freeze({
-    async create(input): Promise<AccountsPrivacyRequestSnapshot> {
+    async create(input: CreateInput): Promise<AccountsPrivacyRequestSnapshot> {
       return withClient(normalizedConnectionString, async (client) => {
         await client.query("BEGIN");
         try {
@@ -73,7 +76,7 @@ export function createPostgresAccountsPrivacyRequestManagementRepository(
       });
     },
 
-    async findById(requestId): Promise<AccountsPrivacyRequestSnapshot | null> {
+    async findById(requestId: string): Promise<AccountsPrivacyRequestSnapshot | null> {
       return withClient(normalizedConnectionString, async (client) => {
         const result = await client.query<AccountsPrivacyRequestSnapshot>(
           `SELECT "id", "userId", "customerAccountId", "requestType", "status", "summary",
@@ -86,7 +89,7 @@ export function createPostgresAccountsPrivacyRequestManagementRepository(
       });
     },
 
-    async transition(input): Promise<AccountsPrivacyRequestSnapshot> {
+    async transition(input: TransitionInput): Promise<AccountsPrivacyRequestSnapshot> {
       return withClient(normalizedConnectionString, async (client) => {
         await client.query("BEGIN");
         try {
