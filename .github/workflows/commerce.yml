@@ -95,3 +95,5 @@ jobs:
         run: npx tsx @bke/commerce/tests/subscription-status-lookup.postgres.certify.ts
       - name: Certify Commerce order-item policy lookup with PostgreSQL
         run: npx tsx @bke/commerce/tests/order-item-policy-lookup.postgres.certify.ts
+      - name: Certify Commerce trial grant registry with PostgreSQL
+        run: npx tsx @bke/commerce/tests/trial-grant-registry.postgres.certify.ts
