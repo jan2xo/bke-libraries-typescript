@@ -40,6 +40,8 @@ export interface LicensingEntitlementManagementRepository {
   }>;
 }
 
+const DAY_MS = 86_400_000;
+
 function validId(value: string): boolean {
   return Boolean(value.trim());
 }
@@ -54,6 +56,14 @@ function validDate(value: Date): boolean {
 
 function validOptionalDate(value: Date | null | undefined): boolean {
   return value == null || validDate(value);
+}
+
+export function licensingInitialExpiration(
+  effectiveAt: Date,
+  validityDays: number | null | undefined,
+): Date | null {
+  if (!validityDays) return null;
+  return new Date(effectiveAt.getTime() + validityDays * DAY_MS);
 }
 
 export function licensingRenewalExpiration(
