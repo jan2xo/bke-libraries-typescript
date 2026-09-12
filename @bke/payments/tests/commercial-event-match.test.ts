@@ -16,6 +16,7 @@ const order = (overrides: Partial<PaymentsCommercialOrderFact> = {}): PaymentsCo
 const event = (overrides: Partial<PaymentsCommercialEventMatchEvent> = {}): PaymentsCommercialEventMatchEvent => ({
   type: "payment.paid",
   externalCheckoutId: "checkout-1",
+  externalPaymentId: "payment-1",
   reference: "BKE-1001",
   amountMinor: 300_000,
   currency: "PHP",
@@ -154,5 +155,21 @@ describe("Payments commercial provider-event matching", () => {
       referenceOrder: fact,
       knownPaymentOrder: null,
     })).toEqual({ status: "MATCHED", order: fact, matchedBy: "REFERENCE" });
+  });
+
+  it("rejects a paid event without provider payment identity only after commercial facts match", () => {
+    expect(matchPaymentsCommercialEvent({
+      event: event({ externalPaymentId: null }),
+      attemptOrder: order(),
+      referenceOrder: null,
+      knownPaymentOrder: null,
+    })).toEqual({ status: "REJECTED", code: "PAYMENT_REFERENCE_MISMATCH" });
+
+    expect(matchPaymentsCommercialEvent({
+      event: event({ externalPaymentId: null, amountMinor: 1 }),
+      attemptOrder: order(),
+      referenceOrder: null,
+      knownPaymentOrder: null,
+    })).toEqual({ status: "REJECTED", code: "PAYMENT_AMOUNT_MISMATCH" });
   });
 });
