@@ -21,55 +21,69 @@ export type AccountsCustomerLifecyclePolicyResult<T = undefined> =
       readonly blockers?: readonly string[];
     };
 
+export interface AccountsCloseCustomerPolicyInput {
+  readonly userId: string;
+  readonly actorId: string;
+  readonly administratorProtected: boolean;
+  readonly lifecycleState: AccountsLifecycleState;
+  readonly organizationAccounts: number;
+}
+
+export interface AccountsReopenCustomerPolicyInput {
+  readonly administratorProtected: boolean;
+  readonly lifecycleState: AccountsLifecycleState;
+  readonly pseudonymized: boolean;
+  readonly legalHold: boolean;
+}
+
+export interface AccountsPrivacyDeletionRequestPolicyInput {
+  readonly administratorProtected: boolean;
+  readonly legalHold: boolean;
+  readonly retentionExpiresAt: Date;
+  readonly now: Date;
+}
+
+export interface AccountsLegalHoldPolicyInput {
+  readonly administratorProtected: boolean;
+  readonly enabled: boolean;
+  readonly reason?: string;
+  readonly now: Date;
+}
+
+export interface AccountsPseudonymizeCustomerPolicyInput {
+  readonly lifecycleState: AccountsLifecycleState;
+  readonly canPseudonymize: boolean;
+  readonly blockers: readonly string[];
+}
+
+export interface AccountsMarkPurgeEligiblePolicyInput {
+  readonly canMarkPurgeEligible: boolean;
+  readonly blockers: readonly string[];
+}
+
+export interface AccountsFinalPurgePolicyInput {
+  readonly userId: string;
+  readonly confirmation: string;
+  readonly lifecycleState: AccountsLifecycleState;
+  readonly canPurge: boolean;
+  readonly blockers: readonly string[];
+}
+
 export interface AccountsCustomerLifecycleTransitionPolicyCapability {
-  close(input: {
-    readonly userId: string;
-    readonly actorId: string;
-    readonly administratorProtected: boolean;
-    readonly lifecycleState: AccountsLifecycleState;
-    readonly organizationAccounts: number;
-  }): AccountsCustomerLifecyclePolicyResult;
-
-  reopen(input: {
-    readonly administratorProtected: boolean;
-    readonly lifecycleState: AccountsLifecycleState;
-    readonly pseudonymized: boolean;
-    readonly legalHold: boolean;
-  }): AccountsCustomerLifecyclePolicyResult;
-
-  requestPrivacyDeletion(input: {
-    readonly administratorProtected: boolean;
-    readonly legalHold: boolean;
-    readonly retentionExpiresAt: Date;
-    readonly now: Date;
-  }): AccountsCustomerLifecyclePolicyResult;
-
-  legalHold(input: {
-    readonly administratorProtected: boolean;
-    readonly enabled: boolean;
-    readonly reason?: string;
-    readonly now: Date;
-  }): AccountsCustomerLifecyclePolicyResult<{
+  close(input: AccountsCloseCustomerPolicyInput): AccountsCustomerLifecyclePolicyResult;
+  reopen(input: AccountsReopenCustomerPolicyInput): AccountsCustomerLifecyclePolicyResult;
+  requestPrivacyDeletion(
+    input: AccountsPrivacyDeletionRequestPolicyInput,
+  ): AccountsCustomerLifecyclePolicyResult;
+  legalHold(input: AccountsLegalHoldPolicyInput): AccountsCustomerLifecyclePolicyResult<{
     readonly legalHoldAt: Date | null;
     readonly legalHoldReason: string | null;
   }>;
-
-  pseudonymize(input: {
-    readonly lifecycleState: AccountsLifecycleState;
-    readonly canPseudonymize: boolean;
-    readonly blockers: readonly string[];
-  }): AccountsCustomerLifecyclePolicyResult;
-
-  markPurgeEligible(input: {
-    readonly canMarkPurgeEligible: boolean;
-    readonly blockers: readonly string[];
-  }): AccountsCustomerLifecyclePolicyResult;
-
-  finalPurge(input: {
-    readonly userId: string;
-    readonly confirmation: string;
-    readonly lifecycleState: AccountsLifecycleState;
-    readonly canPurge: boolean;
-    readonly blockers: readonly string[];
-  }): AccountsCustomerLifecyclePolicyResult;
+  pseudonymize(
+    input: AccountsPseudonymizeCustomerPolicyInput,
+  ): AccountsCustomerLifecyclePolicyResult;
+  markPurgeEligible(
+    input: AccountsMarkPurgeEligiblePolicyInput,
+  ): AccountsCustomerLifecyclePolicyResult;
+  finalPurge(input: AccountsFinalPurgePolicyInput): AccountsCustomerLifecyclePolicyResult;
 }
