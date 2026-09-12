@@ -37,11 +37,14 @@ jobs:
           set -euo pipefail
           rm -rf artifacts
           mkdir -p artifacts
+          version="$(node -p "require('./@bke/catalog/package.json').version")"
+          expected="bke-catalog-${version}.tgz"
           artifact="$(npm pack --workspace=@bke/catalog --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-catalog-0.4.0.tgz"
+          test "$artifact" = "$expected"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "CATALOG_VERSION=$version" >> "$GITHUB_ENV"
           echo "CATALOG_ARTIFACT=$artifact" >> "$GITHUB_ENV"
       - name: Certify package contents
         shell: bash
@@ -53,10 +56,12 @@ jobs:
             package/module.manifest.ts \
             package/contracts/catalog.contract.ts \
             package/contracts/module.contract.ts \
+            package/contracts/product-deletion-policy.contract.ts \
             package/logic/catalog.ts \
             package/logic/catalog-repository.ts \
             package/logic/licensing-version-facts.ts \
             package/logic/product-identity-policy.ts \
+            package/logic/product-deletion-policy.ts \
             package/prisma/schema.prisma \
             package/prisma/repositories/postgres-catalog-repository.ts \
             package/prisma/repositories/postgres-licensing-version-facts-repository.ts \
@@ -110,9 +115,11 @@ jobs:
             CATALOG_MANAGEMENT_CAPABILITY_ID,
             CATALOG_PRODUCT_KINDS,
           } from "@bke/catalog/contracts/catalog.contract";
+          import { CATALOG_PRODUCT_DELETION_POLICY_CAPABILITY_ID } from "@bke/catalog/contracts/product-deletion-policy.contract";
           import { createCatalogLookupCapability, createCatalogManagementCapability } from "@bke/catalog/logic/catalog";
           import { createCatalogLicensingVersionFactsCapability } from "@bke/catalog/logic/licensing-version-facts";
           import { assertCatalogProductIdChangeAllowed, isCatalogProductId, normalizeCatalogProductId } from "@bke/catalog/logic/product-identity-policy";
+          import { authorizeCatalogProductDeletionFinalization, authorizeCatalogProductDeletionRequest, evaluateCatalogProductDeletionEligibility } from "@bke/catalog/logic/product-deletion-policy";
           import { createPostgresCatalogRepository } from "@bke/catalog/prisma/repositories/postgres-catalog-repository";
           import { createPostgresCatalogLicensingVersionFactsRepository } from "@bke/catalog/prisma/repositories/postgres-licensing-version-facts-repository";
           import { createLegacySchemaCatalogLicensingVersionFactsRepository } from "@bke/catalog/prisma/repositories/legacy-schema-licensing-version-facts-repository";
@@ -121,10 +128,17 @@ jobs:
           if (CATALOG_LOOKUP_CAPABILITY_ID !== "bke.catalog.lookup.v1") throw new Error("Catalog lookup identity mismatch.");
           if (CATALOG_MANAGEMENT_CAPABILITY_ID !== "bke.catalog.management.v1") throw new Error("Catalog management identity mismatch.");
           if (CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID !== "bke.catalog.licensing-version-facts.v1") throw new Error("Catalog licensing facts identity mismatch.");
+          if (CATALOG_PRODUCT_DELETION_POLICY_CAPABILITY_ID !== "catalog.product-deletion-policy.v1") throw new Error("Catalog deletion identity mismatch.");
           if (!CATALOG_PRODUCT_KINDS.includes("SCRIPT") || !CATALOG_PRODUCT_KINDS.includes("DIGITAL_ASSET")) throw new Error("Catalog kinds incomplete.");
-          if (catalogModuleManifest.moduleId !== "catalog" || catalogModuleManifest.needs.length !== 0) throw new Error("Catalog manifest mismatch.");
+          if (catalogModuleManifest.moduleId !== "catalog" || catalogModuleManifest.needs.length !== 0 || !catalogModuleManifest.provides.includes(CATALOG_PRODUCT_DELETION_POLICY_CAPABILITY_ID)) throw new Error("Catalog manifest mismatch.");
           if (!isCatalogProductId("bke-air-stack") || normalizeCatalogProductId(" bke-air-stack ") !== "bke-air-stack") throw new Error("Catalog product identity policy mismatch.");
           if (assertCatalogProductIdChangeAllowed({ existingProductId: "bke-air-stack", requestedProductId: "bke-air-stack", lifecycleLocked: true }) !== "bke-air-stack") throw new Error("Catalog immutable identity policy mismatch.");
+          const emptyDependencies = { carts: 0, orderItems: 0, orders: 0, invoices: 0, payments: 0, paymentAttempts: 0, subscriptions: 0, trials: 0, licenses: 0, assignments: 0, activations: 0, downloadGrants: 0, downloads: 0, licenseEvents: 0, offers: 0, offerRedemptions: 0 };
+          const removableResources = { editions: 0, purchasePlans: 0, versions: 0, artifacts: 0, prices: 0, policies: 0, tags: 0, images: 0, storageObjects: 0 };
+          const deletionSnapshot = { productExists: true, productId: "product", productName: "Air Stack", productSlug: "air-stack", isArchived: true, deletionRequested: true, blockingDependencies: emptyDependencies, removableResources };
+          if (!evaluateCatalogProductDeletionEligibility(deletionSnapshot).canDelete) throw new Error("Catalog deletion eligibility failed.");
+          if (!authorizeCatalogProductDeletionRequest({ snapshot: deletionSnapshot, confirmationName: "Air Stack" }).canDelete) throw new Error("Catalog deletion request failed.");
+          if (!authorizeCatalogProductDeletionFinalization({ snapshot: deletionSnapshot, cleanupStatuses: ["SUCCEEDED"] }).canDelete) throw new Error("Catalog deletion finalization failed.");
           for (const value of [
             createCatalogLookupCapability,
             createCatalogManagementCapability,
@@ -143,10 +157,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-catalog-0.4.0
+          name: bke-catalog-${{ env.CATALOG_VERSION }}
           path: |
-            artifacts/bke-catalog-0.4.0.tgz
-            artifacts/bke-catalog-0.4.0.tgz.sha256
+            artifacts/${{ env.CATALOG_ARTIFACT }}
+            artifacts/${{ env.CATALOG_ARTIFACT }}.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Catalog release
@@ -174,4 +188,4 @@ jobs:
             "artifacts/$CATALOG_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/catalog v${version}" \
-            --notes "Certified BKE Catalog package artifact. Product/Edition identity, exact stable product-ID policy, lookup, management, software-version facts, native PostgreSQL persistence, legacy Product/ProductVersion convergence adapter, and package portability passed source, behavior, persistence, and package gates before release creation."
+            --notes "Certified BKE Catalog package artifact. Product/Edition identity, stable product-ID policy, product-deletion policy, lookup, management, software-version facts, native PostgreSQL persistence, legacy Product/ProductVersion convergence adapter, and package portability passed source, behavior, persistence, and package gates before release creation."
