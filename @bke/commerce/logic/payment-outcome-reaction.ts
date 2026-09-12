@@ -20,7 +20,7 @@ export function createCommercePaymentOutcomeReactionCapability(): CommercePaymen
           finalizeInvoice: true,
           applyOfferRedemption: true,
           issueEntitlements: true,
-          emailTypes: ["ORDER_CONFIRMED", "INVOICE_READY", "LICENSES_READY"] as const,
+          emailTypes: ["PAYMENT_RECEIPT", "INVOICE_ISSUED", "LICENSE_ISSUED"] as const,
           auditAction:
             input.orderStatus === "CANCELLED"
               ? "PAYMENT_SETTLED_AFTER_LOCAL_CANCELLATION"
