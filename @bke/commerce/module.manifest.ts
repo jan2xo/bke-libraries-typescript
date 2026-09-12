@@ -5,6 +5,7 @@ import { COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID } from "./contracts/edit
 import { COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID } from "./contracts/offer-redemption.contract";
 import { COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID } from "./contracts/order-invoice-creation.contract";
 import { COMMERCE_ORDER_ITEM_POLICY_LOOKUP_CAPABILITY_ID } from "./contracts/order-item-policy-lookup.contract";
+import { COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID } from "./contracts/payment-outcome-reaction.contract";
 import { COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID } from "./contracts/public-promotion-preview.contract";
 import { COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID } from "./contracts/purchase-plan-lookup.contract";
 import { COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID } from "./contracts/purchase-plan-pricing.contract";
@@ -26,5 +27,6 @@ export const commerceModuleManifest = Object.freeze({
     COMMERCE_ORDER_ITEM_POLICY_LOOKUP_CAPABILITY_ID,
     COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID,
     COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID,
+    COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID,
   ],
 } as const satisfies CommerceModuleManifest);
