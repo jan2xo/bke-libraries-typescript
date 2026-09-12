@@ -10,6 +10,8 @@ const allowedModels = new Set([
   "OrganizationProfile",
   "Membership",
   "Invitation",
+  "PrivacyRequest",
+  "PrivacyRequestEvent",
 ]);
 const violations: string[] = [];
 
@@ -81,6 +83,7 @@ const requiredPaths = [
   "prisma.config.ts",
   "prisma/schema.prisma",
   "migrations/0001_accounts_baseline/migration.sql",
+  "migrations/0002_accounts_privacy_requests/migration.sql",
   "contracts",
   "logic",
   "providers",
