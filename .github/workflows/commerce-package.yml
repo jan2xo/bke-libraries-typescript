@@ -37,69 +37,47 @@ jobs:
           set -euo pipefail
           rm -rf artifacts
           mkdir -p artifacts
+          version="$(node -p "require('./@bke/commerce/package.json').version")"
           artifact="$(npm pack --workspace=@bke/commerce --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-commerce-0.9.0.tgz"
+          test "$version" = "0.11.0"
+          test "$artifact" = "bke-commerce-${version}.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "COMMERCE_VERSION=$version" >> "$GITHUB_ENV"
           echo "COMMERCE_ARTIFACT=$artifact" >> "$GITHUB_ENV"
       - name: Certify package contents
         shell: bash
         run: |
           set -euo pipefail
-          tar -tzf "artifacts/$COMMERCE_ARTIFACT" > artifacts/package-contents.txt
-          for required in \
-            package/package.json \
-            package/module.manifest.ts \
-            package/contracts/purchase-plan-pricing.contract.ts \
-            package/contracts/purchase-plan-lookup.contract.ts \
-            package/contracts/purchase-plan-management.contract.ts \
-            package/contracts/subscription-status-lookup.contract.ts \
-            package/contracts/order-item-policy-lookup.contract.ts \
-            package/contracts/renewal-checkout-pricing.contract.ts \
-            package/contracts/public-promotion-preview.contract.ts \
-            package/contracts/offer-redemption.contract.ts \
-            package/contracts/order-invoice-creation.contract.ts \
-            package/contracts/checkout-offer-pricing.contract.ts \
-            package/contracts/checkout-orchestration.contract.ts \
-            package/contracts/settlement-reaction.contract.ts \
-            package/contracts/zero-payment-fulfillment.contract.ts \
-            package/logic/purchase-plan-pricing.ts \
-            package/logic/purchase-plan-lookup.ts \
-            package/logic/purchase-plan-management.ts \
-            package/logic/subscription-status-lookup.ts \
-            package/logic/renewal-checkout-pricing.ts \
-            package/logic/renewal-checkout-pricing-repository.ts \
-            package/logic/public-promotion-preview.ts \
-            package/logic/public-promotion-preview-repository.ts \
-            package/logic/offer-configuration.ts \
-            package/logic/offer-redemption.ts \
-            package/logic/order-invoice-creation.ts \
-            package/logic/checkout-offer-pricing.ts \
-            package/logic/checkout-offer-pricing-repository.ts \
-            package/logic/checkout-orchestration.ts \
-            package/logic/settlement-reaction.ts \
-            package/logic/zero-payment-fulfillment.ts \
-            package/logic/zero-payment-fulfillment-repository.ts \
-            package/prisma/schema.prisma \
-            package/prisma/repositories/postgres-purchase-plan-lookup-repository.ts \
-            package/prisma/repositories/postgres-purchase-plan-management-repository.ts \
-            package/prisma/repositories/postgres-subscription-status-lookup-repository.ts \
-            package/prisma/repositories/postgres-order-item-policy-lookup-repository.ts \
-            package/prisma/repositories/postgres-renewal-checkout-pricing-repository.ts \
-            package/prisma/repositories/postgres-public-promotion-preview-repository.ts \
-            package/prisma/repositories/postgres-offer-redemption-repository.ts \
-            package/prisma/repositories/postgres-order-invoice-creation-repository.ts \
-            package/prisma/repositories/postgres-checkout-offer-pricing-repository.ts \
-            package/prisma/repositories/postgres-settlement-reaction-repository.ts \
-            package/prisma/repositories/postgres-zero-payment-fulfillment-repository.ts \
-            package/migrations/0001_commerce_purchase_plan_baseline/migration.sql \
-            package/migrations/0002_commerce_offers_redemptions/migration.sql \
-            package/migrations/0003_commerce_orders_invoices/migration.sql \
-            package/migrations/0004_commerce_subscription_baseline/migration.sql \
-            package/migrations/0005_commerce_renewal_order_linkage/migration.sql; do
-            grep -Fx "$required" artifacts/package-contents.txt
+          tar -tzf "artifacts/$COMMERCE_ARTIFACT" | sort > artifacts/package-contents.txt
+
+          required=(
+            package/package.json
+            package/module.manifest.ts
+            package/prisma.config.ts
+            package/prisma/schema.prisma
+          )
+          while IFS= read -r source; do
+            relative="${source#@bke/commerce/}"
+            required+=("package/$relative")
+          done < <(find @bke/commerce/contracts @bke/commerce/logic @bke/commerce/prisma/repositories @bke/commerce/migrations \
+            -type f \( -name '*.ts' -o -name '*.sql' \) | sort)
+
+          for path in "${required[@]}"; do
+            grep -Fx "$path" artifacts/package-contents.txt >/dev/null || {
+              echo "::error::Packed Commerce artifact is missing $path"
+              exit 1
+            }
           done
+
+          for required_new in \
+            package/contracts/subscription-lifecycle-management.contract.ts \
+            package/logic/subscription-lifecycle-management.ts \
+            package/prisma/repositories/postgres-subscription-lifecycle-management-repository.ts; do
+            grep -Fx "$required_new" artifacts/package-contents.txt >/dev/null
+          done
+
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
             echo '::error::Tests or dependency caches must not ship in @bke/commerce.'
             exit 1
@@ -142,43 +120,36 @@ jobs:
           import { COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID } from "@bke/commerce/contracts/purchase-plan-pricing.contract";
           import { COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID } from "@bke/commerce/contracts/purchase-plan-lookup.contract";
           import { COMMERCE_PURCHASE_PLAN_MANAGEMENT_CAPABILITY_ID } from "@bke/commerce/contracts/purchase-plan-management.contract";
+          import { COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID } from "@bke/commerce/contracts/subscription-lifecycle-management.contract";
           import { COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID } from "@bke/commerce/contracts/offer-redemption.contract";
           import { COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID } from "@bke/commerce/contracts/order-invoice-creation.contract";
           import { COMMERCE_CHECKOUT_OFFER_PRICING_CAPABILITY_ID } from "@bke/commerce/contracts/checkout-offer-pricing.contract";
           import { COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID } from "@bke/commerce/contracts/checkout-orchestration.contract";
           import { COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID } from "@bke/commerce/contracts/settlement-reaction.contract";
           import { COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID } from "@bke/commerce/contracts/zero-payment-fulfillment.contract";
-          import { COMMERCE_ORDER_ITEM_POLICY_LOOKUP_CAPABILITY_ID, type CommerceOrderItemPolicyLookupCapability } from "@bke/commerce/contracts/order-item-policy-lookup.contract";
-          import { COMMERCE_RENEWAL_CHECKOUT_PRICING_CAPABILITY_ID } from "@bke/commerce/contracts/renewal-checkout-pricing.contract";
+          import { COMMERCE_ORDER_ITEM_POLICY_LOOKUP_CAPABILITY_ID } from "@bke/commerce/contracts/order-item-policy-lookup.contract";
           import { COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID } from "@bke/commerce/contracts/public-promotion-preview.contract";
-          import type { CommerceSubscriptionStatusLookupCapability } from "@bke/commerce/contracts/subscription-status-lookup.contract";
           import { createCommercePurchasePlanPricingCapability } from "@bke/commerce/logic/purchase-plan-pricing";
           import { createCommercePurchasePlanLookupCapability } from "@bke/commerce/logic/purchase-plan-lookup";
           import { createCommercePurchasePlanManagementCapability } from "@bke/commerce/logic/purchase-plan-management";
-          import { createCommerceSubscriptionStatusLookupCapability } from "@bke/commerce/logic/subscription-status-lookup";
+          import { createCommerceSubscriptionLifecycleManagementCapability } from "@bke/commerce/logic/subscription-lifecycle-management";
           import { createCommerceOfferRedemptionCapability } from "@bke/commerce/logic/offer-redemption";
           import { createCommerceOrderInvoiceCreationCapability } from "@bke/commerce/logic/order-invoice-creation";
           import { createCommerceCheckoutOfferPricingCapability } from "@bke/commerce/logic/checkout-offer-pricing";
           import { createCommerceCheckoutOrchestrationCapability } from "@bke/commerce/logic/checkout-orchestration";
           import { createCommerceSettlementReactionCapability } from "@bke/commerce/logic/settlement-reaction";
           import { createCommerceZeroPaymentFulfillmentCapability } from "@bke/commerce/logic/zero-payment-fulfillment";
-          import { createCommerceRenewalCheckoutPricingCapability } from "@bke/commerce/logic/renewal-checkout-pricing";
           import { createCommercePublicPromotionPreviewCapability } from "@bke/commerce/logic/public-promotion-preview";
-          import { validateCommerceOfferConfiguration } from "@bke/commerce/logic/offer-configuration";
           import { createPostgresCommercePurchasePlanLookupRepository } from "@bke/commerce/prisma/repositories/postgres-purchase-plan-lookup-repository";
           import { createPostgresCommercePurchasePlanManagementRepository } from "@bke/commerce/prisma/repositories/postgres-purchase-plan-management-repository";
-          import { createPostgresCommerceSubscriptionStatusLookupRepository } from "@bke/commerce/prisma/repositories/postgres-subscription-status-lookup-repository";
-          import { createPostgresCommerceOrderItemPolicyLookupCapability } from "@bke/commerce/prisma/repositories/postgres-order-item-policy-lookup-repository";
-          import { createPostgresCommerceRenewalCheckoutPricingRepository } from "@bke/commerce/prisma/repositories/postgres-renewal-checkout-pricing-repository";
-          import { createPostgresCommercePublicPromotionPreviewRepository } from "@bke/commerce/prisma/repositories/postgres-public-promotion-preview-repository";
-          import { createPostgresCommerceCheckoutOfferPricingRepository } from "@bke/commerce/prisma/repositories/postgres-checkout-offer-pricing-repository";
-          import { createPostgresCommerceZeroPaymentFulfillmentRepository } from "@bke/commerce/prisma/repositories/postgres-zero-payment-fulfillment-repository";
+          import { createPostgresCommerceSubscriptionLifecycleRepository } from "@bke/commerce/prisma/repositories/postgres-subscription-lifecycle-management-repository";
           import { commerceModuleManifest } from "@bke/commerce/module.manifest";
 
           const ids = [
             COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID,
             COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID,
             COMMERCE_PURCHASE_PLAN_MANAGEMENT_CAPABILITY_ID,
+            COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID,
             COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID,
             COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID,
             COMMERCE_CHECKOUT_OFFER_PRICING_CAPABILITY_ID,
@@ -186,39 +157,30 @@ jobs:
             COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID,
             COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID,
             COMMERCE_ORDER_ITEM_POLICY_LOOKUP_CAPABILITY_ID,
-            COMMERCE_RENEWAL_CHECKOUT_PRICING_CAPABILITY_ID,
             COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID,
           ];
-          if (ids.length !== 12 || commerceModuleManifest.moduleId !== "commerce" || commerceModuleManifest.needs.length !== 0 || commerceModuleManifest.provides.length !== 11) throw new Error("Unexpected Commerce package identity.");
+          if (ids.length !== 12 || commerceModuleManifest.moduleId !== "commerce" || commerceModuleManifest.needs.length !== 0 || commerceModuleManifest.provides.length !== 12) {
+            throw new Error("Unexpected Commerce package identity.");
+          }
           for (const value of [
             createCommercePurchasePlanPricingCapability,
             createCommercePurchasePlanLookupCapability,
             createCommercePurchasePlanManagementCapability,
+            createCommerceSubscriptionLifecycleManagementCapability,
             createCommerceOfferRedemptionCapability,
             createCommerceOrderInvoiceCreationCapability,
             createCommerceCheckoutOfferPricingCapability,
             createCommerceCheckoutOrchestrationCapability,
             createCommerceSettlementReactionCapability,
             createCommerceZeroPaymentFulfillmentCapability,
-            createCommerceRenewalCheckoutPricingCapability,
             createCommercePublicPromotionPreviewCapability,
             createPostgresCommercePurchasePlanLookupRepository,
             createPostgresCommercePurchasePlanManagementRepository,
-            createPostgresCommerceCheckoutOfferPricingRepository,
-            createPostgresCommerceZeroPaymentFulfillmentRepository,
-            createPostgresCommerceOrderItemPolicyLookupCapability,
-            createPostgresCommerceRenewalCheckoutPricingRepository,
-            createPostgresCommercePublicPromotionPreviewRepository,
-            validateCommerceOfferConfiguration,
+            createPostgresCommerceSubscriptionLifecycleRepository,
           ]) {
             if (typeof value !== "function") throw new Error("Packed Commerce consumer exports are incomplete.");
           }
-          const subscriptionLookup: CommerceSubscriptionStatusLookupCapability = createCommerceSubscriptionStatusLookupCapability({ findById: async () => null });
-          if ((await subscriptionLookup.find({ subscriptionId: "unknown" })).status !== "NOT_FOUND") throw new Error("Packed subscription lookup failed.");
-          if (typeof createPostgresCommerceSubscriptionStatusLookupRepository !== "function") throw new Error("Packed subscription repository missing.");
-          const orderItemPolicyLookup: CommerceOrderItemPolicyLookupCapability = createPostgresCommerceOrderItemPolicyLookupCapability("postgresql://unused:unused@localhost/unused");
-          if (typeof orderItemPolicyLookup.findByOrderItemId !== "function") throw new Error("Packed order-item policy lookup missing.");
-          console.log("Packed @bke/commerce 0.9.0 consumer smoke GREEN");
+          console.log("Packed @bke/commerce 0.11.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -226,10 +188,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-commerce-0.9.0
+          name: bke-commerce-${{ env.COMMERCE_VERSION }}
           path: |
-            artifacts/bke-commerce-0.9.0.tgz
-            artifacts/bke-commerce-0.9.0.tgz.sha256
+            artifacts/${{ env.COMMERCE_ARTIFACT }}
+            artifacts/${{ env.COMMERCE_ARTIFACT }}.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Commerce release
@@ -257,4 +219,4 @@ jobs:
             "artifacts/$COMMERCE_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/commerce v${version}" \
-            --notes "Certified BKE Commerce package artifact. Commerce owns canonical purchase-plan pricing and management, offer pricing, V1-parity minor-unit rounding, public promotion preview, renewal recurring-price and scheduled-cycle carry, order/invoice persistence, renewal order linkage, offer-aware checkout behavior, zero-payment fulfillment, and paid settlement reaction. Commerce source, behavior, persistence, migration, and package gates passed before release creation."
+            --notes "Certified BKE Commerce package artifact. Commerce owns canonical purchase-plan pricing and management, subscription lifecycle management, offer pricing, public promotion preview, renewal pricing, order/invoice persistence, renewal order linkage, zero-payment fulfillment, and paid settlement reaction. Commerce source, behavior, persistence, migration, and package gates passed before release creation."

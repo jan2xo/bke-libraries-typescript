@@ -77,6 +77,8 @@ jobs:
         run: npx tsx @bke/commerce/tests/purchase-plan-lookup.postgres.certify.ts
       - name: Certify Commerce purchase-plan management with PostgreSQL
         run: npx tsx @bke/commerce/tests/purchase-plan-management.postgres.certify.ts
+      - name: Certify Commerce subscription lifecycle management with PostgreSQL
+        run: npx tsx @bke/commerce/tests/subscription-lifecycle-management.postgres.certify.ts
       - name: Certify Commerce offer redemption with PostgreSQL
         run: npx tsx @bke/commerce/tests/offer-redemption.postgres.certify.ts
       - name: Certify Commerce order/invoice creation with PostgreSQL
