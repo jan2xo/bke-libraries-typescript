@@ -4,6 +4,47 @@ import { createCommercePaymentOutcomeReactionCapability } from "../logic/payment
 const capability = createCommercePaymentOutcomeReactionCapability();
 
 describe("Commerce payment outcome reaction", () => {
+  it("owns paid-settlement intent for pending orders", () => {
+    expect(capability.plan({ kind: "PAYMENT_PAID", orderStatus: "PENDING", hasPaymentAttempt: true })).toEqual({
+      status: "APPLY",
+      kind: "PAYMENT_PAID",
+      upsertPaymentPaid: true,
+      markOrderPaid: true,
+      markAttemptCompleted: true,
+      finalizeInvoice: true,
+      applyOfferRedemption: true,
+      issueEntitlements: true,
+      emailTypes: ["ORDER_CONFIRMED", "INVOICE_READY", "LICENSES_READY"],
+      auditAction: "PAYMENT_SETTLED",
+    });
+  });
+
+  it("preserves settlement after local cancellation", () => {
+    expect(capability.plan({ kind: "PAYMENT_PAID", orderStatus: "CANCELLED", hasPaymentAttempt: false })).toEqual({
+      status: "APPLY",
+      kind: "PAYMENT_PAID",
+      upsertPaymentPaid: true,
+      markOrderPaid: true,
+      markAttemptCompleted: false,
+      finalizeInvoice: true,
+      applyOfferRedemption: true,
+      issueEntitlements: true,
+      emailTypes: ["ORDER_CONFIRMED", "INVOICE_READY", "LICENSES_READY"],
+      auditAction: "PAYMENT_SETTLED_AFTER_LOCAL_CANCELLATION",
+    });
+  });
+
+  it("does not re-settle orders outside pending/cancelled", () => {
+    expect(capability.plan({ kind: "PAYMENT_PAID", orderStatus: "PAID", hasPaymentAttempt: true })).toEqual({
+      status: "NOOP",
+      reason: "ORDER_NOT_SETTLEMENT_MUTABLE",
+    });
+    expect(capability.plan({ kind: "PAYMENT_PAID", orderStatus: "REFUNDED", hasPaymentAttempt: true })).toEqual({
+      status: "NOOP",
+      reason: "ORDER_NOT_SETTLEMENT_MUTABLE",
+    });
+  });
+
   it("owns failed-payment mutation intent for pending and cancelled orders", () => {
     expect(capability.plan({ kind: "PAYMENT_FAILED", orderStatus: "PENDING", hasExternalPaymentId: true })).toEqual({
       status: "APPLY",
