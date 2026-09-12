@@ -1,0 +1,90 @@
+name: Temporary Commerce Payment Outcome Package Certification
+
+on:
+  push:
+    branches: [feat/commerce-payment-outcome-reaction]
+    paths:
+      - ".github/workflows/temp-commerce-payment-outcome-package-cert.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Pack and certify Commerce 0.10.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts .package-smoke
+          mkdir -p artifacts .package-smoke
+          version="$(node -p "require('./@bke/commerce/package.json').version")"
+          test "$version" = "0.10.0"
+          artifact="$(npm pack --workspace=@bke/commerce --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "bke-commerce-${version}.tgz"
+          tar -tzf "artifacts/$artifact" | sort > artifacts/package-contents.txt
+          required=(package/package.json package/module.manifest.ts package/prisma.config.ts package/prisma/schema.prisma)
+          while IFS= read -r source; do
+            relative="${source#@bke/commerce/}"
+            required+=("package/$relative")
+          done < <(find @bke/commerce/contracts @bke/commerce/logic @bke/commerce/prisma/repositories @bke/commerce/migrations -type f \( -name '*.ts' -o -name '*.sql' \) | sort)
+          for path in "${required[@]}"; do grep -Fx "$path" artifacts/package-contents.txt >/dev/null; done
+          grep -Fx 'package/contracts/payment-outcome-reaction.contract.ts' artifacts/package-contents.txt >/dev/null
+          grep -Fx 'package/logic/payment-outcome-reaction.ts' artifacts/package-contents.txt >/dev/null
+          if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then exit 1; fi
+          echo "ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Blank-consumer smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > .package-smoke/package.json <<JSON
+          {
+            "private": true,
+            "type": "module",
+            "dependencies": { "@bke/commerce": "file:../artifacts/$ARTIFACT" },
+            "devDependencies": { "@types/node": "^24.3.0", "@types/pg": "^8.15.5", "tsx": "^4.20.5", "typescript": "^5.9.2" }
+          }
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "lib": ["ES2022", "DOM"],
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": ["node"]
+            },
+            "include": ["smoke.ts"]
+          }
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import { COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID } from "@bke/commerce/contracts/edition-plan-management.contract";
+          import { COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID } from "@bke/commerce/contracts/payment-outcome-reaction.contract";
+          import { createCommercePaymentOutcomeReactionCapability } from "@bke/commerce/logic/payment-outcome-reaction";
+          import { commerceModuleManifest } from "@bke/commerce/module.manifest";
+
+          if (commerceModuleManifest.provides.length !== 12) throw new Error("Expected 12 Commerce capabilities.");
+          if (!commerceModuleManifest.provides.includes(COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID)) throw new Error("Edition plan capability missing.");
+          if (!commerceModuleManifest.provides.includes(COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID)) throw new Error("Payment outcome capability missing.");
+          const capability = createCommercePaymentOutcomeReactionCapability();
+          const failed = capability.plan({ kind: "PAYMENT_FAILED", orderStatus: "PENDING", hasExternalPaymentId: true });
+          if (failed.status !== "APPLY" || failed.kind !== "PAYMENT_FAILED" || failed.auditAction !== "PAYMENT_FAILED") throw new Error("Payment-failed parity mismatch.");
+          const refunded = capability.plan({ kind: "REFUND_UPDATED", orderStatus: "PAID", refundStatus: "succeeded", hasExternalRefundId: true });
+          if (refunded.status !== "APPLY" || refunded.kind !== "REFUND_SUCCEEDED" || !refunded.revokeLicensing || !refunded.cancelSubscriptions) throw new Error("Refund parity mismatch.");
+          console.log("Commerce 0.10.0 payment-outcome package certification GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - run: git diff --check
