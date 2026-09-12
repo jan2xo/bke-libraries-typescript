@@ -66,6 +66,11 @@ enum CommerceSubscriptionStatus {
   CANCELLED
 }
 
+enum CommerceTrialSource {
+  SELF_SERVICE
+  ADMIN
+}
+
 model Price {
   id              String                @id
   productId       String
@@ -260,4 +265,24 @@ model InvoiceLine {
   invoice         Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
   @@index([invoiceId])
+}
+
+model TrialGrant {
+  id              String              @id
+  accountId       String
+  productId       String
+  editionId       String
+  licenseId       String              @unique
+  source          CommerceTrialSource
+  selfServiceYear Int?
+  trialStartsAt   DateTime
+  trialEndsAt     DateTime
+  graceEndsAt     DateTime
+  revokedAt       DateTime?
+  createdById     String?
+  createdAt       DateTime            @default(now())
+
+  @@unique([accountId, productId, selfServiceYear])
+  @@index([accountId, graceEndsAt])
+  @@index([productId, createdAt])
 }
