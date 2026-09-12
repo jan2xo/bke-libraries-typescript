@@ -40,7 +40,7 @@ jobs:
           version="$(node -p "require('./@bke/commerce/package.json').version")"
           artifact="$(npm pack --workspace=@bke/commerce --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$version" = "0.10.0"
+          test "$version" = "0.11.0"
           test "$artifact" = "bke-commerce-${version}.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
@@ -180,7 +180,7 @@ jobs:
           ]) {
             if (typeof value !== "function") throw new Error("Packed Commerce consumer exports are incomplete.");
           }
-          console.log("Packed @bke/commerce 0.10.0 consumer smoke GREEN");
+          console.log("Packed @bke/commerce 0.11.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
