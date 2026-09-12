@@ -1,4 +1,5 @@
 import { PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID } from "./contracts/checkout-attempt.contract";
+import { PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID } from "./contracts/commercial-event-match.contract";
 import type { PaymentsModuleManifest } from "./contracts/module.contract";
 import { PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID } from "./contracts/provider-event-ingestion.contract";
 import { PAYMENTS_RECONCILIATION_CAPABILITY_ID } from "./contracts/reconciliation.contract";
@@ -14,5 +15,6 @@ export const paymentsModuleManifest = Object.freeze({
     PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID,
     PAYMENTS_REFUND_INITIATION_CAPABILITY_ID,
     PAYMENTS_RECONCILIATION_CAPABILITY_ID,
+    PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID,
   ],
 } satisfies PaymentsModuleManifest);
