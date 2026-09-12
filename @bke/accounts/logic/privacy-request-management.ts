@@ -29,13 +29,24 @@ export interface AccountsPrivacyRequestManagementRepository {
   }): Promise<AccountsPrivacyRequestSnapshot>;
 }
 
+type NormalizedCreateInput = {
+  readonly userId: string;
+  readonly customerAccountId: string | null;
+  readonly requestType: AccountsCreatePrivacyRequestInput["requestType"];
+  readonly summary: string;
+  readonly ipAddress: string;
+  readonly userAgent: string | null;
+};
+
 function failed(
   code: Extract<AccountsPrivacyRequestManagementResult, { status: "FAILED" }>["code"],
 ): AccountsPrivacyRequestManagementResult {
   return { status: "FAILED", code };
 }
 
-function normalizeCreateInput(input: AccountsCreatePrivacyRequestInput) {
+function normalizeCreateInput(
+  input: AccountsCreatePrivacyRequestInput,
+): NormalizedCreateInput | AccountsPrivacyRequestManagementResult {
   if (!ACCOUNTS_PRIVACY_REQUEST_TYPES.includes(input.requestType)) {
     return failed("INVALID_PRIVACY_REQUEST_TYPE");
   }
@@ -59,8 +70,8 @@ function isClosed(status: AccountsPrivacyRequestSnapshot["status"]) {
 export function createAccountsPrivacyRequestManagementCapability(
   repository: AccountsPrivacyRequestManagementRepository,
 ): AccountsPrivacyRequestManagementCapability {
-  return Object.freeze({
-    async create(input) {
+  const capability: AccountsPrivacyRequestManagementCapability = {
+    async create(input: AccountsCreatePrivacyRequestInput): Promise<AccountsPrivacyRequestManagementResult> {
       const normalized = normalizeCreateInput(input);
       if ("status" in normalized) return normalized;
       try {
@@ -70,7 +81,7 @@ export function createAccountsPrivacyRequestManagementCapability(
       }
     },
 
-    async transition(input) {
+    async transition(input: AccountsTransitionPrivacyRequestInput): Promise<AccountsPrivacyRequestManagementResult> {
       if (!input.actorId.trim() || !input.requestId.trim()) return failed("INVALID_INPUT");
       if (!ACCOUNTS_PRIVACY_REQUEST_STATUSES.includes(input.status)) return failed("INVALID_INPUT");
       try {
@@ -98,5 +109,7 @@ export function createAccountsPrivacyRequestManagementCapability(
         return failed("PERSISTENCE_UNAVAILABLE");
       }
     },
-  });
+  };
+
+  return Object.freeze(capability);
 }
