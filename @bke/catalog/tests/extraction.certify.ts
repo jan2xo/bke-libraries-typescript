@@ -34,6 +34,7 @@ assert.deepEqual(catalogModuleManifest.provides, [
   "bke.catalog.lookup.v1",
   "bke.catalog.management.v1",
   "bke.catalog.licensing-version-facts.v1",
+  "catalog.product-deletion-policy.v1",
 ]);
 const schema = readFileSync(`${root}/prisma/schema.prisma`, "utf8");
 const models = [...schema.matchAll(/^model\s+(\w+)\s*\{/gm)].map((match) => match[1]).sort();
