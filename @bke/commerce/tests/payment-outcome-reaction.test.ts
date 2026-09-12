@@ -14,7 +14,7 @@ describe("Commerce payment outcome reaction", () => {
       finalizeInvoice: true,
       applyOfferRedemption: true,
       issueEntitlements: true,
-      emailTypes: ["ORDER_CONFIRMED", "INVOICE_READY", "LICENSES_READY"],
+      emailTypes: ["PAYMENT_RECEIPT", "INVOICE_ISSUED", "LICENSE_ISSUED"],
       auditAction: "PAYMENT_SETTLED",
     });
   });
@@ -29,7 +29,7 @@ describe("Commerce payment outcome reaction", () => {
       finalizeInvoice: true,
       applyOfferRedemption: true,
       issueEntitlements: true,
-      emailTypes: ["ORDER_CONFIRMED", "INVOICE_READY", "LICENSES_READY"],
+      emailTypes: ["PAYMENT_RECEIPT", "INVOICE_ISSUED", "LICENSE_ISSUED"],
       auditAction: "PAYMENT_SETTLED_AFTER_LOCAL_CANCELLATION",
     });
   });
