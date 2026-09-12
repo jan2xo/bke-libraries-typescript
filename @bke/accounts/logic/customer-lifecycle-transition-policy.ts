@@ -1,6 +1,13 @@
 import type {
+  AccountsCloseCustomerPolicyInput,
   AccountsCustomerLifecyclePolicyResult,
   AccountsCustomerLifecycleTransitionPolicyCapability,
+  AccountsFinalPurgePolicyInput,
+  AccountsLegalHoldPolicyInput,
+  AccountsMarkPurgeEligiblePolicyInput,
+  AccountsPrivacyDeletionRequestPolicyInput,
+  AccountsPseudonymizeCustomerPolicyInput,
+  AccountsReopenCustomerPolicyInput,
 } from "../contracts/customer-lifecycle-transition-policy.contract";
 
 const CLOSED_STATES = new Set([
@@ -12,7 +19,7 @@ const CLOSED_STATES = new Set([
 
 export function createAccountsCustomerLifecycleTransitionPolicyCapability(): AccountsCustomerLifecycleTransitionPolicyCapability {
   return Object.freeze({
-    close(input): AccountsCustomerLifecyclePolicyResult {
+    close(input: AccountsCloseCustomerPolicyInput): AccountsCustomerLifecyclePolicyResult {
       if (input.administratorProtected || input.userId === input.actorId) {
         return { status: "FAILED", code: "FORBIDDEN" };
       }
@@ -29,7 +36,7 @@ export function createAccountsCustomerLifecycleTransitionPolicyCapability(): Acc
       return { status: "OK", value: undefined };
     },
 
-    reopen(input): AccountsCustomerLifecyclePolicyResult {
+    reopen(input: AccountsReopenCustomerPolicyInput): AccountsCustomerLifecyclePolicyResult {
       if (
         input.administratorProtected ||
         input.lifecycleState !== "CLOSED" ||
@@ -41,7 +48,9 @@ export function createAccountsCustomerLifecycleTransitionPolicyCapability(): Acc
       return { status: "OK", value: undefined };
     },
 
-    requestPrivacyDeletion(input): AccountsCustomerLifecyclePolicyResult {
+    requestPrivacyDeletion(
+      input: AccountsPrivacyDeletionRequestPolicyInput,
+    ): AccountsCustomerLifecyclePolicyResult {
       if (input.retentionExpiresAt <= input.now) {
         return {
           status: "FAILED",
@@ -54,7 +63,7 @@ export function createAccountsCustomerLifecycleTransitionPolicyCapability(): Acc
       return { status: "OK", value: undefined };
     },
 
-    legalHold(input) {
+    legalHold(input: AccountsLegalHoldPolicyInput) {
       if (input.administratorProtected) return { status: "FAILED", code: "FORBIDDEN" } as const;
       return {
         status: "OK",
@@ -67,7 +76,9 @@ export function createAccountsCustomerLifecycleTransitionPolicyCapability(): Acc
       } as const;
     },
 
-    pseudonymize(input): AccountsCustomerLifecyclePolicyResult {
+    pseudonymize(
+      input: AccountsPseudonymizeCustomerPolicyInput,
+    ): AccountsCustomerLifecyclePolicyResult {
       if (!input.canPseudonymize) {
         return { status: "FAILED", code: "PRIVACY_DELETION_BLOCKED", blockers: input.blockers };
       }
@@ -81,7 +92,9 @@ export function createAccountsCustomerLifecycleTransitionPolicyCapability(): Acc
       return { status: "OK", value: undefined };
     },
 
-    markPurgeEligible(input): AccountsCustomerLifecyclePolicyResult {
+    markPurgeEligible(
+      input: AccountsMarkPurgeEligiblePolicyInput,
+    ): AccountsCustomerLifecyclePolicyResult {
       if (input.canMarkPurgeEligible) return { status: "OK", value: undefined };
       return {
         status: "FAILED",
@@ -90,7 +103,7 @@ export function createAccountsCustomerLifecycleTransitionPolicyCapability(): Acc
       };
     },
 
-    finalPurge(input): AccountsCustomerLifecyclePolicyResult {
+    finalPurge(input: AccountsFinalPurgePolicyInput): AccountsCustomerLifecyclePolicyResult {
       if (input.confirmation !== `PURGE ${input.userId}`) {
         return { status: "FAILED", code: "PURGE_CONFIRMATION_REQUIRED" };
       }
