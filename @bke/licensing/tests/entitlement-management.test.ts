@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createLicensingEntitlementManagementCapability,
+  licensingInitialExpiration,
   licensingRenewalExpiration,
 } from "../logic/entitlement-management";
 
@@ -13,6 +14,14 @@ const issuedLicense = {
 };
 
 describe("Licensing entitlement management", () => {
+  it("preserves initial one-time entitlement expiration from validity days", () => {
+    const effectiveAt = new Date("2026-09-12T00:00:00.000Z");
+    expect(licensingInitialExpiration(effectiveAt, undefined)).toBeNull();
+    expect(licensingInitialExpiration(effectiveAt, null)).toBeNull();
+    expect(licensingInitialExpiration(effectiveAt, 0)).toBeNull();
+    expect(licensingInitialExpiration(effectiveAt, 30)?.toISOString()).toBe("2026-10-12T00:00:00.000Z");
+  });
+
   it("preserves the host renewal expiration rule", () => {
     const effectiveAt = new Date("2026-09-12T00:00:00.000Z");
     const futureExpiry = new Date("2026-10-01T00:00:00.000Z");
