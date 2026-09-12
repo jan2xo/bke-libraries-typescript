@@ -37,6 +37,13 @@ const manifest = readFileSync(resolve(root, "module.manifest.ts"), "utf8");
 if (!manifest.includes("needs: []") || !manifest.includes("CommerceModuleManifest")) {
   throw new Error("Commerce package manifest must remain host-independent and package-owned.");
 }
+for (const requiredCapability of [
+  "COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID",
+  "COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID",
+  "COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID",
+]) {
+  if (!manifest.includes(requiredCapability)) throw new Error(`Commerce package manifest missing ${requiredCapability}.`);
+}
 if (existsSync(resolve(root, "module.ts"))) throw new Error("Digital Solutions Commerce host adapter must not ship in @bke/commerce.");
 
 const migrations = readdirSync(resolve(root, "migrations")).filter((name) => statSync(resolve(root, "migrations", name)).isDirectory()).sort();
@@ -49,7 +56,7 @@ const expectedModels = ["DiscountOffer", "Invoice", "InvoiceLine", "OfferRedempt
 if (JSON.stringify(models) !== JSON.stringify(expectedModels)) throw new Error(`Commerce schema contains foreign/unexpected models: ${JSON.stringify(models)}`);
 
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { name?: string; version?: string; dependencies?: Record<string, string> };
-if (packageJson.name !== "@bke/commerce" || packageJson.version !== "0.8.0") throw new Error("Unexpected Commerce package identity.");
+if (packageJson.name !== "@bke/commerce" || packageJson.version !== "0.13.0") throw new Error("Unexpected Commerce package identity.");
 for (const dependency of Object.keys(packageJson.dependencies ?? {})) {
   if (dependency.startsWith("@bke/")) throw new Error(`Commerce package must not depend directly on sibling BKE library: ${dependency}`);
 }

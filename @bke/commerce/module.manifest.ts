@@ -1,13 +1,16 @@
 import type { CommerceModuleManifest } from "./contracts/module.contract";
 import { COMMERCE_CHECKOUT_OFFER_PRICING_CAPABILITY_ID } from "./contracts/checkout-offer-pricing.contract";
 import { COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID } from "./contracts/checkout-orchestration.contract";
+import { COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID } from "./contracts/edition-plan-management.contract";
 import { COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID } from "./contracts/offer-redemption.contract";
 import { COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID } from "./contracts/order-invoice-creation.contract";
 import { COMMERCE_ORDER_ITEM_POLICY_LOOKUP_CAPABILITY_ID } from "./contracts/order-item-policy-lookup.contract";
+import { COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID } from "./contracts/payment-outcome-reaction.contract";
 import { COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID } from "./contracts/public-promotion-preview.contract";
 import { COMMERCE_PURCHASE_PLAN_LOOKUP_CAPABILITY_ID } from "./contracts/purchase-plan-lookup.contract";
 import { COMMERCE_PURCHASE_PLAN_PRICING_CAPABILITY_ID } from "./contracts/purchase-plan-pricing.contract";
 import { COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID } from "./contracts/settlement-reaction.contract";
+import { COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID } from "./contracts/subscription-lifecycle-management.contract";
 import { COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID } from "./contracts/zero-payment-fulfillment.contract";
 
 export const commerceModuleManifest = Object.freeze({
@@ -24,5 +27,8 @@ export const commerceModuleManifest = Object.freeze({
     COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID,
     COMMERCE_ORDER_ITEM_POLICY_LOOKUP_CAPABILITY_ID,
     COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID,
+    COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID,
+    COMMERCE_PAYMENT_OUTCOME_REACTION_CAPABILITY_ID,
+    COMMERCE_SUBSCRIPTION_LIFECYCLE_MANAGEMENT_CAPABILITY_ID,
   ],
 } as const satisfies CommerceModuleManifest);
