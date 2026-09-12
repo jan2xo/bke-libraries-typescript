@@ -54,6 +54,10 @@ export function matchPaymentsCommercialEvent(
     return { status: "REJECTED", code: "PAYMENT_CURRENCY_MISMATCH" };
   }
 
+  if (event.type === "payment.paid" && !event.externalPaymentId) {
+    return { status: "REJECTED", code: "PAYMENT_REFERENCE_MISMATCH" };
+  }
+
   return { status: "MATCHED", ...selected };
 }
 
