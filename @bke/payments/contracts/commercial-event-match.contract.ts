@@ -16,6 +16,7 @@ export interface PaymentsCommercialOrderFact {
 export interface PaymentsCommercialEventMatchEvent {
   readonly type: PaymentsCommercialEventMatchType;
   readonly externalCheckoutId: string | null;
+  readonly externalPaymentId: string | null;
   readonly reference: string | null;
   readonly amountMinor: number | null;
   readonly currency: string | null;
