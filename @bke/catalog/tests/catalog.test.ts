@@ -11,6 +11,7 @@ import {
   type CatalogUpdateEditionInput,
   type CatalogUpdateProductInput,
 } from "../contracts/catalog.contract";
+import { CATALOG_PRODUCT_DELETION_POLICY_CAPABILITY_ID } from "../contracts/product-deletion-policy.contract";
 import {
   createCatalogLookupCapability,
   createCatalogManagementCapability,
@@ -111,12 +112,13 @@ function memoryRepository(): CatalogRepository {
 }
 
 describe("catalog capability", () => {
-  it("declares independent lookup, management, and licensing facts capabilities", () => {
+  it("declares independent lookup, management, licensing facts, and product deletion capabilities", () => {
     expect(catalogModuleManifest.needs).toEqual([]);
     expect(catalogModuleManifest.provides).toEqual([
       CATALOG_LOOKUP_CAPABILITY_ID,
       CATALOG_MANAGEMENT_CAPABILITY_ID,
       CATALOG_LICENSING_VERSION_FACTS_CAPABILITY_ID,
+      CATALOG_PRODUCT_DELETION_POLICY_CAPABILITY_ID,
     ]);
   });
 
