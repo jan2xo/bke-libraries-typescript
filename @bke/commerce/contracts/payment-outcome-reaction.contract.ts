@@ -46,7 +46,7 @@ export type CommercePaymentOutcomePlan =
       finalizeInvoice: true;
       applyOfferRedemption: true;
       issueEntitlements: true;
-      emailTypes: readonly ["ORDER_CONFIRMED", "INVOICE_READY", "LICENSES_READY"];
+      emailTypes: readonly ["PAYMENT_RECEIPT", "INVOICE_ISSUED", "LICENSE_ISSUED"];
       auditAction: "PAYMENT_SETTLED" | "PAYMENT_SETTLED_AFTER_LOCAL_CANCELLATION";
     }>
   | Readonly<{
