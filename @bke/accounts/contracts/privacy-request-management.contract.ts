@@ -36,7 +36,7 @@ export interface AccountsPrivacyRequestSnapshot {
   readonly reviewedById: string | null;
   readonly reviewedAt: Date | null;
   readonly closedAt: Date | null;
-  readonly ipAddress: string;
+  readonly ipAddress: string | null;
   readonly userAgent: string | null;
 }
 
