@@ -178,19 +178,26 @@ jobs:
 
           const order = { orderId: "order-1", commercialReference: "BKE-1001", amountMinor: 300000, currency: "PHP" } as const;
           const match = createPaymentsCommercialEventMatchCapability().match({
-            event: { type: "payment.failed", externalCheckoutId: "checkout-1", reference: "BKE-1001", amountMinor: 300000, currency: "PHP" },
+            event: { type: "payment.failed", externalCheckoutId: "checkout-1", externalPaymentId: "payment-1", reference: "BKE-1001", amountMinor: 300000, currency: "PHP" },
             attemptOrder: order,
             referenceOrder: order,
             knownPaymentOrder: null,
           });
           if (match.status !== "MATCHED" || match.order.orderId !== "order-1" || match.matchedBy !== "CHECKOUT") throw new Error("Packed Payments commercial event matching failed.");
           const mismatch = createPaymentsCommercialEventMatchCapability().match({
-            event: { type: "payment.failed", externalCheckoutId: "checkout-1", reference: "BKE-1001", amountMinor: 1, currency: "PHP" },
+            event: { type: "payment.failed", externalCheckoutId: "checkout-1", externalPaymentId: "payment-1", reference: "BKE-1001", amountMinor: 1, currency: "PHP" },
             attemptOrder: order,
             referenceOrder: order,
             knownPaymentOrder: null,
           });
           if (mismatch.status !== "REJECTED" || mismatch.code !== "PAYMENT_AMOUNT_MISMATCH") throw new Error("Packed Payments commercial mismatch policy failed.");
+          const missingPaidIdentity = createPaymentsCommercialEventMatchCapability().match({
+            event: { type: "payment.paid", externalCheckoutId: "checkout-1", externalPaymentId: null, reference: "BKE-1001", amountMinor: 300000, currency: "PHP" },
+            attemptOrder: order,
+            referenceOrder: order,
+            knownPaymentOrder: null,
+          });
+          if (missingPaidIdentity.status !== "REJECTED" || missingPaidIdentity.code !== "PAYMENT_REFERENCE_MISMATCH") throw new Error("Packed Payments paid payment-id parity failed.");
 
           console.log("Packed @bke/payments 0.6.0 commercial-event-match consumer smoke GREEN");
           TS
