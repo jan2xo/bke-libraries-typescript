@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommerceEditionPlanInput, CommerceEditionPlanRepository } from "../contracts/edition-plan-management.contract";
 import {
+  CommerceEditionPlanValidationError,
   createCommerceEdition,
   normalizeCommerceEditionPlanInput,
   synchronizeCommerceEditionPlans,
@@ -55,6 +56,23 @@ describe("edition plan management", () => {
       features: [],
       active: true,
     });
+  });
+
+  it("exposes typed validation reasons without changing the compatibility message", () => {
+    try {
+      validateCommerceEditionPlanSelection({
+        perpetual: { enabled: false },
+        monthly: { enabled: false },
+        annual: { enabled: false },
+      });
+      throw new Error("expected edition plan validation to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CommerceEditionPlanValidationError);
+      const validationError = error as CommerceEditionPlanValidationError;
+      expect(validationError.code).toBe("INVALID_EDITION_PLAN");
+      expect(validationError.reason).toBe("PURCHASE_PLAN_REQUIRED");
+      expect(validationError.message).toBe("INVALID_EDITION_PLAN:PURCHASE_PLAN_REQUIRED");
+    }
   });
 
   it("requires at least one primary purchase plan", () => {
