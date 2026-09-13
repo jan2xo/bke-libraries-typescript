@@ -2,6 +2,7 @@ import type {
   CommerceEditionPlanInput,
   CommerceEditionPlanRepository,
   CommerceEditionPlanSelection,
+  CommerceEditionPlanValidationReason,
   CommerceNormalizedEditionPlanInput,
 } from "../contracts/edition-plan-management.contract";
 
@@ -9,28 +10,51 @@ const MIN_AMOUNT_MINOR = 100;
 const MAX_AMOUNT_MINOR = 2_000_000_000;
 const MAX_ANNUAL_DISCOUNT_BPS = 1_000;
 
-function fail(reason: string): never {
-  throw new Error(`INVALID_EDITION_PLAN:${reason}`);
+export class CommerceEditionPlanValidationError extends Error {
+  readonly code = "INVALID_EDITION_PLAN" as const;
+
+  constructor(public readonly reason: CommerceEditionPlanValidationReason) {
+    super(`INVALID_EDITION_PLAN:${reason}`);
+    this.name = "CommerceEditionPlanValidationError";
+  }
 }
 
-function requiredTrimmed(value: string, min: number, max: number, reason: string): string {
+function fail(reason: CommerceEditionPlanValidationReason): never {
+  throw new CommerceEditionPlanValidationError(reason);
+}
+
+function requiredTrimmed(
+  value: string,
+  min: number,
+  max: number,
+  reason: CommerceEditionPlanValidationReason,
+): string {
   const normalized = value.trim();
   if (normalized.length < min || normalized.length > max) fail(reason);
   return normalized;
 }
 
-function optionalTrimmed(value: string | undefined, max: number, reason: string): string | undefined {
+function optionalTrimmed(
+  value: string | undefined,
+  max: number,
+  reason: CommerceEditionPlanValidationReason,
+): string | undefined {
   if (value === undefined) return undefined;
   const normalized = value.trim();
   if (normalized.length > max) fail(reason);
   return normalized;
 }
 
-function assertIntegerInRange(value: number, min: number, max: number, reason: string): void {
+function assertIntegerInRange(
+  value: number,
+  min: number,
+  max: number,
+  reason: CommerceEditionPlanValidationReason,
+): void {
   if (!Number.isInteger(value) || value < min || value > max) fail(reason);
 }
 
-function assertOptionalAmount(value: number | undefined, reason: string): void {
+function assertOptionalAmount(value: number | undefined, reason: CommerceEditionPlanValidationReason): void {
   if (value === undefined) return;
   assertIntegerInRange(value, MIN_AMOUNT_MINOR, MAX_AMOUNT_MINOR, reason);
 }
