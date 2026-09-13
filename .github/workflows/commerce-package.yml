@@ -220,6 +220,8 @@ jobs:
           if (edition.edition.id !== "edition") throw new Error("Packed edition-plan management failed.");
 
           const paymentOutcome = createCommercePaymentOutcomeReactionCapability();
+          const paidAfterCancellation = paymentOutcome.plan({ kind: "PAYMENT_PAID", orderStatus: "CANCELLED", hasPaymentAttempt: false });
+          if (paidAfterCancellation.status !== "APPLY" || paidAfterCancellation.kind !== "PAYMENT_PAID" || paidAfterCancellation.auditAction !== "PAYMENT_SETTLED_AFTER_LOCAL_CANCELLATION" || !paidAfterCancellation.issueEntitlements) throw new Error("Packed paid-outcome reaction failed.");
           const failed = paymentOutcome.plan({ kind: "PAYMENT_FAILED", orderStatus: "PENDING", hasExternalPaymentId: true });
           if (failed.status !== "APPLY" || failed.kind !== "PAYMENT_FAILED" || failed.auditAction !== "PAYMENT_FAILED") throw new Error("Packed payment-outcome reaction failed.");
           const refund = paymentOutcome.plan({ kind: "REFUND_UPDATED", orderStatus: "PAID", refundStatus: "succeeded", hasExternalRefundId: true });
@@ -235,7 +237,7 @@ jobs:
           if ((await subscriptionLookup.find({ subscriptionId: "unknown" })).status !== "NOT_FOUND") throw new Error("Packed subscription lookup failed.");
           const orderItemPolicyLookup: CommerceOrderItemPolicyLookupCapability = createPostgresCommerceOrderItemPolicyLookupCapability("postgresql://unused:unused@localhost/unused");
           if (typeof orderItemPolicyLookup.findByOrderItemId !== "function") throw new Error("Packed order-item policy lookup missing.");
-          console.log("Packed @bke/commerce 0.12.0 edition-plan, payment-outcome, and subscription-lifecycle consumer smoke GREEN");
+          console.log("Packed @bke/commerce 0.13.0 paid-outcome, edition-plan, payment-outcome, and subscription-lifecycle consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -274,4 +276,4 @@ jobs:
             "artifacts/$COMMERCE_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/commerce v${version}" \
-            --notes "Certified BKE Commerce package artifact. Commerce owns canonical purchase-plan and offer pricing, edition-plan management, payment-outcome reaction policy, subscription lifecycle management, public promotion preview, renewal pricing, order/invoice persistence, renewal order linkage, zero-payment fulfillment, and paid settlement reaction. Commerce source, behavior, persistence, migration, and package gates passed before release creation."
+            --notes "Certified BKE Commerce package artifact. Commerce owns canonical purchase-plan and offer pricing, edition-plan management, paid/failed/refund payment-outcome reaction policy, subscription lifecycle management, public promotion preview, renewal pricing, order/invoice persistence, renewal order linkage, zero-payment fulfillment, and settlement reaction. Commerce source, behavior, persistence, migration, and package gates passed before release creation."
