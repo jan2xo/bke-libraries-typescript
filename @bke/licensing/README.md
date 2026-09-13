@@ -11,3 +11,5 @@ The package owns Licensing contracts, decision policy, licensing-specific persis
 The capability intentionally exposes a repository port. BKE Digital Solutions must bind that port to its existing cross-domain settlement transaction so Commerce settlement and Licensing issuance/renewal remain atomic. A standalone entitlement-management PostgreSQL adapter is therefore **not** required for this capability and must not be used to split that transaction merely to make the package look persistence-complete.
 
 The combined entitlement-management draft stages `@bke/licensing 0.9.0`. Host-specific cryptography, transaction composition, payment facts, and Commerce orchestration remain consumer-owned HOW; Licensing continues to own the WHY of issuance and renewal policy.
+
+Current-main certification must preserve this transaction-port boundary; package portability does not imply or require a standalone entitlement-management persistence adapter.
