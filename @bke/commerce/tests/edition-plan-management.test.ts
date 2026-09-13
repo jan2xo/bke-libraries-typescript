@@ -33,6 +33,30 @@ describe("edition plan management", () => {
     });
   });
 
+  it("preserves host-compatible defaults and a trimmed blank description", () => {
+    const input: CommerceEditionPlanInput = {
+      name: " Standard ",
+      slug: "standard",
+      description: "   ",
+      maxUsers: 10,
+      maxDevicesPerUser: 3,
+      updatePolicy: "ACTIVE_TERM",
+      plans: {
+        perpetual: { enabled: true, amountMinor: 100 },
+        monthly: { enabled: false },
+        annual: { enabled: false },
+      },
+    };
+
+    expect(normalizeCommerceEditionPlanInput(input)).toEqual({
+      ...input,
+      name: "Standard",
+      description: "",
+      features: [],
+      active: true,
+    });
+  });
+
   it("requires at least one primary purchase plan", () => {
     expect(() => validateCommerceEditionPlanSelection({
       perpetual: { enabled: false },
@@ -74,7 +98,8 @@ describe("edition plan management", () => {
     expect(upsertPurchasePlan).toHaveBeenNthCalledWith(1, {
       editionId: "edition-1",
       type: "PERPETUAL",
-      amountMinor: 85_000_00,
+      createAmountMinor: 85_000_00,
+      updateAmountMinor: 85_000_00,
       annualDiscountBps: null,
       monthlySourcePlanId: null,
       renewalBehavior: "NONE",
@@ -83,7 +108,8 @@ describe("edition plan management", () => {
     expect(upsertPurchasePlan).toHaveBeenNthCalledWith(2, {
       editionId: "edition-1",
       type: "MONTHLY",
-      amountMinor: 30_000_00,
+      createAmountMinor: 30_000_00,
+      updateAmountMinor: 30_000_00,
       annualDiscountBps: null,
       monthlySourcePlanId: null,
       renewalBehavior: "CUSTOMER_AUTHORIZED",
@@ -92,12 +118,58 @@ describe("edition plan management", () => {
     expect(upsertPurchasePlan).toHaveBeenNthCalledWith(3, {
       editionId: "edition-1",
       type: "ANNUAL",
-      amountMinor: null,
+      createAmountMinor: null,
+      updateAmountMinor: null,
       annualDiscountBps: 500,
       monthlySourcePlanId: "monthly",
       renewalBehavior: "CUSTOMER_AUTHORIZED",
       active: true,
     });
+  });
+
+  it("preserves disabled plan prices on update while keeping the create fallback", async () => {
+    const upsertPurchasePlan = vi.fn<CommerceEditionPlanRepository["upsertPurchasePlan"]>(async (input) => ({
+      id: input.type === "MONTHLY" ? "monthly" : input.type.toLowerCase(),
+    }));
+    const repository: CommerceEditionPlanRepository = {
+      createEdition: vi.fn(),
+      upsertPurchasePlan,
+    };
+
+    await synchronizeCommerceEditionPlans(repository, "edition-1", {
+      perpetual: { enabled: false },
+      monthly: { enabled: true, amountMinor: 200 },
+      annual: { enabled: false },
+    });
+
+    expect(upsertPurchasePlan).toHaveBeenNthCalledWith(1, {
+      editionId: "edition-1",
+      type: "PERPETUAL",
+      createAmountMinor: 100,
+      annualDiscountBps: null,
+      monthlySourcePlanId: null,
+      renewalBehavior: "NONE",
+      active: false,
+    });
+    expect(upsertPurchasePlan.mock.calls[0]?.[0]).not.toHaveProperty("updateAmountMinor");
+
+    upsertPurchasePlan.mockClear();
+    await synchronizeCommerceEditionPlans(repository, "edition-1", {
+      perpetual: { enabled: true, amountMinor: 300 },
+      monthly: { enabled: false },
+      annual: { enabled: false },
+    });
+
+    expect(upsertPurchasePlan).toHaveBeenNthCalledWith(2, {
+      editionId: "edition-1",
+      type: "MONTHLY",
+      createAmountMinor: 100,
+      annualDiscountBps: null,
+      monthlySourcePlanId: null,
+      renewalBehavior: "CUSTOMER_AUTHORIZED",
+      active: false,
+    });
+    expect(upsertPurchasePlan.mock.calls[1]?.[0]).not.toHaveProperty("updateAmountMinor");
   });
 
   it("creates the edition before synchronizing its plans", async () => {
