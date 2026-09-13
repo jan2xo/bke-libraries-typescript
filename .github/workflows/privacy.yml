@@ -1,0 +1,161 @@
+name: BKE Library - Privacy
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "@bke/privacy/**"
+      - "package-lock.json"
+      - ".github/workflows/privacy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "@bke/privacy/**"
+      - "package-lock.json"
+      - ".github/workflows/privacy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked workspace dependencies
+        run: npm ci
+      - name: Reject tracked dependency/test caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          tracked="$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.vite/' || true)"
+          if [[ -n "$tracked" ]]; then echo "$tracked"; exit 1; fi
+      - name: Certify Privacy extraction boundary
+        run: npx tsx @bke/privacy/tests/extraction.certify.ts
+      - name: Typecheck Privacy
+        run: npm run typecheck --workspace=@bke/privacy
+      - name: Test Privacy logic
+        run: npm run test --workspace=@bke/privacy
+      - name: Pack Privacy package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts
+          mkdir -p artifacts
+          version="$(node -p "require('./@bke/privacy/package.json').version")"
+          expected="bke-privacy-${version}.tgz"
+          artifact="$(npm pack --workspace=@bke/privacy --pack-destination artifacts --silent | tail -n 1)"
+          artifact="$(basename "$artifact")"
+          test "$artifact" = "$expected"
+          test -s "artifacts/$artifact"
+          sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "PRIVACY_VERSION=$version" >> "$GITHUB_ENV"
+          echo "PRIVACY_ARTIFACT=$artifact" >> "$GITHUB_ENV"
+      - name: Certify package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -tzf "artifacts/$PRIVACY_ARTIFACT" > artifacts/package-contents.txt
+          for required in \
+            package/package.json \
+            package/module.manifest.ts \
+            package/contracts/privacy-request-policy.contract.ts \
+            package/logic/privacy-request-policy.ts \
+            package/README.md; do
+            grep -Fx "$required" artifacts/package-contents.txt
+          done
+          if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
+            echo '::error::Tests or dependency caches must not ship in @bke/privacy.'
+            exit 1
+          fi
+      - name: Install tarball in blank consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .package-smoke
+          mkdir -p .package-smoke
+          cat > .package-smoke/package.json <<JSON
+          {
+            "private": true,
+            "type": "module",
+            "dependencies": { "@bke/privacy": "file:../artifacts/$PRIVACY_ARTIFACT" },
+            "devDependencies": {
+              "@types/node": "^24.3.0",
+              "tsx": "^4.20.5",
+              "typescript": "^5.9.2"
+            }
+          }
+          JSON
+          cat > .package-smoke/tsconfig.json <<'JSON'
+          {
+            "compilerOptions": {
+              "target": "ES2022",
+              "lib": ["ES2022", "DOM"],
+              "module": "ESNext",
+              "moduleResolution": "Bundler",
+              "strict": true,
+              "noEmit": true,
+              "skipLibCheck": true,
+              "types": ["node"]
+            },
+            "include": ["smoke.ts"]
+          }
+          JSON
+          cat > .package-smoke/smoke.ts <<'TS'
+          import { PRIVACY_REQUEST_POLICY_CAPABILITY_ID } from "@bke/privacy/contracts/privacy-request-policy.contract";
+          import { normalizePrivacyRequestType, planPrivacyRequestCreation, planPrivacyRequestTransition } from "@bke/privacy/logic/privacy-request-policy";
+          import { privacyModuleManifest } from "@bke/privacy/module.manifest";
+          if (PRIVACY_REQUEST_POLICY_CAPABILITY_ID !== "privacy.request-policy.v1") throw new Error("Privacy capability identity mismatch.");
+          if (privacyModuleManifest.moduleId !== "privacy" || privacyModuleManifest.needs.length !== 0 || !privacyModuleManifest.provides.includes(PRIVACY_REQUEST_POLICY_CAPABILITY_ID)) throw new Error("Privacy manifest mismatch.");
+          if (normalizePrivacyRequestType("DELETION") !== "DELETION") throw new Error("Privacy request normalization failed.");
+          const creation = planPrivacyRequestCreation({ userId: "user", requestType: "ACCESS", summary: "Access request", network: { ipAddress: "127.0.0.1", userAgent: "smoke" } });
+          if (creation.request.status !== "OPEN" || creation.audit.action !== "PRIVACY_REQUEST_CREATED") throw new Error("Privacy creation plan failed.");
+          const transition = planPrivacyRequestTransition({ actorId: "admin", currentStatus: "OPEN", targetStatus: "IN_REVIEW", responseSummary: "Review started" });
+          if (transition.update.shouldClose) throw new Error("Privacy transition plan failed.");
+          console.log("Packed @bke/privacy consumer smoke GREEN");
+          TS
+          npm install --prefix .package-smoke
+          npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
+          npx --prefix .package-smoke tsx .package-smoke/smoke.ts
+      - name: Upload certified package evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: bke-privacy-${{ env.PRIVACY_VERSION }}
+          path: |
+            artifacts/${{ env.PRIVACY_ARTIFACT }}
+            artifacts/${{ env.PRIVACY_ARTIFACT }}.sha256
+            artifacts/package-contents.txt
+          if-no-files-found: error
+      - name: Create immutable Privacy release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./@bke/privacy/package.json').version")"
+          tag="privacy-v${version}"
+          package_changed=false
+          if [[ "${{ github.event_name }}" == "push" ]] && [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/privacy/package.json; then package_changed=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            if [[ "$package_changed" == "true" ]]; then
+              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/privacy version."
+              exit 1
+            fi
+            echo "Release $tag already exists and package version is unchanged."
+            exit 0
+          fi
+          gh release create "$tag" \
+            "artifacts/$PRIVACY_ARTIFACT" \
+            "artifacts/$PRIVACY_ARTIFACT.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "@bke/privacy v${version}" \
+            --notes "Certified BKE Privacy package artifact. Privacy-request type, lifecycle, response, event/audit mutation intent, host-independence, and package portability gates passed before release creation."
