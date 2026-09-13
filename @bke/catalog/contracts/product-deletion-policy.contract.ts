@@ -68,3 +68,19 @@ export type CatalogProductDeletionDecisionErrorCode =
   | "PRODUCT_DELETION_NOT_READY"
   | "STORAGE_CLEANUP_PENDING"
   | "STORAGE_CLEANUP_FAILED";
+
+export type CatalogProductDeletionRequestPlan = Readonly<{
+  eligibility: CatalogProductDeletionEligibility;
+  productUpdate: Readonly<{
+    deletionRequestedAt: Date;
+    active: false;
+  }>;
+  queueStorageCleanup: true;
+  auditAction: "PRODUCT_DELETION_REQUESTED";
+}>;
+
+export type CatalogProductDeletionFinalizationPlan = Readonly<{
+  eligibility: CatalogProductDeletionEligibility;
+  deleteCatalogResources: true;
+  auditAction: "PRODUCT_DELETION_FINALIZED";
+}>;
