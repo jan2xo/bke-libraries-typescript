@@ -2,6 +2,7 @@ import type {
   CommerceEditionPlanInput,
   CommerceEditionPlanRepository,
   CommerceEditionPlanSelection,
+  CommerceNormalizedEditionPlanInput,
 } from "../contracts/edition-plan-management.contract";
 
 const MIN_AMOUNT_MINOR = 100;
@@ -22,7 +23,7 @@ function optionalTrimmed(value: string | undefined, max: number, reason: string)
   if (value === undefined) return undefined;
   const normalized = value.trim();
   if (normalized.length > max) fail(reason);
-  return normalized || undefined;
+  return normalized;
 }
 
 function assertIntegerInRange(value: number, min: number, max: number, reason: string): void {
@@ -48,24 +49,29 @@ export function validateCommerceEditionPlanSelection(input: CommerceEditionPlanS
   if (!input.perpetual.enabled && !input.monthly.enabled) fail("PURCHASE_PLAN_REQUIRED");
 }
 
-export function normalizeCommerceEditionPlanInput(input: CommerceEditionPlanInput): CommerceEditionPlanInput {
+export function normalizeCommerceEditionPlanInput(input: CommerceEditionPlanInput): CommerceNormalizedEditionPlanInput {
   const name = requiredTrimmed(input.name, 2, 100, "NAME");
   const slug = requiredTrimmed(input.slug, 1, 80, "SLUG");
   if (!/^[a-z0-9-]+$/.test(slug)) fail("SLUG");
   const description = optionalTrimmed(input.description, 2_000, "DESCRIPTION");
-  if (input.features.length > 100) fail("FEATURE_COUNT");
-  const features = input.features.map((feature) => requiredTrimmed(feature, 1, 120, "FEATURE"));
+  const inputFeatures = input.features ?? [];
+  if (inputFeatures.length > 100) fail("FEATURE_COUNT");
+  const features = inputFeatures.map((feature) => requiredTrimmed(feature, 1, 120, "FEATURE"));
   assertIntegerInRange(input.maxUsers, 1, 10_000, "MAX_USERS");
   assertIntegerInRange(input.maxDevicesPerUser, 1, 100, "MAX_DEVICES_PER_USER");
   if (!["LIFETIME", "ACTIVE_TERM", "MAJOR_VERSION"].includes(input.updatePolicy)) fail("UPDATE_POLICY");
   validateCommerceEditionPlanSelection(input.plans);
 
   return {
-    ...input,
     name,
     slug,
     description,
     features,
+    maxUsers: input.maxUsers,
+    maxDevicesPerUser: input.maxDevicesPerUser,
+    updatePolicy: input.updatePolicy,
+    active: input.active ?? true,
+    plans: input.plans,
   };
 }
 
@@ -79,7 +85,8 @@ export async function synchronizeCommerceEditionPlans(
   const perpetual = await repository.upsertPurchasePlan({
     editionId,
     type: "PERPETUAL",
-    amountMinor: input.perpetual.amountMinor ?? MIN_AMOUNT_MINOR,
+    createAmountMinor: input.perpetual.amountMinor ?? MIN_AMOUNT_MINOR,
+    ...(input.perpetual.amountMinor === undefined ? {} : { updateAmountMinor: input.perpetual.amountMinor }),
     annualDiscountBps: null,
     monthlySourcePlanId: null,
     renewalBehavior: "NONE",
@@ -89,7 +96,8 @@ export async function synchronizeCommerceEditionPlans(
   const monthly = await repository.upsertPurchasePlan({
     editionId,
     type: "MONTHLY",
-    amountMinor: input.monthly.amountMinor ?? MIN_AMOUNT_MINOR,
+    createAmountMinor: input.monthly.amountMinor ?? MIN_AMOUNT_MINOR,
+    ...(input.monthly.amountMinor === undefined ? {} : { updateAmountMinor: input.monthly.amountMinor }),
     annualDiscountBps: null,
     monthlySourcePlanId: null,
     renewalBehavior: "CUSTOMER_AUTHORIZED",
@@ -99,7 +107,8 @@ export async function synchronizeCommerceEditionPlans(
   const annual = await repository.upsertPurchasePlan({
     editionId,
     type: "ANNUAL",
-    amountMinor: null,
+    createAmountMinor: null,
+    updateAmountMinor: null,
     annualDiscountBps: input.annual.discountBps ?? 0,
     monthlySourcePlanId: monthly.id,
     renewalBehavior: "CUSTOMER_AUTHORIZED",
