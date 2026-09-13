@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { privacyModuleManifest } from "../module.manifest";
+import { PRIVACY_CUSTOMER_MINIMIZATION_CAPABILITY_ID } from "../contracts/customer-minimization.contract";
 import { PRIVACY_REQUEST_POLICY_CAPABILITY_ID } from "../contracts/privacy-request-policy.contract";
 import {
   normalizePrivacyRequestNetworkSnapshot,
@@ -9,11 +10,14 @@ import {
 } from "../logic/privacy-request-policy";
 
 describe("privacy request policy", () => {
-  it("advertises a host-independent request policy capability", () => {
+  it("advertises host-independent request and minimization capabilities", () => {
     expect(privacyModuleManifest).toEqual({
       moduleId: "privacy",
       needs: [],
-      provides: [PRIVACY_REQUEST_POLICY_CAPABILITY_ID],
+      provides: [
+        PRIVACY_REQUEST_POLICY_CAPABILITY_ID,
+        PRIVACY_CUSTOMER_MINIMIZATION_CAPABILITY_ID,
+      ],
     });
   });
 
