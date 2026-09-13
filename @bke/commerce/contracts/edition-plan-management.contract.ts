@@ -3,6 +3,23 @@ export const COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID = "commerce.edition-
 export type CommerceUpdatePolicy = "LIFETIME" | "ACTIVE_TERM" | "MAJOR_VERSION";
 export type CommerceRenewalBehavior = "NONE" | "CUSTOMER_AUTHORIZED";
 export type CommercePurchasePlanKind = "PERPETUAL" | "MONTHLY" | "ANNUAL";
+export type CommerceEditionPlanValidationReason =
+  | "NAME"
+  | "SLUG"
+  | "DESCRIPTION"
+  | "FEATURE_COUNT"
+  | "FEATURE"
+  | "MAX_USERS"
+  | "MAX_DEVICES_PER_USER"
+  | "UPDATE_POLICY"
+  | "PERPETUAL_AMOUNT"
+  | "MONTHLY_AMOUNT"
+  | "PERPETUAL_PRICE_REQUIRED"
+  | "MONTHLY_PRICE_REQUIRED"
+  | "ANNUAL_REQUIRES_MONTHLY"
+  | "ANNUAL_DISCOUNT_REQUIRED"
+  | "ANNUAL_DISCOUNT"
+  | "PURCHASE_PLAN_REQUIRED";
 
 export type CommerceEditionPlanSelection = Readonly<{
   perpetual: Readonly<{ enabled: boolean; amountMinor?: number }>;
