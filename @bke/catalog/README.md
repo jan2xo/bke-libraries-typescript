@@ -10,6 +10,6 @@ Catalog answers **what the product or edition is** and owns Catalog-specific lif
 
 Consumers remain responsible for gathering dependency/resource facts, executing Prisma transactions, creating and processing storage-cleanup jobs, redaction, deleting persisted Catalog resources after authorization, and persisting audit records. Those are execution mechanics; the consumer must not re-invent the Catalog deletion decisions.
 
-The cumulative deletion-lifecycle child stages `@bke/catalog 0.6.0` on top of the certified 0.5.0 deletion-policy parent.
+`@bke/catalog` 0.6.0 is the first release candidate where the full product-deletion request/finalization WHY boundary is package-owned; consumers retain only execution mechanics.
 
 Standard v0.1.0 kinds: `SOFTWARE`, `SAAS`, `HYBRID`, `SCRIPT`, `DIGITAL_ASSET`.
