@@ -4,6 +4,8 @@ import {
   authorizeCatalogProductDeletionFinalization,
   authorizeCatalogProductDeletionRequest,
   evaluateCatalogProductDeletionEligibility,
+  planCatalogProductDeletionFinalization,
+  planCatalogProductDeletionRequest,
 } from "../logic/product-deletion-policy";
 
 const emptyDependencies = {
@@ -79,6 +81,28 @@ describe("catalog product deletion policy", () => {
     expect(authorizeCatalogProductDeletionRequest({ snapshot: snapshot(), confirmationName: "Air Stack" }).canDelete).toBe(true);
   });
 
+  it("owns request lifecycle intent and preserves the first deletion-request timestamp", () => {
+    const now = new Date("2026-09-13T00:00:00.000Z");
+    expect(planCatalogProductDeletionRequest({
+      snapshot: snapshot(),
+      confirmationName: "Air Stack",
+      existingDeletionRequestedAt: null,
+      now,
+    })).toMatchObject({
+      productUpdate: { deletionRequestedAt: now, active: false },
+      queueStorageCleanup: true,
+      auditAction: "PRODUCT_DELETION_REQUESTED",
+    });
+
+    const firstRequestedAt = new Date("2026-09-12T00:00:00.000Z");
+    expect(planCatalogProductDeletionRequest({
+      snapshot: snapshot({ deletionRequested: true }),
+      confirmationName: "Air Stack",
+      existingDeletionRequestedAt: firstRequestedAt,
+      now,
+    }).productUpdate.deletionRequestedAt).toEqual(firstRequestedAt);
+  });
+
   it("requires a prior deletion request before finalization", () => {
     expect(() => authorizeCatalogProductDeletionFinalization({ snapshot: snapshot(), cleanupStatuses: [] }))
       .toThrow("PRODUCT_DELETION_NOT_READY");
@@ -102,5 +126,16 @@ describe("catalog product deletion policy", () => {
       snapshot: snapshot({ deletionRequested: true }),
       cleanupStatuses: ["SUCCEEDED", "SUCCEEDED"],
     }).reason).toBe("ELIGIBLE");
+  });
+
+  it("owns finalization intent after cleanup authorization", () => {
+    expect(planCatalogProductDeletionFinalization({
+      snapshot: snapshot({ deletionRequested: true }),
+      cleanupStatuses: ["SUCCEEDED"],
+    })).toMatchObject({
+      deleteCatalogResources: true,
+      auditAction: "PRODUCT_DELETION_FINALIZED",
+      eligibility: { canDelete: true, reason: "ELIGIBLE" },
+    });
   });
 });
