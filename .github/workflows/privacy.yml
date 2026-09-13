@@ -68,6 +68,8 @@ jobs:
             package/module.manifest.ts \
             package/contracts/privacy-request-policy.contract.ts \
             package/logic/privacy-request-policy.ts \
+            package/contracts/customer-minimization.contract.ts \
+            package/logic/customer-minimization.ts \
             package/README.md; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
@@ -110,15 +112,22 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import { PRIVACY_REQUEST_POLICY_CAPABILITY_ID } from "@bke/privacy/contracts/privacy-request-policy.contract";
+          import { PRIVACY_CUSTOMER_MINIMIZATION_CAPABILITY_ID } from "@bke/privacy/contracts/customer-minimization.contract";
           import { normalizePrivacyRequestType, planPrivacyRequestCreation, planPrivacyRequestTransition } from "@bke/privacy/logic/privacy-request-policy";
+          import { planPrivacyCustomerMinimization } from "@bke/privacy/logic/customer-minimization";
           import { privacyModuleManifest } from "@bke/privacy/module.manifest";
           if (PRIVACY_REQUEST_POLICY_CAPABILITY_ID !== "privacy.request-policy.v1") throw new Error("Privacy capability identity mismatch.");
+          if (PRIVACY_CUSTOMER_MINIMIZATION_CAPABILITY_ID !== "bke.privacy.customer-minimization.v1") throw new Error("Privacy minimization capability identity mismatch.");
           if (privacyModuleManifest.moduleId !== "privacy" || privacyModuleManifest.needs.length !== 0 || !privacyModuleManifest.provides.includes(PRIVACY_REQUEST_POLICY_CAPABILITY_ID)) throw new Error("Privacy manifest mismatch.");
           if (normalizePrivacyRequestType("DELETION") !== "DELETION") throw new Error("Privacy request normalization failed.");
           const creation = planPrivacyRequestCreation({ userId: "user", requestType: "ACCESS", summary: "Access request", network: { ipAddress: "127.0.0.1", userAgent: "smoke" } });
           if (creation.request.status !== "OPEN" || creation.audit.action !== "PRIVACY_REQUEST_CREATED") throw new Error("Privacy creation plan failed.");
           const transition = planPrivacyRequestTransition({ actorId: "admin", currentStatus: "OPEN", targetStatus: "IN_REVIEW", responseSummary: "Review started" });
           if (transition.update.shouldClose) throw new Error("Privacy transition plan failed.");
+          const minimization = planPrivacyCustomerMinimization({ userId: "user", email: " Person@Example.COM ", now: new Date("2026-09-13T00:00:00Z") });
+          if (minimization.pseudonymousEmail !== "removed+user@privacy.invalid") throw new Error("Privacy minimization pseudonym mismatch.");
+          if (minimization.normalizedEmailHashSource !== "person@example.com") throw new Error("Privacy minimization hash-source mismatch.");
+          if (minimization.emailOutboxUpdate.payload.reason !== "PRIVACY_MINIMIZATION") throw new Error("Privacy minimization outbox intent mismatch.");
           console.log("Packed @bke/privacy consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
@@ -158,4 +167,4 @@ jobs:
             "artifacts/$PRIVACY_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/privacy v${version}" \
-            --notes "Certified BKE Privacy package artifact. Privacy-request type, lifecycle, response, event/audit mutation intent, host-independence, and package portability gates passed before release creation."
+            --notes "Certified BKE Privacy package artifact. Privacy-request lifecycle and customer-minimization policy, host-independence, and package portability gates passed before release creation."
