@@ -14,6 +14,18 @@ export type CommerceEditionPlanInput = Readonly<{
   name: string;
   slug: string;
   description?: string;
+  features?: readonly string[];
+  maxUsers: number;
+  maxDevicesPerUser: number;
+  updatePolicy: CommerceUpdatePolicy;
+  active?: boolean;
+  plans: CommerceEditionPlanSelection;
+}>;
+
+export type CommerceNormalizedEditionPlanInput = Readonly<{
+  name: string;
+  slug: string;
+  description?: string;
   features: readonly string[];
   maxUsers: number;
   maxDevicesPerUser: number;
@@ -40,7 +52,8 @@ export type CommerceEditionPlanRepository = Readonly<{
   upsertPurchasePlan(input: Readonly<{
     editionId: string;
     type: CommercePurchasePlanKind;
-    amountMinor: number | null;
+    createAmountMinor: number | null;
+    updateAmountMinor?: number | null;
     annualDiscountBps: number | null;
     monthlySourcePlanId: string | null;
     renewalBehavior: CommerceRenewalBehavior;
