@@ -1,6 +1,8 @@
 import type {
   CatalogProductDeletionDecisionErrorCode,
   CatalogProductDeletionEligibility,
+  CatalogProductDeletionFinalizationPlan,
+  CatalogProductDeletionRequestPlan,
   CatalogProductDeletionSnapshot,
   CatalogStorageCleanupStatus,
 } from "../contracts/product-deletion-policy.contract";
@@ -65,6 +67,28 @@ export function authorizeCatalogProductDeletionRequest(input: Readonly<{
   return eligibility;
 }
 
+export function planCatalogProductDeletionRequest(input: Readonly<{
+  snapshot: CatalogProductDeletionSnapshot;
+  confirmationName: string;
+  existingDeletionRequestedAt: Date | null;
+  now: Date;
+}>): CatalogProductDeletionRequestPlan {
+  const eligibility = authorizeCatalogProductDeletionRequest({
+    snapshot: input.snapshot,
+    confirmationName: input.confirmationName,
+  });
+  const deletionRequestedAt = input.existingDeletionRequestedAt ?? input.now;
+  return {
+    eligibility,
+    productUpdate: {
+      deletionRequestedAt,
+      active: false,
+    },
+    queueStorageCleanup: true,
+    auditAction: "PRODUCT_DELETION_REQUESTED",
+  };
+}
+
 export function authorizeCatalogProductDeletionFinalization(input: Readonly<{
   snapshot: CatalogProductDeletionSnapshot;
   cleanupStatuses: readonly CatalogStorageCleanupStatus[];
@@ -87,4 +111,16 @@ export function authorizeCatalogProductDeletionFinalization(input: Readonly<{
     throw new CatalogProductDeletionDecisionError("PRODUCT_DELETE_BLOCKED", eligibility);
   }
   return eligibility;
+}
+
+export function planCatalogProductDeletionFinalization(input: Readonly<{
+  snapshot: CatalogProductDeletionSnapshot;
+  cleanupStatuses: readonly CatalogStorageCleanupStatus[];
+}>): CatalogProductDeletionFinalizationPlan {
+  const eligibility = authorizeCatalogProductDeletionFinalization(input);
+  return {
+    eligibility,
+    deleteCatalogResources: true,
+    auditAction: "PRODUCT_DELETION_FINALIZED",
+  };
 }
