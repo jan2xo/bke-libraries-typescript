@@ -13,8 +13,7 @@ export function planPrivacyCustomerMinimization(
   }
 
   const pseudonymousEmail = `removed+${userId}@privacy.invalid`;
-
-  return Object.freeze({
+  const plan: PrivacyCustomerMinimizationPlan = {
     pseudonymousEmail,
     normalizedEmailHashSource,
     emailOutboxUpdate: {
@@ -41,5 +40,7 @@ export function planPrivacyCustomerMinimization(
       targetType: "User",
       metadata: { preservedHistory: true, emailHashRetained: true },
     },
-  });
+  };
+
+  return Object.freeze(plan);
 }
