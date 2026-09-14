@@ -37,11 +37,13 @@ jobs:
           set -euo pipefail
           rm -rf artifacts
           mkdir -p artifacts
+          version="$(node -p "require('./@bke/payments/package.json').version")"
           artifact="$(npm pack --workspace=@bke/payments --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-payments-0.5.0.tgz"
+          test "$artifact" = "bke-payments-${version}.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "PAYMENTS_VERSION=$version" >> "$GITHUB_ENV"
           echo "PAYMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
       - name: Certify package contents
         shell: bash
@@ -52,11 +54,13 @@ jobs:
             package/package.json \
             package/module.manifest.ts \
             package/contracts/checkout-attempt.contract.ts \
+            package/contracts/commercial-event-match.contract.ts \
             package/contracts/provider-event-ingestion.contract.ts \
             package/contracts/settlement-fact.contract.ts \
             package/contracts/refund-initiation.contract.ts \
             package/contracts/reconciliation.contract.ts \
             package/logic/checkout-attempt.ts \
+            package/logic/commercial-event-match.ts \
             package/logic/provider-event-ingestion.ts \
             package/logic/settlement-fact.ts \
             package/logic/refund-initiation.ts \
@@ -118,11 +122,13 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import { PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID } from "@bke/payments/contracts/checkout-attempt.contract";
+          import { PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID } from "@bke/payments/contracts/commercial-event-match.contract";
           import { PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID } from "@bke/payments/contracts/provider-event-ingestion.contract";
           import { PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID } from "@bke/payments/contracts/settlement-fact.contract";
           import { PAYMENTS_REFUND_INITIATION_CAPABILITY_ID } from "@bke/payments/contracts/refund-initiation.contract";
           import { PAYMENTS_RECONCILIATION_CAPABILITY_ID, type PaymentsReconciliationCapability } from "@bke/payments/contracts/reconciliation.contract";
           import { createPaymentsCheckoutAttemptCapability } from "@bke/payments/logic/checkout-attempt";
+          import { createPaymentsCommercialEventMatchCapability } from "@bke/payments/logic/commercial-event-match";
           import { createPaymentsProviderEventIngestionCapability } from "@bke/payments/logic/provider-event-ingestion";
           import { createPaymentsSettlementFactCapability } from "@bke/payments/logic/settlement-fact";
           import { createPaymentsRefundInitiationCapability } from "@bke/payments/logic/refund-initiation";
@@ -132,18 +138,68 @@ jobs:
           import { createPostgresPaymentsCheckoutAttemptRepository } from "@bke/payments/prisma/repositories/postgres-checkout-attempt-repository";
           import { createPostgresPaymentsReconciliationRepository } from "@bke/payments/prisma/repositories/postgres-reconciliation-repository";
           import { paymentsModuleManifest } from "@bke/payments/module.manifest";
-          const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID, PAYMENTS_RECONCILIATION_CAPABILITY_ID];
-          if (ids.length !== 5 || paymentsModuleManifest.moduleId !== "payments") throw new Error("Unexpected Payments package identity.");
+
+          const ids = [
+            PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID,
+            PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID,
+            PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID,
+            PAYMENTS_REFUND_INITIATION_CAPABILITY_ID,
+            PAYMENTS_RECONCILIATION_CAPABILITY_ID,
+            PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID,
+          ];
+          if (
+            ids.length !== 6 ||
+            paymentsModuleManifest.moduleId !== "payments" ||
+            paymentsModuleManifest.needs.length !== 0 ||
+            paymentsModuleManifest.provides.length !== 6 ||
+            !paymentsModuleManifest.provides.includes(PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID)
+          ) throw new Error("Unexpected Payments package identity.");
+
           const read: PaymentsReconciliationCapability["listRecent"] | undefined = undefined;
           void read;
           if (paymentErrorCodes.length !== 16 || paymentErrorCodes[0] !== "PAYMENT_SIGNATURE_INVALID" || paymentErrorCodes[15] !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments error taxonomy drifted.");
           const lifecycleError = new PaymentLifecycleError("PAYMENT_PROCESSING_RETRYABLE", true);
           if (safePaymentError(lifecycleError) !== "PAYMENT_PROCESSING_RETRYABLE" || !lifecycleError.retryable) throw new Error("Packed Payments lifecycle error behavior drifted.");
           if (safePaymentError(new Error("opaque")) !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments safe error fallback drifted.");
-          for (const value of [createPaymentsCheckoutAttemptCapability, createPaymentsProviderEventIngestionCapability, createPaymentsSettlementFactCapability, createPaymentsRefundInitiationCapability, createPaymentsReconciliationCapability, createPayMongoPaymentsAdapter, createPostgresPaymentsCheckoutAttemptRepository, createPostgresPaymentsReconciliationRepository]) {
+
+          for (const value of [
+            createPaymentsCheckoutAttemptCapability,
+            createPaymentsCommercialEventMatchCapability,
+            createPaymentsProviderEventIngestionCapability,
+            createPaymentsSettlementFactCapability,
+            createPaymentsRefundInitiationCapability,
+            createPaymentsReconciliationCapability,
+            createPayMongoPaymentsAdapter,
+            createPostgresPaymentsCheckoutAttemptRepository,
+            createPostgresPaymentsReconciliationRepository,
+          ]) {
             if (typeof value !== "function") throw new Error("Packed Payments consumer exports are incomplete.");
           }
-          console.log("Packed @bke/payments consumer smoke GREEN");
+
+          const order = { orderId: "order-1", commercialReference: "BKE-1001", amountMinor: 300000, currency: "PHP" } as const;
+          const match = createPaymentsCommercialEventMatchCapability().match({
+            event: { type: "payment.failed", externalCheckoutId: "checkout-1", externalPaymentId: "payment-1", reference: "BKE-1001", amountMinor: 300000, currency: "PHP" },
+            attemptOrder: order,
+            referenceOrder: order,
+            knownPaymentOrder: null,
+          });
+          if (match.status !== "MATCHED" || match.order.orderId !== "order-1" || match.matchedBy !== "CHECKOUT") throw new Error("Packed Payments commercial event matching failed.");
+          const mismatch = createPaymentsCommercialEventMatchCapability().match({
+            event: { type: "payment.failed", externalCheckoutId: "checkout-1", externalPaymentId: "payment-1", reference: "BKE-1001", amountMinor: 1, currency: "PHP" },
+            attemptOrder: order,
+            referenceOrder: order,
+            knownPaymentOrder: null,
+          });
+          if (mismatch.status !== "REJECTED" || mismatch.code !== "PAYMENT_AMOUNT_MISMATCH") throw new Error("Packed Payments commercial mismatch policy failed.");
+          const missingPaidIdentity = createPaymentsCommercialEventMatchCapability().match({
+            event: { type: "payment.paid", externalCheckoutId: "checkout-1", externalPaymentId: null, reference: "BKE-1001", amountMinor: 300000, currency: "PHP" },
+            attemptOrder: order,
+            referenceOrder: order,
+            knownPaymentOrder: null,
+          });
+          if (missingPaidIdentity.status !== "REJECTED" || missingPaidIdentity.code !== "PAYMENT_REFERENCE_MISMATCH") throw new Error("Packed Payments paid payment-id parity failed.");
+
+          console.log("Packed @bke/payments 0.6.0 commercial-event-match consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -151,10 +207,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-payments-0.5.0
+          name: bke-payments-${{ env.PAYMENTS_VERSION }}
           path: |
-            artifacts/bke-payments-0.5.0.tgz
-            artifacts/bke-payments-0.5.0.tgz.sha256
+            artifacts/${{ env.PAYMENTS_ARTIFACT }}
+            artifacts/${{ env.PAYMENTS_ARTIFACT }}.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Payments release
@@ -182,4 +238,4 @@ jobs:
             "artifacts/$PAYMENTS_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/payments v${version}" \
-            --notes "Certified BKE Payments package artifact. Generic checkout/event/settlement/refund/reconciliation capabilities, lifecycle error taxonomy, and PayMongo adapter passed source, persistence, behavior, and package gates before release creation."
+            --notes "Certified BKE Payments package artifact. Generic checkout/event/commercial-match/settlement/refund/reconciliation capabilities, lifecycle error taxonomy, and PayMongo adapter passed source, persistence, behavior, and package gates before release creation."
