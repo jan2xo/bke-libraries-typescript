@@ -57,6 +57,7 @@ jobs:
           grep -Fx 'package/contracts/transfer-policy.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/signing-key-registry.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/grace-period.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/entitlement-management.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-license-lookup-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-transfer-policy-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-signing-key-registry-repository.ts' artifacts/package-contents.txt
@@ -67,6 +68,7 @@ jobs:
           grep -Fx 'package/logic/commercial-signing-registry.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/grace-period.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/grace-period-ports.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/entitlement-management.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/lease-lifecycle.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/product-identity.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/refresh-decision.ts' artifacts/package-contents.txt
@@ -126,6 +128,7 @@ jobs:
             LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID,
             commercialLeaseActions,
           } from "@bke/licensing/contracts/commercial-lease.contract";
+          import { LICENSING_ENTITLEMENT_MANAGEMENT_CAPABILITY_ID } from "@bke/licensing/contracts/entitlement-management.contract";
           import { LICENSING_GRACE_PERIOD_CAPABILITY_ID } from "@bke/licensing/contracts/grace-period.contract";
           import type { LicensingLicenseLookup } from "@bke/licensing/contracts/license-lookup.contract";
           import { createPostgresLicensingLicenseLookupRepository } from "@bke/licensing/prisma/repositories/postgres-license-lookup-repository";
@@ -135,6 +138,7 @@ jobs:
           import { createPostgresLicensingSigningKeyRegistryCapability } from "@bke/licensing/prisma/repositories/postgres-signing-key-registry-repository";
           import { LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID } from "@bke/licensing/contracts/license-key-reveal.contract";
           import { createCommercialLeaseCapability } from "@bke/licensing/logic/commercial-lease";
+          import { createLicensingEntitlementManagementCapability, licensingInitialExpiration, licensingRenewalExpiration } from "@bke/licensing/logic/entitlement-management";
           import { createLicensingGracePeriodCapability, parseLicensingGraceBoolean, parseLicensingGraceProduct } from "@bke/licensing/logic/grace-period";
           import { createLicensingLicenseKeyRevealCapability } from "@bke/licensing/logic/license-key-reveal";
           import { selectActiveCommercialSigningKey } from "@bke/licensing/logic/commercial-signing-registry";
@@ -155,14 +159,19 @@ jobs:
           if (LICENSING_TRANSFER_POLICY_CAPABILITY_ID !== "bke.licensing.transfer-policy.v1") throw new Error("Unexpected transfer policy capability id.");
           if (LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID !== "bke.licensing.signing-key-registry.v1") throw new Error("Unexpected signing-key registry capability id.");
           if (LICENSING_GRACE_PERIOD_CAPABILITY_ID !== "bke.licensing.grace-period.v1") throw new Error("Unexpected grace-period capability id.");
+          if (LICENSING_ENTITLEMENT_MANAGEMENT_CAPABILITY_ID !== "bke.licensing.entitlement-management.v1") throw new Error("Unexpected entitlement-management capability id.");
           if (licensingModuleManifest.moduleId !== "bke.licensing") throw new Error("Unexpected Licensing module id.");
           if (!licensingModuleManifest.provides.includes(LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID)) throw new Error("Commercial lease capability missing from manifest.");
           if (!licensingModuleManifest.provides.includes(LICENSING_TRANSFER_POLICY_CAPABILITY_ID)) throw new Error("Transfer policy capability missing from manifest.");
           if (!licensingModuleManifest.provides.includes(LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID)) throw new Error("Signing-key registry capability missing from manifest.");
           if (!licensingModuleManifest.provides.includes(LICENSING_GRACE_PERIOD_CAPABILITY_ID)) throw new Error("Grace-period capability missing from manifest.");
+          if (!licensingModuleManifest.provides.includes(LICENSING_ENTITLEMENT_MANAGEMENT_CAPABILITY_ID)) throw new Error("Entitlement-management capability missing from manifest.");
           if (commercialLeaseActions.join(",") !== "ACTIVATION,REFRESH,RENEWAL,TRANSFER,REPLACEMENT,REVOCATION_REPLACEMENT,KEY_ROTATION") throw new Error("Commercial lease action surface drifted.");
           if (
             typeof createCommercialLeaseCapability !== "function" ||
+            typeof createLicensingEntitlementManagementCapability !== "function" ||
+            typeof licensingInitialExpiration !== "function" ||
+            typeof licensingRenewalExpiration !== "function" ||
             typeof createLicensingGracePeriodCapability !== "function" ||
             typeof parseLicensingGraceBoolean !== "function" ||
             typeof parseLicensingGraceProduct !== "function" ||
@@ -194,7 +203,15 @@ jobs:
           if (isVersionAccepted("2.0.1", null, "2.0.0")) throw new Error("Packed version policy exclusion failed.");
           if (validateAcceptedVersionRange("v1.2.3", null).minimum !== "1.2.3") throw new Error("Packed version policy normalization failed.");
           if (parseLicensingGraceProduct("airstack") !== "airstack" || parseLicensingGraceBoolean("true") !== true) throw new Error("Packed grace-period parser parity failed.");
-          console.log("Packed @bke/licensing commercial lease, lookup, version, transfer policy, signing-key registry and grace-period consumer smoke GREEN");
+          const expiration = licensingInitialExpiration(new Date("2026-09-12T00:00:00Z"), 30);
+          if (expiration?.toISOString() !== "2026-10-12T00:00:00.000Z") throw new Error("Packed entitlement initial-expiration parity failed.");
+          if (licensingRenewalExpiration(null, new Date("2026-09-12T00:00:00Z"), 1000).toISOString() !== "2026-09-12T00:00:01.000Z") throw new Error("Packed entitlement renewal-expiration parity failed.");
+          const entitlement = createLicensingEntitlementManagementCapability({
+            issue: async () => ({ id: "license-1", publicId: "public-1", subscriptionId: null, status: "ACTIVE", expiresAt: expiration }),
+            renewSubscription: async () => ({ licenses: [], renewalOperations: [] }),
+          });
+          if (typeof entitlement.issue !== "function" || typeof entitlement.renewSubscription !== "function") throw new Error("Packed entitlement-management capability missing.");
+          console.log("Packed @bke/licensing 0.9.0 entitlement-management and existing consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -230,4 +247,4 @@ jobs:
             "artifacts/$LICENSING_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/licensing v${version}" \
-            --notes "Certified BKE Licensing package artifact. Source, persistence, commercial lease behavior, grace-period behavior, and packed-consumer gates passed before release creation."
+            --notes "Certified BKE Licensing package artifact. Source, persistence, commercial lease behavior, entitlement-management behavior, grace-period behavior, and packed-consumer gates passed before release creation."
