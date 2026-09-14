@@ -1,5 +1,7 @@
 import { ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID } from "./contracts/account-access.contract";
 import { ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID } from "./contracts/account-lifecycle.contract";
+import { ACCOUNTS_CUSTOMER_LIFECYCLE_TRANSITION_POLICY_CAPABILITY_ID } from "./contracts/customer-lifecycle-transition-policy.contract";
+import { ACCOUNTS_CUSTOMER_RETENTION_POLICY_CAPABILITY_ID } from "./contracts/customer-retention-policy.contract";
 import { ACCOUNTS_INDIVIDUAL_ACCOUNT_CREATION_CAPABILITY_ID } from "./contracts/individual-account-creation.contract";
 import { ACCOUNTS_INVITATION_ACCEPTANCE_CAPABILITY_ID } from "./contracts/invitation-acceptance.contract";
 import { ACCOUNTS_INVITATION_EXPIRATION_CAPABILITY_ID } from "./contracts/invitation-expiration.contract";
@@ -26,6 +28,8 @@ export const accountsModuleManifest = Object.freeze({
     ACCOUNTS_INDIVIDUAL_ACCOUNT_CREATION_CAPABILITY_ID,
     ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID,
     ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID,
+    ACCOUNTS_CUSTOMER_RETENTION_POLICY_CAPABILITY_ID,
+    ACCOUNTS_CUSTOMER_LIFECYCLE_TRANSITION_POLICY_CAPABILITY_ID,
     ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID,
     ACCOUNTS_SWITCHABLE_ACCOUNT_LIST_CAPABILITY_ID,
     ACCOUNTS_ORGANIZATION_ACCOUNT_CREATION_CAPABILITY_ID,
