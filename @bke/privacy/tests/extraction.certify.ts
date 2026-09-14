@@ -28,6 +28,9 @@ for (const file of files) {
 assert.deepEqual(privacyModuleManifest, {
   moduleId: "privacy",
   needs: [],
-  provides: ["privacy.request-policy.v1"],
+  provides: [
+    "privacy.request-policy.v1",
+    "bke.privacy.customer-minimization.v1",
+  ],
 });
 console.log(`@bke/privacy extraction GREEN: files=${files.length}`);
