@@ -40,7 +40,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/accounts --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-accounts-0.3.0.tgz"
+          test "$artifact" = "bke-accounts-0.4.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "ACCOUNTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -55,9 +55,13 @@ jobs:
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/account-access.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/account-lifecycle.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/customer-lifecycle-transition-policy.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/customer-retention-policy.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/purchase-access.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/account-access.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/account-lifecycle.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/customer-lifecycle-transition-policy.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/customer-retention-policy.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/purchase-access.ts' artifacts/package-contents.txt
           grep -Fx 'package/providers/crypto-accounts-id-provider.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
@@ -109,9 +113,13 @@ jobs:
           cat > .package-smoke/smoke.ts <<'TS'
           import { ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID } from "@bke/accounts/contracts/account-access.contract";
           import { ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID } from "@bke/accounts/contracts/account-lifecycle.contract";
+          import { ACCOUNTS_CUSTOMER_LIFECYCLE_TRANSITION_POLICY_CAPABILITY_ID } from "@bke/accounts/contracts/customer-lifecycle-transition-policy.contract";
+          import { ACCOUNTS_CUSTOMER_RETENTION_POLICY_CAPABILITY_ID } from "@bke/accounts/contracts/customer-retention-policy.contract";
           import { ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID } from "@bke/accounts/contracts/purchase-access.contract";
           import { createAccountsAccountAccessCapability } from "@bke/accounts/logic/account-access";
           import { createAccountsAccountLifecycleCapability } from "@bke/accounts/logic/account-lifecycle";
+          import { createAccountsCustomerLifecycleTransitionPolicyCapability } from "@bke/accounts/logic/customer-lifecycle-transition-policy";
+          import { createAccountsCustomerRetentionPolicyCapability } from "@bke/accounts/logic/customer-retention-policy";
           import { createAccountsPurchaseAccessCapability } from "@bke/accounts/logic/purchase-access";
           import { createCryptoAccountsIdProvider } from "@bke/accounts/providers/crypto-accounts-id-provider";
           import { createPostgresAccountsAccountAccessRepository } from "@bke/accounts/prisma/repositories/postgres-account-access-repository";
@@ -120,13 +128,19 @@ jobs:
 
           if (ACCOUNTS_ACCOUNT_ACCESS_CAPABILITY_ID !== "bke.accounts.account-access.v1") throw new Error("Unexpected Accounts account-access capability id from packed consumer surface.");
           if (ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID !== "bke.accounts.account-lifecycle.v1") throw new Error("Unexpected Accounts account-lifecycle capability id from packed consumer surface.");
+          if (ACCOUNTS_CUSTOMER_LIFECYCLE_TRANSITION_POLICY_CAPABILITY_ID !== "bke.accounts.customer-lifecycle-transition-policy.v1") throw new Error("Unexpected Accounts customer lifecycle transition policy capability id from packed consumer surface.");
+          if (ACCOUNTS_CUSTOMER_RETENTION_POLICY_CAPABILITY_ID !== "bke.accounts.customer-retention-policy.v1") throw new Error("Unexpected Accounts customer retention policy capability id from packed consumer surface.");
           if (ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID !== "bke.accounts.purchase-access.v1") throw new Error("Unexpected Accounts purchase-access capability id from packed consumer surface.");
           if (accountsModuleManifest.moduleId !== "accounts") throw new Error("Unexpected Accounts manifest moduleId from packed consumer surface.");
           if (!accountsModuleManifest.provides.includes(ACCOUNTS_ACCOUNT_LIFECYCLE_CAPABILITY_ID)) throw new Error("Accounts manifest does not publish account lifecycle facts.");
+          if (!accountsModuleManifest.provides.includes(ACCOUNTS_CUSTOMER_LIFECYCLE_TRANSITION_POLICY_CAPABILITY_ID)) throw new Error("Accounts manifest does not publish customer lifecycle transition policy.");
+          if (!accountsModuleManifest.provides.includes(ACCOUNTS_CUSTOMER_RETENTION_POLICY_CAPABILITY_ID)) throw new Error("Accounts manifest does not publish customer retention policy.");
           if (!accountsModuleManifest.provides.includes(ACCOUNTS_PURCHASE_ACCESS_CAPABILITY_ID)) throw new Error("Accounts manifest does not publish purchase access.");
           if (
             typeof createAccountsAccountAccessCapability !== "function" ||
             typeof createAccountsAccountLifecycleCapability !== "function" ||
+            typeof createAccountsCustomerLifecycleTransitionPolicyCapability !== "function" ||
+            typeof createAccountsCustomerRetentionPolicyCapability !== "function" ||
             typeof createAccountsPurchaseAccessCapability !== "function" ||
             typeof createCryptoAccountsIdProvider !== "function" ||
             typeof createPostgresAccountsAccountAccessRepository !== "function" ||
@@ -141,10 +155,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-accounts-0.3.0
+          name: bke-accounts-0.4.0
           path: |
-            artifacts/bke-accounts-0.3.0.tgz
-            artifacts/bke-accounts-0.3.0.tgz.sha256
+            artifacts/bke-accounts-0.4.0.tgz
+            artifacts/bke-accounts-0.4.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
 
