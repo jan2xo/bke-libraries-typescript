@@ -37,11 +37,14 @@ jobs:
           set -euo pipefail
           rm -rf artifacts
           mkdir -p artifacts
+          version="$(node -p "require('./@bke/payments/package.json').version")"
+          expected="bke-payments-${version}.tgz"
           artifact="$(npm pack --workspace=@bke/payments --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-payments-0.5.0.tgz"
+          test "$artifact" = "$expected"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          echo "PAYMENTS_VERSION=$version" >> "$GITHUB_ENV"
           echo "PAYMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
       - name: Certify package contents
         shell: bash
@@ -75,7 +78,8 @@ jobs:
             package/migrations/0002_payments_provider_event_baseline/migration.sql \
             package/migrations/0003_payments_settlement_fact_baseline/migration.sql \
             package/migrations/0004_payments_refund_operation_baseline/migration.sql \
-            package/migrations/0005_payments_reconciliation_baseline/migration.sql; do
+            package/migrations/0005_payments_reconciliation_baseline/migration.sql \
+            package/migrations/0006_payments_cancelled_checkout_attempt/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
@@ -151,10 +155,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-payments-0.5.0
+          name: bke-payments-${{ env.PAYMENTS_VERSION }}
           path: |
-            artifacts/bke-payments-0.5.0.tgz
-            artifacts/bke-payments-0.5.0.tgz.sha256
+            artifacts/${{ env.PAYMENTS_ARTIFACT }}
+            artifacts/${{ env.PAYMENTS_ARTIFACT }}.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Payments release
