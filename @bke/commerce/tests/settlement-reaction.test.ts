@@ -5,6 +5,7 @@ function capability(options: {
   payment?: "SETTLED" | "REJECTED" | "FAILED";
   commercial?: "SETTLED" | "NOT_FOUND" | "MISMATCH";
   entitlement?: "GRANTED" | "EXISTING" | "REJECTED" | "FAILED";
+  settlementDisposition?: "STANDARD" | "AFTER_LOCAL_CANCELLATION";
 } = {}) {
   let grantCalls = 0;
   return {
@@ -44,6 +45,7 @@ function capability(options: {
               currency: "PHP",
               orderStatus: "PAID" as const,
               invoiceStatus: "FINAL" as const,
+              settlementDisposition: options.settlementDisposition ?? "STANDARD",
               items: [
                 {
                   orderItemId: "item-1",
@@ -86,9 +88,20 @@ describe("Commerce settlement reaction", () => {
         invoiceId: "invoice-1",
         orderStatus: "PAID",
         invoiceStatus: "FINAL",
+        settlementDisposition: "STANDARD",
         settlementFactId: "settlement-1",
         entitlementCount: 1,
       },
+    });
+    expect(subject.grantCalls()).toBe(1);
+  });
+
+  it("preserves the owner decision when settlement follows local cancellation", async () => {
+    const subject = capability({ settlementDisposition: "AFTER_LOCAL_CANCELLATION" });
+    const result = await subject.subject.react({ providerEventRecordId: "event", expectedLivemode: false });
+    expect(result).toMatchObject({
+      status: "FULFILLED",
+      value: { settlementDisposition: "AFTER_LOCAL_CANCELLATION" },
     });
     expect(subject.grantCalls()).toBe(1);
   });
