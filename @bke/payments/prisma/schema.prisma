@@ -5,6 +5,7 @@ datasource db {
 enum PaymentCheckoutAttemptStatus {
   CREATING
   PENDING
+  CANCELLED
   FAILED
 }
 
@@ -28,7 +29,7 @@ model PaymentCheckoutAttempt {
   provider            String
   requestFingerprint  String
   amountMinor         Int
-  currency            String
+  currency             String
   payerSnapshot       Json
   itemsSnapshot       Json
   status              PaymentCheckoutAttemptStatus @default(CREATING)
