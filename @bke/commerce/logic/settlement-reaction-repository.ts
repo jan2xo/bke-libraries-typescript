@@ -1,3 +1,5 @@
+import type { CommerceSettlementDisposition } from "../contracts/settlement-reaction.contract";
+
 export interface CommerceSettlementOrderItem {
   readonly orderItemId: string;
   readonly productId: string;
@@ -13,8 +15,9 @@ export interface CommerceSettlementRecord {
   readonly accountId: string;
   readonly amountMinor: number;
   readonly currency: string;
-  readonly orderStatus: "PENDING" | "PAID";
-  readonly invoiceStatus: "DRAFT" | "FINAL";
+  readonly orderStatus: "PAID";
+  readonly invoiceStatus: "FINAL";
+  readonly settlementDisposition: CommerceSettlementDisposition;
   readonly items: readonly CommerceSettlementOrderItem[];
 }
 
