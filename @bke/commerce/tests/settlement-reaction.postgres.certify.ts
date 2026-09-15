@@ -11,14 +11,18 @@ const repository = createPostgresCommerceSettlementReactionRepository(connection
 const client = new Client({ connectionString });
 await client.connect();
 
-async function seed(orderId: string, redemptionStatus: "RESERVED" | "RELEASED" = "RESERVED") {
+async function seed(
+  orderId: string,
+  redemptionStatus: "RESERVED" | "RELEASED" = "RESERVED",
+  orderStatus: "PENDING" | "CANCELLED" | "REFUNDED" = "PENDING",
+) {
   const invoiceId = `invoice-${orderId}`;
   const offerId = `offer-${orderId}`;
   await client.query(
     `INSERT INTO "Order"
        ("id", "number", "accountId", "status", "currency", "subtotalMinor", "taxMinor", "totalMinor", "billingSnapshot")
-     VALUES ($1, $2, 'account-settlement-cert', 'PENDING', 'PHP', 800, 0, 800, '{}'::jsonb)`,
-    [orderId, `NUMBER-${orderId}`],
+     VALUES ($1, $2, 'account-settlement-cert', $3::"CommerceOrderStatus", 'PHP', 800, 0, 800, '{}'::jsonb)`,
+    [orderId, `NUMBER-${orderId}`, orderStatus],
   );
   await client.query(
     `INSERT INTO "OrderItem" (
@@ -76,6 +80,7 @@ try {
     settled.status !== "SETTLED" ||
     settled.value.orderStatus !== "PAID" ||
     settled.value.invoiceStatus !== "FINAL" ||
+    settled.value.settlementDisposition !== "STANDARD" ||
     settled.value.items.length !== 1
   ) {
     throw new Error(`Commerce paid settlement failed: ${JSON.stringify(settled)}`);
@@ -116,7 +121,7 @@ try {
     expectedCurrency: "PHP",
     settledAt: new Date(settledAt.getTime() + 1_000),
   });
-  if (retry.status !== "SETTLED") {
+  if (retry.status !== "SETTLED" || retry.value.settlementDisposition !== "STANDARD") {
     throw new Error(`Paid settlement retry was not idempotent: ${JSON.stringify(retry)}`);
   }
   const retryApplied = await client.query<{ appliedAt: Date | null }>(
@@ -124,6 +129,59 @@ try {
   );
   if (retryApplied.rows[0]?.appliedAt?.getTime() !== settledAt.getTime()) {
     throw new Error("Settlement retry changed the original offer application timestamp.");
+  }
+
+  await seed("settlement-after-local-cancellation", "RESERVED", "CANCELLED");
+  const afterCancellation = await repository.settle({
+    orderId: "settlement-after-local-cancellation",
+    expectedAmountMinor: 800,
+    expectedCurrency: "PHP",
+    settledAt,
+  });
+  if (
+    afterCancellation.status !== "SETTLED" ||
+    afterCancellation.value.settlementDisposition !== "AFTER_LOCAL_CANCELLATION"
+  ) {
+    throw new Error(`Late settlement after local cancellation was not accepted: ${JSON.stringify(afterCancellation)}`);
+  }
+  const afterCancellationState = await client.query<{
+    orderStatus: string;
+    invoiceStatus: string;
+    redemptionStatus: string;
+  }>(
+    `SELECT o."status"::text AS "orderStatus",
+            i."status"::text AS "invoiceStatus",
+            r."status"::text AS "redemptionStatus"
+       FROM "Order" o
+       JOIN "Invoice" i ON i."orderId" = o."id"
+       JOIN "OfferRedemption" r ON r."orderId" = o."id"
+      WHERE o."id" = 'settlement-after-local-cancellation'`,
+  );
+  const lateRow = afterCancellationState.rows[0];
+  if (
+    !lateRow ||
+    lateRow.orderStatus !== "PAID" ||
+    lateRow.invoiceStatus !== "FINAL" ||
+    lateRow.redemptionStatus !== "APPLIED"
+  ) {
+    throw new Error(`Late cancelled settlement persistence drifted: ${JSON.stringify(lateRow)}`);
+  }
+
+  await seed("settlement-refunded-order", "RESERVED", "REFUNDED");
+  const refunded = await repository.settle({
+    orderId: "settlement-refunded-order",
+    expectedAmountMinor: 800,
+    expectedCurrency: "PHP",
+    settledAt,
+  });
+  if (refunded.status !== "REJECTED" || refunded.code !== "ORDER_NOT_SETTLEABLE") {
+    throw new Error(`Refunded order unexpectedly settled: ${JSON.stringify(refunded)}`);
+  }
+  const refundedOrder = await client.query<{ status: string }>(
+    `SELECT "status"::text AS "status" FROM "Order" WHERE "id" = 'settlement-refunded-order'`,
+  );
+  if (refundedOrder.rows[0]?.status !== "REFUNDED") {
+    throw new Error("Rejected refunded-order settlement mutated the order.");
   }
 
   await seed("settlement-offer-released", "RELEASED");
