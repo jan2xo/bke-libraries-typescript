@@ -120,7 +120,14 @@ export function createPostgresCommerceSettlementReactionRepository(
           [order.id],
         );
         const redemption = redemptionResult.rows[0];
-        if (redemption && redemption.status !== "RESERVED" && redemption.status !== "APPLIED") {
+        const releasedAfterCancellation =
+          order.status === "CANCELLED" && redemption?.status === "RELEASED";
+        if (
+          redemption &&
+          redemption.status !== "RESERVED" &&
+          redemption.status !== "APPLIED" &&
+          !releasedAfterCancellation
+        ) {
           await client.query("ROLLBACK");
           return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
         }
@@ -135,12 +142,12 @@ export function createPostgresCommerceSettlementReactionRepository(
             [invoice.id, input.settledAt],
           );
         }
-        if (redemption?.status === "RESERVED") {
+        if (redemption?.status === "RESERVED" || releasedAfterCancellation) {
           await client.query(
             `UPDATE "OfferRedemption"
                 SET "status" = 'APPLIED', "appliedAt" = $2
               WHERE "id" = $1`,
-            [redemption.id, input.settledAt],
+            [redemption!.id, input.settledAt],
           );
         }
 
