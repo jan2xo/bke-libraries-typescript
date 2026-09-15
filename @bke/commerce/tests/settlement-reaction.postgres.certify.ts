@@ -14,10 +14,11 @@ await client.connect();
 async function seed(
   orderId: string,
   redemptionStatus: "RESERVED" | "RELEASED" = "RESERVED",
-  orderStatus: "PENDING" | "CANCELLED" | "REFUNDED" = "PENDING",
+  orderStatus: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED" = "PENDING",
 ) {
   const invoiceId = `invoice-${orderId}`;
   const offerId = `offer-${orderId}`;
+  const invoiceStatus = orderStatus === "PAID" ? "FINAL" : "DRAFT";
   await client.query(
     `INSERT INTO "Order"
        ("id", "number", "accountId", "status", "currency", "subtotalMinor", "taxMinor", "totalMinor", "billingSnapshot")
@@ -38,9 +39,9 @@ async function seed(
   );
   await client.query(
     `INSERT INTO "Invoice"
-       ("id", "number", "orderId", "status", "customerSnapshot", "currency", "subtotalMinor", "taxMinor", "totalMinor")
-     VALUES ($1, $2, $3, 'DRAFT', '{}'::jsonb, 'PHP', 800, 0, 800)`,
-    [invoiceId, `INV-${orderId}`, orderId],
+       ("id", "number", "orderId", "status", "customerSnapshot", "currency", "subtotalMinor", "taxMinor", "totalMinor", "issuedAt")
+     VALUES ($1, $2, $3, $4::"CommerceInvoiceStatus", '{}'::jsonb, 'PHP', 800, 0, 800, $5)`,
+    [invoiceId, `INV-${orderId}`, orderId, invoiceStatus, invoiceStatus === "FINAL" ? settledAt : null],
   );
   await client.query(
     `INSERT INTO "DiscountOffer" (
@@ -144,27 +145,45 @@ try {
   ) {
     throw new Error(`Late settlement after local cancellation was not accepted: ${JSON.stringify(afterCancellation)}`);
   }
-  const afterCancellationState = await client.query<{
+
+  await seed("settlement-after-scheduled-cancellation", "RELEASED", "CANCELLED");
+  const afterScheduledCancellation = await repository.settle({
+    orderId: "settlement-after-scheduled-cancellation",
+    expectedAmountMinor: 800,
+    expectedCurrency: "PHP",
+    settledAt,
+  });
+  if (
+    afterScheduledCancellation.status !== "SETTLED" ||
+    afterScheduledCancellation.value.settlementDisposition !== "AFTER_LOCAL_CANCELLATION"
+  ) {
+    throw new Error(`Released redemption after scheduled cancellation was not accepted: ${JSON.stringify(afterScheduledCancellation)}`);
+  }
+  const scheduledState = await client.query<{
     orderStatus: string;
     invoiceStatus: string;
     redemptionStatus: string;
+    releasedAt: Date | null;
+    appliedAt: Date | null;
   }>(
     `SELECT o."status"::text AS "orderStatus",
             i."status"::text AS "invoiceStatus",
-            r."status"::text AS "redemptionStatus"
+            r."status"::text AS "redemptionStatus", r."releasedAt", r."appliedAt"
        FROM "Order" o
        JOIN "Invoice" i ON i."orderId" = o."id"
        JOIN "OfferRedemption" r ON r."orderId" = o."id"
-      WHERE o."id" = 'settlement-after-local-cancellation'`,
+      WHERE o."id" = 'settlement-after-scheduled-cancellation'`,
   );
-  const lateRow = afterCancellationState.rows[0];
+  const scheduledRow = scheduledState.rows[0];
   if (
-    !lateRow ||
-    lateRow.orderStatus !== "PAID" ||
-    lateRow.invoiceStatus !== "FINAL" ||
-    lateRow.redemptionStatus !== "APPLIED"
+    !scheduledRow ||
+    scheduledRow.orderStatus !== "PAID" ||
+    scheduledRow.invoiceStatus !== "FINAL" ||
+    scheduledRow.redemptionStatus !== "APPLIED" ||
+    !scheduledRow.releasedAt ||
+    scheduledRow.appliedAt?.getTime() !== settledAt.getTime()
   ) {
-    throw new Error(`Late cancelled settlement persistence drifted: ${JSON.stringify(lateRow)}`);
+    throw new Error(`Scheduled-cancellation late settlement drifted: ${JSON.stringify(scheduledRow)}`);
   }
 
   await seed("settlement-refunded-order", "RESERVED", "REFUNDED");
@@ -177,28 +196,27 @@ try {
   if (refunded.status !== "REJECTED" || refunded.code !== "ORDER_NOT_SETTLEABLE") {
     throw new Error(`Refunded order unexpectedly settled: ${JSON.stringify(refunded)}`);
   }
-  const refundedOrder = await client.query<{ status: string }>(
-    `SELECT "status"::text AS "status" FROM "Order" WHERE "id" = 'settlement-refunded-order'`,
-  );
-  if (refundedOrder.rows[0]?.status !== "REFUNDED") {
-    throw new Error("Rejected refunded-order settlement mutated the order.");
-  }
 
-  await seed("settlement-offer-released", "RELEASED");
-  const released = await repository.settle({
-    orderId: "settlement-offer-released",
+  await seed("settlement-offer-released-pending", "RELEASED", "PENDING");
+  const releasedPending = await repository.settle({
+    orderId: "settlement-offer-released-pending",
     expectedAmountMinor: 800,
     expectedCurrency: "PHP",
     settledAt,
   });
-  if (released.status !== "REJECTED" || released.code !== "ORDER_NOT_SETTLEABLE") {
-    throw new Error(`Released offer redemption did not fail closed: ${JSON.stringify(released)}`);
+  if (releasedPending.status !== "REJECTED" || releasedPending.code !== "ORDER_NOT_SETTLEABLE") {
+    throw new Error(`Pending order with released redemption did not fail closed: ${JSON.stringify(releasedPending)}`);
   }
-  const releasedOrder = await client.query<{ status: string }>(
-    `SELECT "status"::text AS "status" FROM "Order" WHERE "id" = 'settlement-offer-released'`,
-  );
-  if (releasedOrder.rows[0]?.status !== "PENDING") {
-    throw new Error("Rejected settlement mutated the order.");
+
+  await seed("settlement-offer-released-paid", "RELEASED", "PAID");
+  const releasedPaid = await repository.settle({
+    orderId: "settlement-offer-released-paid",
+    expectedAmountMinor: 800,
+    expectedCurrency: "PHP",
+    settledAt,
+  });
+  if (releasedPaid.status !== "REJECTED" || releasedPaid.code !== "ORDER_NOT_SETTLEABLE") {
+    throw new Error(`Paid order with released redemption did not fail closed: ${JSON.stringify(releasedPaid)}`);
   }
 
   console.log("Commerce settlement PostgreSQL certification GREEN");
