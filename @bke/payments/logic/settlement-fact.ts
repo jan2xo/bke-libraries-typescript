@@ -10,22 +10,19 @@ import type {
   PaymentsSettlementFactRepository,
 } from "./settlement-fact-repository";
 
-function equivalent(
+function equivalentSettlement(
   record: PaymentsSettlementFactSnapshot,
   claim: PaymentsSettlementFactClaim,
 ): boolean {
   return (
-    record.providerEventRecordId === claim.providerEventRecordId &&
     record.checkoutAttemptId === claim.checkoutAttemptId &&
     record.provider === claim.provider &&
-    record.eventId === claim.eventId &&
     record.externalPaymentId === claim.externalPaymentId &&
     record.externalCheckoutId === claim.externalCheckoutId &&
     record.commercialReference === claim.commercialReference &&
     record.amountMinor === claim.amountMinor &&
     record.currency === claim.currency &&
-    record.livemode === claim.livemode &&
-    record.settledAt.getTime() === claim.settledAt.getTime()
+    record.livemode === claim.livemode
   );
 }
 
@@ -89,7 +86,7 @@ export function createPaymentsSettlementFactCapability(
         };
 
         const result = await repository.claim(claim);
-        if (!result.created && !equivalent(result.record, claim)) {
+        if (!result.created && !equivalentSettlement(result.record, claim)) {
           return { status: "REJECTED", code: "SETTLEMENT_CONFLICT" };
         }
         return {
