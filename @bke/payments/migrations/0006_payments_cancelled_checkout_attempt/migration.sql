@@ -1,0 +1,1 @@
+ALTER TYPE "PaymentCheckoutAttemptStatus" ADD VALUE IF NOT EXISTS 'CANCELLED';

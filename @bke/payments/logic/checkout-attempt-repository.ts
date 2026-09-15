@@ -1,4 +1,4 @@
-export type PaymentsCheckoutAttemptState = "CREATING" | "PENDING" | "FAILED";
+export type PaymentsCheckoutAttemptState = "CREATING" | "PENDING" | "CANCELLED" | "FAILED";
 
 export interface PaymentsCheckoutAttemptRecord {
   readonly id: string;
