@@ -1,4 +1,5 @@
 import { Client } from "pg";
+import type { CommerceSettlementDisposition } from "../../contracts/settlement-reaction.contract";
 import type {
   CommerceSettlementOrderItem,
   CommerceSettlementReactionRepository,
@@ -34,7 +35,12 @@ interface ItemRow {
   policySnapshot: unknown;
 }
 
-function mapRecord(order: OrderRow, invoice: InvoiceRow, items: readonly ItemRow[]): CommerceSettlementRecord {
+function mapRecord(
+  order: OrderRow,
+  invoice: InvoiceRow,
+  items: readonly ItemRow[],
+  settlementDisposition: CommerceSettlementDisposition,
+): CommerceSettlementRecord {
   return Object.freeze({
     orderId: order.id,
     invoiceId: invoice.id,
@@ -43,6 +49,7 @@ function mapRecord(order: OrderRow, invoice: InvoiceRow, items: readonly ItemRow
     currency: order.currency,
     orderStatus: "PAID" as const,
     invoiceStatus: "FINAL" as const,
+    settlementDisposition,
     items: Object.freeze(items.map((item): CommerceSettlementOrderItem => Object.freeze({
       orderItemId: item.id,
       productId: item.productId,
@@ -82,10 +89,13 @@ export function createPostgresCommerceSettlementReactionRepository(
           await client.query("ROLLBACK");
           return { status: "REJECTED" as const, code: "SETTLEMENT_MISMATCH" as const };
         }
-        if (order.status !== "PENDING" && order.status !== "PAID") {
+        if (order.status !== "PENDING" && order.status !== "PAID" && order.status !== "CANCELLED") {
           await client.query("ROLLBACK");
           return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
         }
+
+        const settlementDisposition: CommerceSettlementDisposition =
+          order.status === "CANCELLED" ? "AFTER_LOCAL_CANCELLATION" : "STANDARD";
 
         const invoiceResult = await client.query<InvoiceRow>(
           `SELECT "id", "status" FROM "Invoice" WHERE "orderId" = $1 FOR UPDATE`,
@@ -94,7 +104,7 @@ export function createPostgresCommerceSettlementReactionRepository(
         if (invoiceResult.rowCount !== 1) throw new Error("Commerce invoice is missing for settlement.");
         const invoice = invoiceResult.rows[0]!;
         if (
-          (order.status === "PENDING" && invoice.status !== "DRAFT") ||
+          ((order.status === "PENDING" || order.status === "CANCELLED") && invoice.status !== "DRAFT") ||
           (order.status === "PAID" && invoice.status !== "FINAL")
         ) {
           await client.query("ROLLBACK");
@@ -115,7 +125,7 @@ export function createPostgresCommerceSettlementReactionRepository(
           return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
         }
 
-        if (order.status === "PENDING") {
+        if (order.status === "PENDING" || order.status === "CANCELLED") {
           await client.query(
             `UPDATE "Order" SET "status" = 'PAID', "paidAt" = $2 WHERE "id" = $1`,
             [order.id, input.settledAt],
@@ -144,7 +154,12 @@ export function createPostgresCommerceSettlementReactionRepository(
         await client.query("COMMIT");
         return {
           status: "SETTLED" as const,
-          value: mapRecord({ ...order, status: "PAID" }, { ...invoice, status: "FINAL" }, itemsResult.rows),
+          value: mapRecord(
+            { ...order, status: "PAID" },
+            { ...invoice, status: "FINAL" },
+            itemsResult.rows,
+            settlementDisposition,
+          ),
         };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);

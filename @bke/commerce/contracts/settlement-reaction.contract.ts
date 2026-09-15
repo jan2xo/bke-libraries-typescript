@@ -1,6 +1,8 @@
 export const COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID =
   "bke.commerce.settlement-reaction.v1" as const;
 
+export type CommerceSettlementDisposition = "STANDARD" | "AFTER_LOCAL_CANCELLATION";
+
 export interface CommerceReactToSettlementInput {
   readonly providerEventRecordId: string;
   readonly expectedLivemode: boolean;
@@ -11,6 +13,7 @@ export interface CommerceSettlementReactionSnapshot {
   readonly invoiceId: string;
   readonly orderStatus: "PAID";
   readonly invoiceStatus: "FINAL";
+  readonly settlementDisposition: CommerceSettlementDisposition;
   readonly settlementFactId: string;
   readonly entitlementCount: number;
 }
