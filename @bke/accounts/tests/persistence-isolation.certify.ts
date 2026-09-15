@@ -11,6 +11,8 @@ const allowedTables = new Set([
   "OrganizationProfile",
   "Membership",
   "Invitation",
+  "PrivacyRequest",
+  "PrivacyRequestEvent",
 ]);
 const allowedEnums = new Set([
   "AccountsAccountType",

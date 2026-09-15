@@ -90,3 +90,40 @@ model Invitation {
 
   @@index([accountId, email])
 }
+
+model PrivacyRequest {
+  id                String   @id
+  userId            String
+  customerAccountId String?
+  requestType       String
+  status            String   @default("OPEN")
+  summary           String
+  responseSummary   String?
+  ipAddress         String?
+  userAgent         String?
+  reviewedById      String?
+  reviewedAt        DateTime?
+  closedAt          DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now()) @updatedAt
+  events            PrivacyRequestEvent[]
+
+  @@index([userId, createdAt])
+  @@index([customerAccountId, createdAt])
+  @@index([status, createdAt])
+  @@index([requestType, status])
+}
+
+model PrivacyRequestEvent {
+  id               String         @id
+  privacyRequestId String
+  actorId          String?
+  eventType        String
+  fromStatus       String?
+  toStatus         String?
+  metadata         Json           @default("{}")
+  createdAt        DateTime       @default(now())
+  privacyRequest   PrivacyRequest @relation(fields: [privacyRequestId], references: [id], onDelete: Restrict)
+
+  @@index([privacyRequestId, createdAt])
+}

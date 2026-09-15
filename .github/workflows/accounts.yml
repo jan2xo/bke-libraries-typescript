@@ -112,6 +112,7 @@ jobs:
             membership-removal.postgres.certify.ts
             member-leave.postgres.certify.ts
             ownership-transfer.postgres.certify.ts
+            privacy-request-management.postgres.certify.ts
           )
           for name in "${files[@]}"; do
             file="@bke/accounts/tests/$name"
