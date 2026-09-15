@@ -81,6 +81,7 @@ export function createCommerceSettlementReactionCapability(dependencies: {
           invoiceId: commercial.value.invoiceId,
           orderStatus: "PAID",
           invoiceStatus: "FINAL",
+          settlementDisposition: commercial.value.settlementDisposition,
           settlementFactId: settlement.value.settlementFactId,
           entitlementCount,
         },
