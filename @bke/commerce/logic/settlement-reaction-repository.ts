@@ -15,8 +15,8 @@ export interface CommerceSettlementRecord {
   readonly accountId: string;
   readonly amountMinor: number;
   readonly currency: string;
-  readonly orderStatus: "PAID";
-  readonly invoiceStatus: "FINAL";
+  readonly orderStatus: "PENDING" | "PAID";
+  readonly invoiceStatus: "DRAFT" | "FINAL";
   readonly settlementDisposition: CommerceSettlementDisposition;
   readonly items: readonly CommerceSettlementOrderItem[];
 }
