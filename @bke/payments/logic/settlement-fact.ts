@@ -56,7 +56,11 @@ export function createPaymentsSettlementFactCapability(
         }
 
         const attempt = await repository.findCheckoutAttempt(event.provider, event.externalCheckoutId);
-        if (!attempt || attempt.status !== "PENDING" || attempt.externalCheckoutId !== event.externalCheckoutId) {
+        if (
+          !attempt ||
+          (attempt.status !== "PENDING" && attempt.status !== "CANCELLED") ||
+          attempt.externalCheckoutId !== event.externalCheckoutId
+        ) {
           return { status: "REJECTED", code: "CHECKOUT_MISMATCH" };
         }
         if (!event.reference || event.reference !== attempt.commercialReference) {
