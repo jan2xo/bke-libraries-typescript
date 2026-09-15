@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createPaymentsSettlementFactCapability } from "../logic/settlement-fact";
+import type { PaymentsCheckoutAttemptState } from "../logic/checkout-attempt-repository";
 import type { PaymentsSettlementFactRepository } from "../logic/settlement-fact-repository";
 
-function repo(overrides: Partial<{ type: string; livemode: boolean; checkout: string | null; reference: string | null; payment: string | null; amount: number | null; currency: string | null }> = {}): PaymentsSettlementFactRepository {
+function repo(overrides: Partial<{ type: string; livemode: boolean; checkout: string | null; reference: string | null; payment: string | null; amount: number | null; currency: string | null; attemptStatus: PaymentsCheckoutAttemptState }> = {}): PaymentsSettlementFactRepository {
   const event = {
     id: "event-row", provider: "fakepay", eventId: "evt_paid", payloadHash: "h", eventFingerprint: "f",
     rawType: "payment.paid", type: (overrides.type ?? "payment.paid") as any,
@@ -20,7 +21,7 @@ function repo(overrides: Partial<{ type: string; livemode: boolean; checkout: st
     async findProviderEventById(id) { return id === event.id ? event : null; },
     async findCheckoutAttempt(provider, checkout) {
       if (provider !== "fakepay" || checkout !== "co_1") return null;
-      return { id: "attempt-1", sourceReference: "src-1", commercialReference: "ORDER-1", provider: "fakepay", requestFingerprint: "rf", amountMinor: 1000, currency: "PHP", payerSnapshot: {}, itemsSnapshot: [], status: "PENDING", externalCheckoutId: "co_1", checkoutUrl: "https://example.test", failureCode: null, createdAt: new Date(), updatedAt: new Date() };
+      return { id: "attempt-1", sourceReference: "src-1", commercialReference: "ORDER-1", provider: "fakepay", requestFingerprint: "rf", amountMinor: 1000, currency: "PHP", payerSnapshot: {}, itemsSnapshot: [], status: overrides.attemptStatus ?? "PENDING", externalCheckoutId: "co_1", checkoutUrl: "https://example.test", failureCode: null, createdAt: new Date(), updatedAt: new Date() };
     },
     async claim(input) {
       if (!fact) fact = { settlementFactId: input.id, ...input, createdAt: new Date("2026-09-02T00:00:02Z") };
@@ -37,6 +38,23 @@ describe("Payments settlement fact", () => {
     expect(first.status).toBe("SETTLED");
     expect(second.status).toBe("SETTLED");
   });
+
+  it("accepts a provider settlement for a checkout attempt cancelled locally after provider checkout creation", async () => {
+    const result = await createPaymentsSettlementFactCapability(repo({ attemptStatus: "CANCELLED" })).reconcile({
+      providerEventRecordId: "event-row",
+      expectedLivemode: false,
+    });
+    expect(result.status).toBe("SETTLED");
+  });
+
+  it.each(["CREATING", "FAILED"] as const)("rejects non-settleable checkout attempt state %s", async (attemptStatus) => {
+    const result = await createPaymentsSettlementFactCapability(repo({ attemptStatus })).reconcile({
+      providerEventRecordId: "event-row",
+      expectedLivemode: false,
+    });
+    expect(result).toEqual({ status: "REJECTED", code: "CHECKOUT_MISMATCH" });
+  });
+
   it.each([
     [{ livemode: true }, "MODE_MISMATCH"],
     [{ checkout: "wrong" }, "CHECKOUT_MISMATCH"],
