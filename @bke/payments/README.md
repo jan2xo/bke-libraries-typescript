@@ -6,7 +6,9 @@ Certified surfaces:
 - checkout-attempt creation and durable idempotency
 - verified provider-event ingestion and replay protection
 - evidence-based settlement facts
+- provider livemode validation and commercial event/order matching
 - refund initiation with atomic cumulative refund capacity
+- reconciliation evidence and provider comparison
 - concrete PayMongo protocol adapter behind generic provider ports
 
 Payments owns provider interaction and Payments-local facts only. It does not mutate Commerce Orders/Invoices, Entitlements, Licensing, Accounts, or Legal state.
