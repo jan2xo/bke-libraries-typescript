@@ -1,7 +1,7 @@
 {
   "name": "@bke/commerce",
-  "version": "0.12.0",
-  "description": "Reusable BKE commercial pricing, offers, public promotion preview, offer-aware checkout pricing, renewal pricing and planning, edition-plan management, orders, invoices, zero-payment fulfillment, and settlement reaction capabilities",
+  "version": "0.13.0",
+  "description": "Reusable BKE commercial pricing, checkout, settlement, payment-outcome, renewal-planning, and subscription lifecycle capabilities",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
