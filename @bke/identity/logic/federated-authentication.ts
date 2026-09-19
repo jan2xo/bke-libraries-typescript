@@ -91,6 +91,9 @@ export function createIdentityFederatedAuthenticationCapability(
 
         const eligibility = activeCustomer(emailPrincipal);
         if (!eligibility.ok) return { status: "REJECTED", code: eligibility.code };
+        if (!emailPrincipal.emailVerified) {
+          return { status: "REJECTED", code: "EMAIL_LINK_REQUIRES_VERIFICATION" };
+        }
 
         const linked = await repository.linkExistingByVerifiedEmail({
           userId: emailPrincipal.id,
