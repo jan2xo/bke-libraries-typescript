@@ -18,7 +18,7 @@ async function user(id: string, email: string, role: "CUSTOMER" | "ADMIN" = "CUS
 }
 
 try {
-  await user("federated-existing", "existing@example.com");
+  await user("federated-existing", "federation-existing-cert@bke.test");
   const capability = createIdentityFederatedAuthenticationCapability(
     createPostgresIdentityFederatedAuthenticationRepository(connectionString),
   );
@@ -26,7 +26,7 @@ try {
   const first = await capability.authenticate({
     provider: "GOOGLE",
     subject: "google-existing-sub",
-    email: "EXISTING@example.com",
+    email: "FEDERATION-EXISTING-CERT@bke.test",
     emailVerified: true,
     name: "Existing",
     authenticatedAt,
@@ -43,7 +43,7 @@ try {
   const second = await capability.authenticate({
     provider: "GOOGLE",
     subject: "google-existing-sub",
-    email: "changed-observed@example.com",
+    email: "federation-observed-cert@bke.test",
     emailVerified: true,
     name: "Existing",
     authenticatedAt: new Date(authenticatedAt.getTime() + 1000),
@@ -67,8 +67,8 @@ try {
   );
   if (
     binding.rows[0]?.userId !== "federated-existing" ||
-    binding.rows[0]?.emailAtLink !== "existing@example.com" ||
-    binding.rows[0]?.lastObservedEmail !== "changed-observed@example.com"
+    binding.rows[0]?.emailAtLink !== "federation-existing-cert@bke.test" ||
+    binding.rows[0]?.lastObservedEmail !== "federation-observed-cert@bke.test"
   ) {
     throw new Error(`Federated binding persistence drifted: ${JSON.stringify(binding.rows[0])}`);
   }
@@ -76,7 +76,7 @@ try {
   const registration = await capability.authenticate({
     provider: "GOOGLE",
     subject: "google-new-sub",
-    email: "new@example.com",
+    email: "federation-new-cert@bke.test",
     emailVerified: true,
     name: "New User",
     authenticatedAt,
@@ -85,11 +85,11 @@ try {
     throw new Error(`Unknown Google identity must require registration: ${JSON.stringify(registration)}`);
   }
 
-  await user("federated-admin", "admin@example.com", "ADMIN");
+  await user("federated-admin", "federation-admin-cert@bke.test", "ADMIN");
   const admin = await capability.authenticate({
     provider: "GOOGLE",
     subject: "google-admin-sub",
-    email: "admin@example.com",
+    email: "federation-admin-cert@bke.test",
     emailVerified: true,
     name: "Admin",
     authenticatedAt,
