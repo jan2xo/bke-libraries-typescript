@@ -7,7 +7,8 @@ export type IdentitySessionAuthenticationMethod =
   | "PASSWORD_EMAIL_OTP"
   | "PASSWORD_RECOVERY"
   | "MAGIC_LINK"
-  | "MFA_ENROLLMENT";
+  | "MFA_ENROLLMENT"
+  | "GOOGLE_OIDC";
 
 export type IdentitySessionAssuranceLevel =
   | "BASIC"
