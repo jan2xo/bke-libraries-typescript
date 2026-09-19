@@ -11,8 +11,8 @@ const authenticatedAt = new Date("2026-09-19T00:00:00Z");
 
 async function user(id: string, email: string, role: "CUSTOMER" | "ADMIN" = "CUSTOMER") {
   await client.query(
-    `INSERT INTO "User" ("id","email","name","role","createdAt","updatedAt","lifecycleState")
-     VALUES ($1,$2,'Federation Cert',$3::"IdentityRole",$4,$4,'ACTIVE')`,
+    `INSERT INTO "User" ("id","email","name","emailVerified","role","createdAt","updatedAt","lifecycleState")
+     VALUES ($1,$2,'Federation Cert',$4,$3::"IdentityRole",$4,$4,'ACTIVE')`,
     [id, email, role, new Date("2026-01-01T00:00:00Z")],
   );
 }
@@ -71,6 +71,23 @@ try {
     binding.rows[0]?.lastObservedEmail !== "federation-observed-cert@bke.test"
   ) {
     throw new Error(`Federated binding persistence drifted: ${JSON.stringify(binding.rows[0])}`);
+  }
+
+  await client.query(
+    `INSERT INTO "User" ("id","email","name","role","createdAt","updatedAt","lifecycleState")
+     VALUES ('federated-unverified','federation-unverified-cert@bke.test','Unverified','CUSTOMER',$1,$1,'ACTIVE')`,
+    [new Date("2026-01-01T00:00:00Z")],
+  );
+  const unverified = await capability.authenticate({
+    provider: "GOOGLE",
+    subject: "google-unverified-sub",
+    email: "federation-unverified-cert@bke.test",
+    emailVerified: true,
+    name: "Unverified",
+    authenticatedAt,
+  });
+  if (unverified.status !== "REJECTED" || unverified.code !== "EMAIL_LINK_REQUIRES_VERIFICATION") {
+    throw new Error(`Unverified local email must not auto-link: ${JSON.stringify(unverified)}`);
   }
 
   const registration = await capability.authenticate({
