@@ -47,7 +47,7 @@ export interface CommerceOrderInvoiceSnapshot {
   readonly orderId: string;
   readonly orderNumber: string;
   readonly orderStatus: "PENDING";
-  readonly fulfillmentMode: CommerceOrderFulfillmentMode;
+  readonly fulfillmentMode?: CommerceOrderFulfillmentMode;
   readonly invoiceId: string;
   readonly invoiceNumber: string;
   readonly invoiceStatus: "DRAFT";
