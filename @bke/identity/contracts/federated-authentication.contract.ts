@@ -36,6 +36,7 @@ export type IdentityFederatedAuthenticationResult =
         | "EMAIL_NOT_VERIFIED"
         | "ACCOUNT_NOT_ACTIVE"
         | "ADMIN_FEDERATION_FORBIDDEN"
+        | "EMAIL_LINK_REQUIRES_VERIFICATION"
         | "FEDERATED_IDENTITY_CONFLICT";
     }
   | {
