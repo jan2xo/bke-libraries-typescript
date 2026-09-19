@@ -15,6 +15,9 @@ import type {
   IdentityFederatedLinkResult,
 } from "../../logic/federated-authentication-repository";
 
+type LinkInput = Parameters<IdentityFederatedAuthenticationRepository["linkExistingByVerifiedEmail"]>[0];
+type RecordAuthenticationInput = Parameters<IdentityFederatedAuthenticationRepository["recordAuthentication"]>[0];
+
 type PrincipalRow = {
   id: string;
   email: string;
@@ -96,7 +99,7 @@ export function createPostgresIdentityFederatedAuthenticationRepository(
       }
     },
 
-    async linkExistingByVerifiedEmail(input): Promise<IdentityFederatedLinkResult> {
+    async linkExistingByVerifiedEmail(input: LinkInput): Promise<IdentityFederatedLinkResult> {
       const client = new Client({ connectionString: normalized });
       await client.connect();
       try {
@@ -174,7 +177,7 @@ export function createPostgresIdentityFederatedAuthenticationRepository(
       }
     },
 
-    async recordAuthentication(input) {
+    async recordAuthentication(input: RecordAuthenticationInput) {
       const client = new Client({ connectionString: normalized });
       await client.connect();
       try {
