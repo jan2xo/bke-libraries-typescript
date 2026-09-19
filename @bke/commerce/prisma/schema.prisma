@@ -52,6 +52,11 @@ enum CommerceOrderStatus {
   PARTIALLY_REFUNDED
 }
 
+enum CommerceFulfillmentMode {
+  ACCOUNT_ENTITLEMENT
+  CLAIM_CODE
+}
+
 enum CommerceInvoiceStatus {
   DRAFT
   FINAL
@@ -187,6 +192,7 @@ model Order {
   number                String              @unique
   accountId             String
   renewalSubscriptionId String?
+  fulfillmentMode       CommerceFulfillmentMode @default(ACCOUNT_ENTITLEMENT)
   status                CommerceOrderStatus @default(PENDING)
   currency              String
   subtotalMinor         Int
