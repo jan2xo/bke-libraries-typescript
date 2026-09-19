@@ -40,7 +40,7 @@ describe("Identity federated authentication", () => {
   it("links a verified provider assertion to an existing customer with the same email", async () => {
     const capability = createIdentityFederatedAuthenticationCapability({
       async findByProviderSubject() { return null; },
-      async findPrincipalByEmail() { return principal({ emailVerified: null }); },
+      async findPrincipalByEmail() { return principal(); },
       async linkExistingByVerifiedEmail() { return { status: "LINKED" as const, principal: principal() }; },
       async recordAuthentication() {},
     });
@@ -49,6 +49,22 @@ describe("Identity federated authentication", () => {
       binding: "LINKED_BY_VERIFIED_EMAIL",
       principal: { id: "user-1" },
     });
+  });
+
+  it("rejects auto-link when the existing BKE email has never been verified", async () => {
+    let links = 0;
+    const capability = createIdentityFederatedAuthenticationCapability({
+      async findByProviderSubject() { return null; },
+      async findPrincipalByEmail() { return principal({ emailVerified: null }); },
+      async linkExistingByVerifiedEmail() {
+        links += 1;
+        return { status: "LINKED" as const, principal: principal() };
+      },
+      async recordAuthentication() {},
+    });
+    expect(await capability.authenticate(assertion))
+      .toEqual({ status: "REJECTED", code: "EMAIL_LINK_REQUIRES_VERIFICATION" });
+    expect(links).toBe(0);
   });
 
   it("requires registration instead of inventing a BKE user when no account exists", async () => {
