@@ -48,7 +48,7 @@ for (const file of reusableFiles) {
 
 for (const forbiddenPath of ["prisma", "migrations", "repositories", "providers", "node_modules"]) {
   if (existsSync(resolve(packageRoot, forbiddenPath))) {
-    throw new Error(`Notifications v0.1.0 must remain persistence/transport free: ${forbiddenPath}`);
+    throw new Error(`Notifications v0.2.0 must remain persistence/transport free: ${forbiddenPath}`);
   }
 }
 
@@ -57,16 +57,20 @@ const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json")
   version?: string;
   dependencies?: Record<string, string>;
 };
-if (packageJson.name !== "@bke/notifications" || packageJson.version !== "0.1.0") {
+if (packageJson.name !== "@bke/notifications" || packageJson.version !== "0.2.0") {
   throw new Error(`Unexpected Notifications package identity: ${JSON.stringify(packageJson)}`);
 }
 if (packageJson.dependencies && Object.keys(packageJson.dependencies).length > 0) {
-  throw new Error("Notifications v0.1.0 must not gain runtime dependencies without an explicit boundary decision.");
+  throw new Error("Notifications v0.2.0 must not gain runtime dependencies without an explicit boundary decision.");
 }
 
 const manifestSource = readFileSync(resolve(packageRoot, "module.manifest.ts"), "utf8");
-if (!manifestSource.includes("needs: []") || !manifestSource.includes("NOTIFICATIONS_INTENT_CAPABILITY_ID")) {
+if (
+  !manifestSource.includes("needs: []") ||
+  !manifestSource.includes("NOTIFICATIONS_INTENT_CAPABILITY_ID") ||
+  !manifestSource.includes("NOTIFICATIONS_INBOX_POLICY_CAPABILITY_ID")
+) {
   throw new Error("Notifications standalone manifest drifted.");
 }
 
-console.log(`@bke/notifications extraction boundary GREEN: reusableFiles=${reusableFiles.length} runtimeDependencies=0 persistence=none transport=none`);
+console.log(`@bke/notifications 0.2.0 extraction boundary GREEN: reusableFiles=${reusableFiles.length} runtimeDependencies=0 persistence=none transport=none`);

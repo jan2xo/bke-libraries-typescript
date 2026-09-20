@@ -3,6 +3,7 @@ export const NOTIFICATIONS_INTENT_CAPABILITY_ID = "bke.notifications.intent.v1" 
 export type NotificationsAudience =
   | { readonly kind: "PRINCIPAL"; readonly principalId: string }
   | { readonly kind: "ACCOUNT"; readonly accountId: string }
+  | { readonly kind: "ADMINISTRATORS" }
   | { readonly kind: "SEGMENT"; readonly segmentKey: string }
   | { readonly kind: "ALL_USERS" }
   | { readonly kind: "ALL_ACTIVE_CLIENTS" }
