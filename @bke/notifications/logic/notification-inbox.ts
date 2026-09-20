@@ -70,7 +70,7 @@ function copyIntent(
 export function createNotificationsInboxPolicyCapability(
   now: () => Date = () => new Date(),
 ): NotificationsInboxPolicyCapability {
-  return Object.freeze({
+  const capability: NotificationsInboxPolicyCapability = {
     materialize(input) {
       if (
         !hasText(input.notificationId) ||
@@ -134,5 +134,7 @@ export function createNotificationsInboxPolicyCapability(
 
       return { status: "FAILED", code: "INVALID_ACTION" };
     },
-  });
+  };
+
+  return Object.freeze(capability);
 }
