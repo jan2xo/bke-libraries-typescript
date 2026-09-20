@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/notifications --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-notifications-0.1.0.tgz"
+          test "$artifact" = "bke-notifications-0.2.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "NOTIFICATIONS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -51,8 +51,10 @@ jobs:
           grep -Fx 'package/package.json' artifacts/package-contents.txt
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/notification-intent.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/notification-inbox.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/module-manifest.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/notification-intent.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/notification-inbox.ts' artifacts/package-contents.txt
           grep -Fx 'package/docs/BOUNDARY.md' artifacts/package-contents.txt
           if grep -E '^package/(tests|node_modules|prisma|migrations|providers|repositories)/' artifacts/package-contents.txt; then
             echo '::error::Tests, caches, persistence, or transport internals must not ship in @bke/notifications.'
@@ -92,18 +94,36 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import { NOTIFICATIONS_INTENT_CAPABILITY_ID } from "@bke/notifications/contracts/notification-intent.contract";
+          import { NOTIFICATIONS_INBOX_POLICY_CAPABILITY_ID } from "@bke/notifications/contracts/notification-inbox.contract";
           import { createNotificationsIntentCapability } from "@bke/notifications/logic/notification-intent";
+          import { createNotificationsInboxPolicyCapability } from "@bke/notifications/logic/notification-inbox";
           import { notificationsModuleManifest } from "@bke/notifications/module.manifest";
-          if (NOTIFICATIONS_INTENT_CAPABILITY_ID !== "bke.notifications.intent.v1") throw new Error("Unexpected Notifications capability id.");
+          if (NOTIFICATIONS_INTENT_CAPABILITY_ID !== "bke.notifications.intent.v1") throw new Error("Unexpected Notifications intent capability id.");
+          if (NOTIFICATIONS_INBOX_POLICY_CAPABILITY_ID !== "bke.notifications.inbox-policy.v1") throw new Error("Unexpected Notifications inbox capability id.");
           if (notificationsModuleManifest.moduleId !== "notifications") throw new Error("Unexpected Notifications module id.");
-          const result = createNotificationsIntentCapability(() => new Date("2026-09-03T00:00:00Z")).create({
-            source: { moduleId: "commerce", event: "offer.eligible" },
-            audience: { kind: "ALL_USERS" },
-            content: { title: "Offer", body: "Offer live", category: "PROMOTION" },
-            idempotencyKey: "smoke-broadcast"
+          const now = new Date("2026-09-20T00:00:00Z");
+          const result = createNotificationsIntentCapability(() => now).create({
+            source: { moduleId: "operations", event: "review.required" },
+            audience: { kind: "ADMINISTRATORS" },
+            content: { title: "Review required", body: "Review the operation.", category: "SYSTEM" },
+            idempotencyKey: "smoke-admin"
           });
-          if (result.status !== "NOTIFY") throw new Error("Packed Notifications capability failed smoke decision.");
-          console.log("Packed @bke/notifications consumer smoke GREEN");
+          if (result.status !== "NOTIFY") throw new Error("Packed Notifications intent failed smoke decision.");
+          const inbox = createNotificationsInboxPolicyCapability(() => now);
+          const materialized = inbox.materialize({
+            notificationId: "smoke-notification",
+            intent: result.value,
+            createdAt: now
+          });
+          if (materialized.status !== "MATERIALIZED") throw new Error("Packed Notifications inbox failed materialization.");
+          const visible = inbox.visibility({
+            notification: materialized.value,
+            principal: { principalId: "admin-1", role: "ADMIN", accountIds: [] }
+          });
+          if (visible.status !== "VISIBLE") throw new Error("Packed Notifications admin audience failed visibility.");
+          const receipt = inbox.transitionReceipt({ state: "UNREAD", action: "MARK_READ" });
+          if (receipt.status !== "TRANSITIONED" || receipt.state !== "READ") throw new Error("Packed Notifications receipt transition failed.");
+          console.log("Packed @bke/notifications 0.2.0 consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -111,10 +131,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-notifications-0.1.0
+          name: bke-notifications-0.2.0
           path: |
-            artifacts/bke-notifications-0.1.0.tgz
-            artifacts/bke-notifications-0.1.0.tgz.sha256
+            artifacts/bke-notifications-0.2.0.tgz
+            artifacts/bke-notifications-0.2.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Notifications release
