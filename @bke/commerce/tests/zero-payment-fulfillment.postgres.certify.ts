@@ -14,6 +14,8 @@ const orders = createCommerceOrderInvoiceCreationCapability(
 );
 let grantCalls = 0;
 let claimCalls = 0;
+const grantCount = () => grantCalls;
+const claimCount = () => claimCalls;
 const fulfillment = createCommerceZeroPaymentFulfillmentCapability({
   repository: createPostgresCommerceZeroPaymentFulfillmentRepository(connectionString),
   entitlements: {
@@ -96,10 +98,10 @@ if (
   retry.status !== "FULFILLED" ||
   retry.value.entitlementCount !== 1 ||
   retry.value.claimUnitCount !== 0 ||
-  grantCalls !== 2 ||
-  claimCalls !== 0
+  grantCount() !== 2 ||
+  claimCount() !== 0
 ) {
-  throw new Error(`Expected idempotent direct fulfillment retry: ${JSON.stringify(retry)} grants=${grantCalls}`);
+  throw new Error(`Expected idempotent direct fulfillment retry: ${JSON.stringify(retry)} grants=${grantCount()}`);
 }
 
 const claimZero = await orders.create(
@@ -114,8 +116,8 @@ if (
   claimFirst.value.fulfillmentMode !== "CLAIM_CODE" ||
   claimFirst.value.entitlementCount !== 0 ||
   claimFirst.value.claimUnitCount !== 1 ||
-  grantCalls !== 2 ||
-  claimCalls !== 1
+  grantCount() !== 2 ||
+  claimCount() !== 1
 ) {
   throw new Error(`Expected claim-routed zero-total fulfillment: ${JSON.stringify(claimFirst)}`);
 }
@@ -123,10 +125,10 @@ const claimRetry = await fulfillment.fulfill({ orderId: claimZero.value.orderId,
 if (
   claimRetry.status !== "FULFILLED" ||
   claimRetry.value.claimUnitCount !== 1 ||
-  grantCalls !== 2 ||
-  claimCalls !== 2
+  grantCount() !== 2 ||
+  claimCount() !== 2
 ) {
-  throw new Error(`Expected idempotent claim fulfillment retry: ${JSON.stringify(claimRetry)} claims=${claimCalls}`);
+  throw new Error(`Expected idempotent claim fulfillment retry: ${JSON.stringify(claimRetry)} claims=${claimCount()}`);
 }
 
 const nonzero = await orders.create(orderInput("ORD-ZERO-CERT-2", "INV-ZERO-CERT-2", 100));
