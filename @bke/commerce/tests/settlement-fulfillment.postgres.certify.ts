@@ -12,9 +12,10 @@ const settledAt = new Date("2026-09-19T00:10:00.000Z");
 async function seed(orderId: string, mode: "ACCOUNT_ENTITLEMENT" | "CLAIM_CODE") {
   await client.query(
     `INSERT INTO "Order"
-       ("id", "number", "accountId", "fulfillmentMode", "status", "currency",
+       ("id", "number", "accountId", "fulfillmentMode", "fulfillmentSnapshot", "status", "currency",
         "subtotalMinor", "taxMinor", "totalMinor", "billingSnapshot")
-     VALUES ($1, $2, 'account-claim-cert', $3::"CommerceFulfillmentMode", 'PENDING',
+     VALUES ($1, $2, 'account-claim-cert', $3::"CommerceFulfillmentMode",
+             '{"recipientEmail":"recipient@example.test"}'::jsonb, 'PENDING',
              'PHP', 1600, 0, 1600, '{}'::jsonb)`,
     [orderId, `NUMBER-${orderId}`, mode],
   );
@@ -73,6 +74,7 @@ function capabilityFor(orderId: string) {
         if (
           input.purchaserAccountId !== "account-claim-cert" ||
           input.purchasePlanId !== "plan-claim-cert" ||
+          JSON.stringify(input.fulfillmentSnapshot) !== JSON.stringify({ recipientEmail: "recipient@example.test" }) ||
           input.quantity !== 2
         ) {
           throw new Error(`Unexpected claim-unit input: ${JSON.stringify(input)}`);
