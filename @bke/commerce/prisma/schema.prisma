@@ -193,6 +193,7 @@ model Order {
   accountId             String
   renewalSubscriptionId String?
   fulfillmentMode       CommerceFulfillmentMode @default(ACCOUNT_ENTITLEMENT)
+  fulfillmentSnapshot   Json                    @default("{}")
   status                CommerceOrderStatus @default(PENDING)
   currency              String
   subtotalMinor         Int
