@@ -12,6 +12,7 @@ interface OrderRow {
   id: string;
   accountId: string;
   fulfillmentMode: CommerceOrderFulfillmentMode;
+  fulfillmentSnapshot: unknown;
   status: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED" | "PARTIALLY_REFUNDED";
   totalMinor: number;
 }
@@ -42,6 +43,7 @@ function mapRecord(order: OrderRow, invoice: InvoiceRow, items: readonly ItemRow
     invoiceId: invoice.id,
     accountId: order.accountId,
     fulfillmentMode: order.fulfillmentMode,
+    fulfillmentSnapshot: order.fulfillmentSnapshot,
     orderStatus: "PAID" as const,
     invoiceStatus: "FINAL" as const,
     items: Object.freeze(
@@ -73,7 +75,7 @@ export function createPostgresCommerceZeroPaymentFulfillmentRepository(
       try {
         await client.query("BEGIN");
         const orderResult = await client.query<OrderRow>(
-          `SELECT "id", "accountId", "fulfillmentMode", "status", "totalMinor"
+          `SELECT "id", "accountId", "fulfillmentMode", "fulfillmentSnapshot", "status", "totalMinor"
              FROM "Order"
             WHERE "id" = $1
             FOR UPDATE`,
