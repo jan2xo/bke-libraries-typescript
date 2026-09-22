@@ -1,4 +1,5 @@
 import { Client } from "pg";
+import type { CommerceOrderFulfillmentMode } from "../../contracts/order-invoice-creation.contract";
 import type {
   CommerceZeroPaymentFulfillmentRepository,
   CommerceZeroPaymentOrderItem,
@@ -10,6 +11,7 @@ type FulfillmentInput = Parameters<CommerceZeroPaymentFulfillmentRepository["ful
 interface OrderRow {
   id: string;
   accountId: string;
+  fulfillmentMode: CommerceOrderFulfillmentMode;
   status: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED" | "PARTIALLY_REFUNDED";
   totalMinor: number;
 }
@@ -28,6 +30,7 @@ interface ItemRow {
   id: string;
   productId: string;
   editionId: string | null;
+  purchasePlanId: string | null;
   quantity: number;
   entitlementSnapshot: unknown;
   policySnapshot: unknown;
@@ -38,6 +41,7 @@ function mapRecord(order: OrderRow, invoice: InvoiceRow, items: readonly ItemRow
     orderId: order.id,
     invoiceId: invoice.id,
     accountId: order.accountId,
+    fulfillmentMode: order.fulfillmentMode,
     orderStatus: "PAID" as const,
     invoiceStatus: "FINAL" as const,
     items: Object.freeze(
@@ -46,6 +50,7 @@ function mapRecord(order: OrderRow, invoice: InvoiceRow, items: readonly ItemRow
           orderItemId: item.id,
           productId: item.productId,
           editionId: item.editionId,
+          purchasePlanId: item.purchasePlanId,
           quantity: Number(item.quantity),
           entitlementSnapshot: item.entitlementSnapshot,
           policySnapshot: item.policySnapshot,
@@ -68,7 +73,7 @@ export function createPostgresCommerceZeroPaymentFulfillmentRepository(
       try {
         await client.query("BEGIN");
         const orderResult = await client.query<OrderRow>(
-          `SELECT "id", "accountId", "status", "totalMinor"
+          `SELECT "id", "accountId", "fulfillmentMode", "status", "totalMinor"
              FROM "Order"
             WHERE "id" = $1
             FOR UPDATE`,
@@ -138,7 +143,8 @@ export function createPostgresCommerceZeroPaymentFulfillmentRepository(
         }
 
         const itemsResult = await client.query<ItemRow>(
-          `SELECT "id", "productId", "editionId", "quantity", "entitlementSnapshot", "policySnapshot"
+          `SELECT "id", "productId", "editionId", "purchasePlanId", "quantity",
+                  "entitlementSnapshot", "policySnapshot"
              FROM "OrderItem"
             WHERE "orderId" = $1
             ORDER BY "id"`,
