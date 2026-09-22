@@ -14,12 +14,14 @@ type EntitlementRow = {
   subjectId: string;
   resourceId: string;
   sourceReference: string;
-  status: "ACTIVE";
+  status: "ACTIVE" | "SUSPENDED" | "REVOKED";
   quantity: number;
   scopeSnapshot: unknown;
   grantSnapshot: unknown;
   validFrom: Date;
   validUntil: Date | null;
+  statusChangedAt: Date | null;
+  statusReason: string | null;
   createdAt: Date;
 };
 
@@ -45,6 +47,8 @@ function snapshot(row: EntitlementRow): EntitlementsDurableRightSnapshot {
     grantSnapshot: row.grantSnapshot,
     validFrom: copyDate(row.validFrom),
     validUntil: row.validUntil ? copyDate(row.validUntil) : null,
+    statusChangedAt: row.statusChangedAt ? copyDate(row.statusChangedAt) : null,
+    statusReason: row.statusReason,
     createdAt: copyDate(row.createdAt),
   };
 }
@@ -71,7 +75,7 @@ export function createPostgresEntitlementsDurableRightGrantRepository(
            ) VALUES ($1, $2, $3, $4, 'ACTIVE', $5, $6::jsonb, $7::jsonb, $8, $9)
            ON CONFLICT ("sourceReference") DO NOTHING
            RETURNING "id", "subjectId", "resourceId", "sourceReference", "status", "quantity",
-                     "scopeSnapshot", "grantSnapshot", "validFrom", "validUntil", "createdAt"`,
+                     "scopeSnapshot", "grantSnapshot", "validFrom", "validUntil", "statusChangedAt", "statusReason", "createdAt"`,
           [
             randomUUID(),
             input.subjectId,
@@ -90,7 +94,7 @@ export function createPostgresEntitlementsDurableRightGrantRepository(
 
         const existing = await client.query<ExistingEntitlementRow>(
           `SELECT "id", "subjectId", "resourceId", "sourceReference", "status", "quantity",
-                  "scopeSnapshot", "grantSnapshot", "validFrom", "validUntil", "createdAt",
+                  "scopeSnapshot", "grantSnapshot", "validFrom", "validUntil", "statusChangedAt", "statusReason", "createdAt",
                   (
                     "subjectId" = $2 AND
                     "resourceId" = $3 AND
