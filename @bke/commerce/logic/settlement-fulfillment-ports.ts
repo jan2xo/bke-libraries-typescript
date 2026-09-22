@@ -15,6 +15,7 @@ export interface CommerceClaimUnitIssueInput {
   readonly resourceId: string;
   readonly quantity: number;
   readonly scopeSnapshot: unknown;
+  readonly fulfillmentSnapshot: unknown;
   readonly grantSnapshot: unknown;
   readonly validFrom: Date;
 }
