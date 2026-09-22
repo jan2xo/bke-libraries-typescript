@@ -59,7 +59,6 @@ export function createCommerceSettlementFulfillmentCapability(dependencies: {
             sourceReference,
             quantity: item.quantity,
             scopeSnapshot: item.entitlementSnapshot ?? item.policySnapshot,
-            fulfillmentSnapshot: commercial.value.fulfillmentSnapshot,
             grantSnapshot: {
               source: "commerce-settlement",
               orderId: commercial.value.orderId,
@@ -90,6 +89,7 @@ export function createCommerceSettlementFulfillmentCapability(dependencies: {
             resourceId: item.editionId ?? item.productId,
             quantity: item.quantity,
             scopeSnapshot: item.entitlementSnapshot ?? item.policySnapshot,
+            fulfillmentSnapshot: commercial.value.fulfillmentSnapshot,
             grantSnapshot: {
               source: "commerce-settlement-claim",
               orderId: commercial.value.orderId,
