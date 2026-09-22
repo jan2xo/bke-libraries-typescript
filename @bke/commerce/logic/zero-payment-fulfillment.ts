@@ -46,7 +46,6 @@ export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
             sourceReference,
             quantity: item.quantity,
             scopeSnapshot: item.entitlementSnapshot ?? item.policySnapshot,
-            fulfillmentSnapshot: commercial.value.fulfillmentSnapshot,
             grantSnapshot: {
               source: "commerce-zero-payment",
               orderId: commercial.value.orderId,
@@ -80,6 +79,7 @@ export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
             resourceId: item.editionId ?? item.productId,
             quantity: item.quantity,
             scopeSnapshot: item.entitlementSnapshot ?? item.policySnapshot,
+            fulfillmentSnapshot: commercial.value.fulfillmentSnapshot,
             grantSnapshot: {
               source: "commerce-zero-payment-claim",
               orderId: commercial.value.orderId,
