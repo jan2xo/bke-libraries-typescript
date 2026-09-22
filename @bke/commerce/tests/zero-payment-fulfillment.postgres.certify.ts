@@ -25,7 +25,11 @@ const fulfillment = createCommerceZeroPaymentFulfillmentCapability({
   claimUnits: {
     async issue(input) {
       claimCalls += 1;
-      if (input.purchaserAccountId !== "opaque-account" || input.purchasePlanId !== "opaque-plan") {
+      if (
+        input.purchaserAccountId !== "opaque-account" ||
+        input.purchasePlanId !== "opaque-plan" ||
+        JSON.stringify(input.fulfillmentSnapshot) !== JSON.stringify({ recipientEmail: "recipient@example.test" })
+      ) {
         throw new Error(`Unexpected zero-payment claim input: ${JSON.stringify(input)}`);
       }
       return { status: claimCalls === 1 ? ("ISSUED" as const) : ("EXISTING" as const), unitCount: input.quantity };
@@ -42,6 +46,7 @@ function orderInput(
   return {
     accountId: "opaque-account",
     fulfillmentMode,
+    fulfillmentSnapshot: { recipientEmail: "recipient@example.test" },
     orderNumber: number,
     invoiceNumber,
     currency: "PHP",
