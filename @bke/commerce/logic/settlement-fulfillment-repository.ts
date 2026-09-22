@@ -23,6 +23,7 @@ export interface CommerceSettlementFulfillmentRecord {
   readonly invoiceStatus: "DRAFT" | "FINAL";
   readonly settlementDisposition: CommerceSettlementFulfillmentDisposition;
   readonly fulfillmentMode: CommerceSettlementFulfillmentMode;
+  readonly fulfillmentSnapshot: unknown;
   readonly items: readonly CommerceSettlementFulfillmentOrderItem[];
 }
 
