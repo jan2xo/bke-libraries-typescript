@@ -1,4 +1,5 @@
 CREATE TYPE "CommerceFulfillmentMode" AS ENUM ('ACCOUNT_ENTITLEMENT', 'CLAIM_CODE');
 
 ALTER TABLE "Order"
-  ADD COLUMN "fulfillmentMode" "CommerceFulfillmentMode" NOT NULL DEFAULT 'ACCOUNT_ENTITLEMENT';
+  ADD COLUMN "fulfillmentMode" "CommerceFulfillmentMode" NOT NULL DEFAULT 'ACCOUNT_ENTITLEMENT',
+  ADD COLUMN "fulfillmentSnapshot" JSONB NOT NULL DEFAULT '{}'::jsonb;
