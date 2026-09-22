@@ -71,7 +71,7 @@ function capability(options: {
   pricedTotalMinor?: number;
   pricing?: "PRICED" | "OFFER_REJECTED" | "ORDER_REJECTED" | "FAILED";
   offer?: CommerceCheckoutOfferSnapshot | null;
-  fulfillment?: "FULFILLED" | "ORDER_CONFLICT" | "ENTITLEMENT_CONFLICT" | "ENTITLEMENTS_UNAVAILABLE";
+  fulfillment?: "FULFILLED" | "ORDER_CONFLICT" | "ENTITLEMENT_CONFLICT" | "ENTITLEMENTS_UNAVAILABLE" | "CLAIM_UNIT_CONFLICT" | "CLAIM_UNITS_UNAVAILABLE";
   payment?: "READY" | "REJECTED" | "FAILED";
 } = {}) {
   let legalCalls = 0;
@@ -166,6 +166,12 @@ function capability(options: {
           if (options.fulfillment === "ENTITLEMENTS_UNAVAILABLE") {
             return { status: "FAILED" as const, code: "ENTITLEMENTS_UNAVAILABLE" as const };
           }
+          if (options.fulfillment === "CLAIM_UNIT_CONFLICT") {
+            return { status: "REJECTED" as const, code: "CLAIM_UNIT_CONFLICT" as const };
+          }
+          if (options.fulfillment === "CLAIM_UNITS_UNAVAILABLE") {
+            return { status: "FAILED" as const, code: "CLAIM_UNITS_UNAVAILABLE" as const };
+          }
           return {
             status: "FULFILLED" as const,
             value: {
@@ -173,7 +179,9 @@ function capability(options: {
               invoiceId: "invoice-1",
               orderStatus: "PAID" as const,
               invoiceStatus: "FINAL" as const,
+              fulfillmentMode: "ACCOUNT_ENTITLEMENT" as const,
               entitlementCount: 1,
+              claimUnitCount: 0,
             },
           };
         },
@@ -286,7 +294,9 @@ describe("Commerce checkout orchestration", () => {
         invoiceId: "invoice-1",
         orderStatus: "PAID",
         invoiceStatus: "FINAL",
+        fulfillmentMode: "ACCOUNT_ENTITLEMENT",
         entitlementCount: 1,
+        claimUnitCount: 0,
       },
       offer: freeOffer,
     });
@@ -313,6 +323,20 @@ describe("Commerce checkout orchestration", () => {
       code: "ENTITLEMENTS_UNAVAILABLE",
     });
     expect(subject.paymentCalls()).toBe(0);
+  });
+
+  it("preserves claim-unit zero-payment failures as typed checkout outcomes", async () => {
+    const conflict = capability({ createdTotalMinor: 0, pricedTotalMinor: 0, fulfillment: "CLAIM_UNIT_CONFLICT" });
+    expect(await conflict.checkout.start(input(0))).toEqual({
+      status: "REJECTED",
+      code: "CLAIM_UNIT_CONFLICT",
+    });
+
+    const unavailable = capability({ createdTotalMinor: 0, pricedTotalMinor: 0, fulfillment: "CLAIM_UNITS_UNAVAILABLE" });
+    expect(await unavailable.checkout.start(input(0))).toEqual({
+      status: "FAILED",
+      code: "CLAIM_UNITS_UNAVAILABLE",
+    });
   });
 
   it("maps payment provider unavailability without mutating another module", async () => {

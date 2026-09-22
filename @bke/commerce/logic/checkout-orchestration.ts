@@ -163,7 +163,9 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
             code:
               fulfillment.code === "ENTITLEMENT_CONFLICT"
                 ? "ENTITLEMENT_CONFLICT"
-                : "ORDER_CONFLICT",
+                : fulfillment.code === "CLAIM_UNIT_CONFLICT"
+                  ? "CLAIM_UNIT_CONFLICT"
+                  : "ORDER_CONFLICT",
           };
         }
         if (fulfillment.status === "FAILED") {
@@ -175,7 +177,9 @@ export function createCommerceCheckoutOrchestrationCapability(dependencies: {
             code:
               fulfillment.code === "ENTITLEMENTS_UNAVAILABLE"
                 ? "ENTITLEMENTS_UNAVAILABLE"
-                : "COMMERCE_PERSISTENCE_UNAVAILABLE",
+                : fulfillment.code === "CLAIM_UNITS_UNAVAILABLE"
+                  ? "CLAIM_UNITS_UNAVAILABLE"
+                  : "COMMERCE_PERSISTENCE_UNAVAILABLE",
           };
         }
         return {

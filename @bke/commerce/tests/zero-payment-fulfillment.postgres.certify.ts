@@ -13,6 +13,9 @@ const orders = createCommerceOrderInvoiceCreationCapability(
   createPostgresCommerceOrderInvoiceCreationRepository(connectionString),
 );
 let grantCalls = 0;
+let claimCalls = 0;
+const grantCount = () => grantCalls;
+const claimCount = () => claimCalls;
 const fulfillment = createCommerceZeroPaymentFulfillmentCapability({
   repository: createPostgresCommerceZeroPaymentFulfillmentRepository(connectionString),
   entitlements: {
@@ -21,11 +24,31 @@ const fulfillment = createCommerceZeroPaymentFulfillmentCapability({
       return { status: grantCalls === 1 ? ("GRANTED" as const) : ("EXISTING" as const) };
     },
   },
+  claimUnits: {
+    async issue(input) {
+      claimCalls += 1;
+      if (
+        input.purchaserAccountId !== "opaque-account" ||
+        input.purchasePlanId !== "opaque-plan" ||
+        JSON.stringify(input.fulfillmentSnapshot) !== JSON.stringify({ recipientEmail: "recipient@example.test" })
+      ) {
+        throw new Error(`Unexpected zero-payment claim input: ${JSON.stringify(input)}`);
+      }
+      return { status: claimCalls === 1 ? ("ISSUED" as const) : ("EXISTING" as const), unitCount: input.quantity };
+    },
+  },
 });
 
-function orderInput(number: string, invoiceNumber: string, amountMinor: number) {
+function orderInput(
+  number: string,
+  invoiceNumber: string,
+  amountMinor: number,
+  fulfillmentMode: "ACCOUNT_ENTITLEMENT" | "CLAIM_CODE" = "ACCOUNT_ENTITLEMENT",
+) {
   return {
     accountId: "opaque-account",
+    fulfillmentMode,
+    fulfillmentSnapshot: { recipientEmail: "recipient@example.test" },
     orderNumber: number,
     invoiceNumber,
     currency: "PHP",
@@ -45,6 +68,7 @@ function orderInput(number: string, invoiceNumber: string, amountMinor: number) 
         billingType: "ONE_TIME" as const,
         policySnapshot: { maxDevices: 1 },
         editionId: "opaque-edition",
+        purchasePlanId: "opaque-plan",
         entitlementSnapshot: { tier: "PRO" },
       },
     ],
@@ -62,14 +86,49 @@ if (
   first.status !== "FULFILLED" ||
   first.value.orderStatus !== "PAID" ||
   first.value.invoiceStatus !== "FINAL" ||
-  first.value.entitlementCount !== 1
+  first.value.fulfillmentMode !== "ACCOUNT_ENTITLEMENT" ||
+  first.value.entitlementCount !== 1 ||
+  first.value.claimUnitCount !== 0
 ) {
-  throw new Error(`Expected fulfilled zero-total order: ${JSON.stringify(first)}`);
+  throw new Error(`Expected fulfilled zero-total direct order: ${JSON.stringify(first)}`);
 }
 
 const retry = await fulfillment.fulfill({ orderId: zero.value.orderId, fulfilledAt });
-if (retry.status !== "FULFILLED" || retry.value.entitlementCount !== 1 || grantCalls !== 2) {
-  throw new Error(`Expected idempotent fulfillment retry: ${JSON.stringify(retry)} grants=${grantCalls}`);
+if (
+  retry.status !== "FULFILLED" ||
+  retry.value.entitlementCount !== 1 ||
+  retry.value.claimUnitCount !== 0 ||
+  grantCount() !== 2 ||
+  claimCount() !== 0
+) {
+  throw new Error(`Expected idempotent direct fulfillment retry: ${JSON.stringify(retry)} grants=${grantCount()}`);
+}
+
+const claimZero = await orders.create(
+  orderInput("ORD-ZERO-CLAIM-CERT", "INV-ZERO-CLAIM-CERT", 0, "CLAIM_CODE"),
+);
+if (claimZero.status !== "CREATED" || claimZero.value.totalMinor !== 0) {
+  throw new Error(`Expected zero-total claim order: ${JSON.stringify(claimZero)}`);
+}
+const claimFirst = await fulfillment.fulfill({ orderId: claimZero.value.orderId, fulfilledAt });
+if (
+  claimFirst.status !== "FULFILLED" ||
+  claimFirst.value.fulfillmentMode !== "CLAIM_CODE" ||
+  claimFirst.value.entitlementCount !== 0 ||
+  claimFirst.value.claimUnitCount !== 1 ||
+  grantCount() !== 2 ||
+  claimCount() !== 1
+) {
+  throw new Error(`Expected claim-routed zero-total fulfillment: ${JSON.stringify(claimFirst)}`);
+}
+const claimRetry = await fulfillment.fulfill({ orderId: claimZero.value.orderId, fulfilledAt });
+if (
+  claimRetry.status !== "FULFILLED" ||
+  claimRetry.value.claimUnitCount !== 1 ||
+  grantCount() !== 2 ||
+  claimCount() !== 2
+) {
+  throw new Error(`Expected idempotent claim fulfillment retry: ${JSON.stringify(claimRetry)} claims=${claimCount()}`);
 }
 
 const nonzero = await orders.create(orderInput("ORD-ZERO-CERT-2", "INV-ZERO-CERT-2", 100));
@@ -84,33 +143,45 @@ await client.connect();
 try {
   const rows = await client.query<{
     number: string;
+    fulfillmentMode: string;
     orderStatus: string;
     invoiceStatus: string;
     paidAt: Date | null;
     issuedAt: Date | null;
   }>(
-    `SELECT o."number", o."status" AS "orderStatus", i."status" AS "invoiceStatus",
+    `SELECT o."number", o."fulfillmentMode"::text AS "fulfillmentMode",
+            o."status" AS "orderStatus", i."status" AS "invoiceStatus",
             o."paidAt", i."issuedAt"
        FROM "Order" o
        JOIN "Invoice" i ON i."orderId" = o."id"
-      WHERE o."number" IN ('ORD-ZERO-CERT-1', 'ORD-ZERO-CERT-2')
+      WHERE o."number" IN ('ORD-ZERO-CERT-1', 'ORD-ZERO-CLAIM-CERT', 'ORD-ZERO-CERT-2')
       ORDER BY o."number"`,
   );
   const fulfilledRow = rows.rows.find((row) => row.number === "ORD-ZERO-CERT-1");
+  const claimRow = rows.rows.find((row) => row.number === "ORD-ZERO-CLAIM-CERT");
   const rejectedRow = rows.rows.find((row) => row.number === "ORD-ZERO-CERT-2");
   if (
     !fulfilledRow ||
+    fulfilledRow.fulfillmentMode !== "ACCOUNT_ENTITLEMENT" ||
     fulfilledRow.orderStatus !== "PAID" ||
     fulfilledRow.invoiceStatus !== "FINAL" ||
     !fulfilledRow.paidAt ||
     !fulfilledRow.issuedAt
   ) {
-    throw new Error(`Zero-total persistence was not finalized: ${JSON.stringify(fulfilledRow)}`);
+    throw new Error(`Zero-total direct persistence was not finalized: ${JSON.stringify(fulfilledRow)}`);
+  }
+  if (
+    !claimRow ||
+    claimRow.fulfillmentMode !== "CLAIM_CODE" ||
+    claimRow.orderStatus !== "PAID" ||
+    claimRow.invoiceStatus !== "FINAL"
+  ) {
+    throw new Error(`Zero-total claim persistence was not finalized: ${JSON.stringify(claimRow)}`);
   }
   if (!rejectedRow || rejectedRow.orderStatus !== "PENDING" || rejectedRow.invoiceStatus !== "DRAFT") {
     throw new Error(`Non-zero rejection mutated commercial state: ${JSON.stringify(rejectedRow)}`);
   }
-  console.log("Commerce zero-payment PAID/FINAL + idempotent entitlement retry GREEN");
+  console.log("Commerce zero-payment direct + claim routing and idempotent retry GREEN");
 } finally {
   await client.end();
 }

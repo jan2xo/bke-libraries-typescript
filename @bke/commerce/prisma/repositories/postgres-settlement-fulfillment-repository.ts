@@ -1,19 +1,23 @@
 import { Client } from "pg";
-import type { CommerceOrderFulfillmentMode } from "../../contracts/order-invoice-creation.contract";
 import type {
-  CommerceZeroPaymentFulfillmentRepository,
-  CommerceZeroPaymentOrderItem,
-  CommerceZeroPaymentRecord,
-} from "../../logic/zero-payment-fulfillment-repository";
+  CommerceSettlementFulfillmentDisposition,
+  CommerceSettlementFulfillmentMode,
+} from "../../contracts/settlement-fulfillment.contract";
+import type {
+  CommerceSettlementFulfillmentOrderItem,
+  CommerceSettlementFulfillmentRecord,
+  CommerceSettlementFulfillmentRepository,
+} from "../../logic/settlement-fulfillment-repository";
 
-type FulfillmentInput = Parameters<CommerceZeroPaymentFulfillmentRepository["fulfill"]>[0];
+type SettlementInput = Parameters<CommerceSettlementFulfillmentRepository["settle"]>[0];
 
 interface OrderRow {
   id: string;
   accountId: string;
-  fulfillmentMode: CommerceOrderFulfillmentMode;
-  fulfillmentSnapshot: unknown;
   status: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED" | "PARTIALLY_REFUNDED";
+  fulfillmentMode: CommerceSettlementFulfillmentMode;
+  fulfillmentSnapshot: unknown;
+  currency: string;
   totalMinor: number;
 }
 
@@ -37,45 +41,49 @@ interface ItemRow {
   policySnapshot: unknown;
 }
 
-function mapRecord(order: OrderRow, invoice: InvoiceRow, items: readonly ItemRow[]): CommerceZeroPaymentRecord {
+function mapRecord(
+  order: OrderRow,
+  invoice: InvoiceRow,
+  items: readonly ItemRow[],
+  settlementDisposition: CommerceSettlementFulfillmentDisposition,
+): CommerceSettlementFulfillmentRecord {
   return Object.freeze({
     orderId: order.id,
     invoiceId: invoice.id,
     accountId: order.accountId,
-    fulfillmentMode: order.fulfillmentMode,
-    fulfillmentSnapshot: order.fulfillmentSnapshot,
+    amountMinor: Number(order.totalMinor),
+    currency: order.currency,
     orderStatus: "PAID" as const,
     invoiceStatus: "FINAL" as const,
-    items: Object.freeze(
-      items.map((item): CommerceZeroPaymentOrderItem =>
-        Object.freeze({
-          orderItemId: item.id,
-          productId: item.productId,
-          editionId: item.editionId,
-          purchasePlanId: item.purchasePlanId,
-          quantity: Number(item.quantity),
-          entitlementSnapshot: item.entitlementSnapshot,
-          policySnapshot: item.policySnapshot,
-        }),
-      ),
-    ),
+    settlementDisposition,
+    fulfillmentMode: order.fulfillmentMode,
+    fulfillmentSnapshot: order.fulfillmentSnapshot,
+    items: Object.freeze(items.map((item): CommerceSettlementFulfillmentOrderItem => Object.freeze({
+      orderItemId: item.id,
+      productId: item.productId,
+      editionId: item.editionId,
+      purchasePlanId: item.purchasePlanId,
+      quantity: Number(item.quantity),
+      entitlementSnapshot: item.entitlementSnapshot,
+      policySnapshot: item.policySnapshot,
+    }))),
   });
 }
 
-export function createPostgresCommerceZeroPaymentFulfillmentRepository(
+export function createPostgresCommerceSettlementFulfillmentRepository(
   connectionString: string,
-): CommerceZeroPaymentFulfillmentRepository {
+): CommerceSettlementFulfillmentRepository {
   const normalized = connectionString.trim();
   if (!normalized) throw new Error("Commerce PostgreSQL connection string is required.");
 
   return Object.freeze({
-    async fulfill(input: FulfillmentInput) {
+    async settle(input: SettlementInput) {
       const client = new Client({ connectionString: normalized });
       await client.connect();
       try {
         await client.query("BEGIN");
         const orderResult = await client.query<OrderRow>(
-          `SELECT "id", "accountId", "fulfillmentMode", "fulfillmentSnapshot", "status", "totalMinor"
+          `SELECT "id", "accountId", "status", "fulfillmentMode", "fulfillmentSnapshot", "currency", "totalMinor"
              FROM "Order"
             WHERE "id" = $1
             FOR UPDATE`,
@@ -85,30 +93,31 @@ export function createPostgresCommerceZeroPaymentFulfillmentRepository(
           await client.query("ROLLBACK");
           return { status: "REJECTED" as const, code: "ORDER_NOT_FOUND" as const };
         }
-
         const order = orderResult.rows[0]!;
-        if (Number(order.totalMinor) !== 0) {
+        if (Number(order.totalMinor) !== input.expectedAmountMinor || order.currency !== input.expectedCurrency) {
           await client.query("ROLLBACK");
-          return { status: "REJECTED" as const, code: "ORDER_NOT_ZERO_TOTAL" as const };
+          return { status: "REJECTED" as const, code: "SETTLEMENT_MISMATCH" as const };
         }
-        if (order.status !== "PENDING" && order.status !== "PAID") {
+        if (order.status !== "PENDING" && order.status !== "PAID" && order.status !== "CANCELLED") {
           await client.query("ROLLBACK");
-          return { status: "REJECTED" as const, code: "ORDER_NOT_FULFILLABLE" as const };
+          return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
         }
+
+        const settlementDisposition: CommerceSettlementFulfillmentDisposition =
+          order.status === "CANCELLED" ? "AFTER_LOCAL_CANCELLATION" : "STANDARD";
 
         const invoiceResult = await client.query<InvoiceRow>(
           `SELECT "id", "status" FROM "Invoice" WHERE "orderId" = $1 FOR UPDATE`,
           [order.id],
         );
-        if (invoiceResult.rowCount !== 1) throw new Error("Commerce invoice is missing for zero-payment fulfillment.");
+        if (invoiceResult.rowCount !== 1) throw new Error("Commerce invoice is missing for settlement.");
         const invoice = invoiceResult.rows[0]!;
-
         if (
-          (order.status === "PENDING" && invoice.status !== "DRAFT") ||
+          ((order.status === "PENDING" || order.status === "CANCELLED") && invoice.status !== "DRAFT") ||
           (order.status === "PAID" && invoice.status !== "FINAL")
         ) {
           await client.query("ROLLBACK");
-          return { status: "REJECTED" as const, code: "ORDER_NOT_FULFILLABLE" as const };
+          return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
         }
 
         const redemptionResult = await client.query<RedemptionRow>(
@@ -120,33 +129,39 @@ export function createPostgresCommerceZeroPaymentFulfillmentRepository(
           [order.id],
         );
         const redemption = redemptionResult.rows[0];
-        if (redemption && redemption.status !== "RESERVED" && redemption.status !== "APPLIED") {
+        const releasedAfterCancellation =
+          order.status === "CANCELLED" && redemption?.status === "RELEASED";
+        if (
+          redemption &&
+          redemption.status !== "RESERVED" &&
+          redemption.status !== "APPLIED" &&
+          !releasedAfterCancellation
+        ) {
           await client.query("ROLLBACK");
-          return { status: "REJECTED" as const, code: "ORDER_NOT_FULFILLABLE" as const };
+          return { status: "REJECTED" as const, code: "ORDER_NOT_SETTLEABLE" as const };
         }
 
-        if (order.status === "PENDING") {
+        if (order.status === "PENDING" || order.status === "CANCELLED") {
           await client.query(
             `UPDATE "Order" SET "status" = 'PAID', "paidAt" = $2 WHERE "id" = $1`,
-            [order.id, input.fulfilledAt],
+            [order.id, input.settledAt],
           );
           await client.query(
             `UPDATE "Invoice" SET "status" = 'FINAL', "issuedAt" = $2 WHERE "id" = $1`,
-            [invoice.id, input.fulfilledAt],
+            [invoice.id, input.settledAt],
           );
         }
-        if (redemption?.status === "RESERVED") {
+        if (redemption?.status === "RESERVED" || releasedAfterCancellation) {
           await client.query(
             `UPDATE "OfferRedemption"
                 SET "status" = 'APPLIED', "appliedAt" = $2
               WHERE "id" = $1`,
-            [redemption.id, input.fulfilledAt],
+            [redemption!.id, input.settledAt],
           );
         }
 
         const itemsResult = await client.query<ItemRow>(
-          `SELECT "id", "productId", "editionId", "purchasePlanId", "quantity",
-                  "entitlementSnapshot", "policySnapshot"
+          `SELECT "id", "productId", "editionId", "purchasePlanId", "quantity", "entitlementSnapshot", "policySnapshot"
              FROM "OrderItem"
             WHERE "orderId" = $1
             ORDER BY "id"`,
@@ -154,11 +169,12 @@ export function createPostgresCommerceZeroPaymentFulfillmentRepository(
         );
         await client.query("COMMIT");
         return {
-          status: "FULFILLED" as const,
+          status: "SETTLED" as const,
           value: mapRecord(
             { ...order, status: "PAID" },
             { ...invoice, status: "FINAL" },
             itemsResult.rows,
+            settlementDisposition,
           ),
         };
       } catch (error) {

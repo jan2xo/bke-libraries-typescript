@@ -61,6 +61,7 @@ export type CommerceStartCheckoutResult =
         | "ORDER_CONFLICT"
         | "OFFER_NOT_AVAILABLE"
         | "ENTITLEMENT_CONFLICT"
+        | "CLAIM_UNIT_CONFLICT"
         | "PAYMENT_SOURCE_CONFLICT";
     }
   | {
@@ -71,6 +72,7 @@ export type CommerceStartCheckoutResult =
         | "LEGAL_UNAVAILABLE"
         | "COMMERCE_PERSISTENCE_UNAVAILABLE"
         | "ENTITLEMENTS_UNAVAILABLE"
+        | "CLAIM_UNITS_UNAVAILABLE"
         | "PAYMENTS_UNAVAILABLE"
         | "PAYMENT_PROVIDER_UNAVAILABLE"
         | "PAYMENT_PROVIDER_REJECTED";

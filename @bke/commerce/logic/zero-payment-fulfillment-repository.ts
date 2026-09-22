@@ -1,7 +1,10 @@
+import type { CommerceOrderFulfillmentMode } from "../contracts/order-invoice-creation.contract";
+
 export interface CommerceZeroPaymentOrderItem {
   readonly orderItemId: string;
   readonly productId: string;
   readonly editionId: string | null;
+  readonly purchasePlanId: string | null;
   readonly quantity: number;
   readonly entitlementSnapshot: unknown;
   readonly policySnapshot: unknown;
@@ -11,6 +14,8 @@ export interface CommerceZeroPaymentRecord {
   readonly orderId: string;
   readonly invoiceId: string;
   readonly accountId: string;
+  readonly fulfillmentMode: CommerceOrderFulfillmentMode;
+  readonly fulfillmentSnapshot: unknown;
   readonly orderStatus: "PAID";
   readonly invoiceStatus: "FINAL";
   readonly items: readonly CommerceZeroPaymentOrderItem[];

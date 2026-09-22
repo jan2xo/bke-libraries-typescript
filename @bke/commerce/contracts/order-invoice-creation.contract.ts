@@ -28,8 +28,12 @@ export interface CommerceOrderInvoiceLineInput {
   readonly pricingVersion?: string | null;
 }
 
+export type CommerceOrderFulfillmentMode = "ACCOUNT_ENTITLEMENT" | "CLAIM_CODE";
+
 export interface CommerceCreateOrderInvoiceInput {
   readonly accountId: string;
+  readonly fulfillmentMode?: CommerceOrderFulfillmentMode;
+  readonly fulfillmentSnapshot?: unknown;
   readonly renewalSubscriptionId?: string | null;
   readonly orderNumber: string;
   readonly invoiceNumber: string;
@@ -44,6 +48,7 @@ export interface CommerceOrderInvoiceSnapshot {
   readonly orderId: string;
   readonly orderNumber: string;
   readonly orderStatus: "PENDING";
+  readonly fulfillmentMode?: CommerceOrderFulfillmentMode;
   readonly invoiceId: string;
   readonly invoiceNumber: string;
   readonly invoiceStatus: "DRAFT";

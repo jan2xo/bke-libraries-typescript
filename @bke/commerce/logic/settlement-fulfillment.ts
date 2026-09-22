@@ -1,32 +1,45 @@
 import type {
-  CommerceFulfillZeroPaymentInput,
-  CommerceFulfillZeroPaymentResult,
-  CommerceZeroPaymentFulfillmentCapability,
-} from "../contracts/zero-payment-fulfillment.contract";
+  CommerceReactToSettlementFulfillmentInput,
+  CommerceReactToSettlementFulfillmentResult,
+  CommerceSettlementFulfillmentCapability,
+} from "../contracts/settlement-fulfillment.contract";
 import type {
   CommerceClaimUnitIssuer,
   CommerceEntitlementGranter,
+  CommercePaymentsSettlementReconciler,
 } from "./settlement-fulfillment-ports";
-import type { CommerceZeroPaymentFulfillmentRepository } from "./zero-payment-fulfillment-repository";
+import type { CommerceSettlementFulfillmentRepository } from "./settlement-fulfillment-repository";
 
-export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
-  readonly repository: CommerceZeroPaymentFulfillmentRepository;
+export function createCommerceSettlementFulfillmentCapability(dependencies: {
+  readonly payments: CommercePaymentsSettlementReconciler;
+  readonly repository: CommerceSettlementFulfillmentRepository;
   readonly entitlements: CommerceEntitlementGranter;
-  readonly claimUnits?: CommerceClaimUnitIssuer;
-}): CommerceZeroPaymentFulfillmentCapability {
+  readonly claimUnits: CommerceClaimUnitIssuer;
+}): CommerceSettlementFulfillmentCapability {
   return Object.freeze({
-    async fulfill(input: CommerceFulfillZeroPaymentInput): Promise<CommerceFulfillZeroPaymentResult> {
-      if (
-        !input.orderId.trim() ||
-        !(input.fulfilledAt instanceof Date) ||
-        Number.isNaN(input.fulfilledAt.getTime())
-      ) {
+    async react(
+      input: CommerceReactToSettlementFulfillmentInput,
+    ): Promise<CommerceReactToSettlementFulfillmentResult> {
+      if (!input.providerEventRecordId.trim()) {
         return { status: "FAILED", code: "INVALID_INPUT" };
+      }
+
+      const settlement = await dependencies.payments.reconcile(input);
+      if (settlement.status === "REJECTED") {
+        return { status: "REJECTED", code: "PAYMENT_EVENT_REJECTED" };
+      }
+      if (settlement.status === "FAILED") {
+        return { status: "FAILED", code: "PAYMENTS_UNAVAILABLE" };
       }
 
       let commercial;
       try {
-        commercial = await dependencies.repository.fulfill(input);
+        commercial = await dependencies.repository.settle({
+          orderId: settlement.value.commercialReference,
+          expectedAmountMinor: settlement.value.amountMinor,
+          expectedCurrency: settlement.value.currency,
+          settledAt: settlement.value.settledAt,
+        });
       } catch {
         return { status: "FAILED", code: "COMMERCE_PERSISTENCE_UNAVAILABLE" };
       }
@@ -47,15 +60,15 @@ export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
             quantity: item.quantity,
             scopeSnapshot: item.entitlementSnapshot ?? item.policySnapshot,
             grantSnapshot: {
-              source: "commerce-zero-payment",
+              source: "commerce-settlement",
               orderId: commercial.value.orderId,
               orderItemId: item.orderItemId,
+              settlementFactId: settlement.value.settlementFactId,
               productId: item.productId,
               editionId: item.editionId,
             },
-            validFrom: input.fulfilledAt,
+            validFrom: settlement.value.settledAt,
           });
-
           if (result.status === "REJECTED") {
             return { status: "REJECTED", code: "ENTITLEMENT_CONFLICT" };
           }
@@ -65,9 +78,6 @@ export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
           entitlementCount += 1;
         }
       } else {
-        if (!dependencies.claimUnits) {
-          return { status: "FAILED", code: "CLAIM_UNITS_UNAVAILABLE" };
-        }
         for (const item of commercial.value.items) {
           const result = await dependencies.claimUnits.issue({
             purchaserAccountId: commercial.value.accountId,
@@ -81,14 +91,15 @@ export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
             scopeSnapshot: item.entitlementSnapshot ?? item.policySnapshot,
             fulfillmentSnapshot: commercial.value.fulfillmentSnapshot,
             grantSnapshot: {
-              source: "commerce-zero-payment-claim",
+              source: "commerce-settlement-claim",
               orderId: commercial.value.orderId,
               orderItemId: item.orderItemId,
+              settlementFactId: settlement.value.settlementFactId,
               productId: item.productId,
               editionId: item.editionId,
               purchasePlanId: item.purchasePlanId,
             },
-            validFrom: input.fulfilledAt,
+            validFrom: settlement.value.settledAt,
           });
           if (result.status === "REJECTED") {
             return { status: "REJECTED", code: "CLAIM_UNIT_CONFLICT" };
@@ -107,6 +118,8 @@ export function createCommerceZeroPaymentFulfillmentCapability(dependencies: {
           invoiceId: commercial.value.invoiceId,
           orderStatus: "PAID",
           invoiceStatus: "FINAL",
+          settlementDisposition: commercial.value.settlementDisposition,
+          settlementFactId: settlement.value.settlementFactId,
           fulfillmentMode: commercial.value.fulfillmentMode,
           entitlementCount,
           claimUnitCount,
