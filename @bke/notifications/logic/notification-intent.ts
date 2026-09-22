@@ -19,6 +19,7 @@ function validAudience(audience: NotificationsAudience): boolean {
       return hasText(audience.segmentKey);
     case "VISITOR":
       return audience.visitorId == null || hasText(audience.visitorId);
+    case "ADMINISTRATORS":
     case "ALL_USERS":
     case "ALL_ACTIVE_CLIENTS":
       return true;
