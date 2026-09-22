@@ -4,6 +4,8 @@ datasource db {
 
 enum EntitlementStatus {
   ACTIVE
+  SUSPENDED
+  REVOKED
 }
 
 model Entitlement {
@@ -17,6 +19,8 @@ model Entitlement {
   grantSnapshot   Json
   validFrom       DateTime
   validUntil      DateTime?
+  statusChangedAt DateTime?
+  statusReason    String?
   createdAt       DateTime          @default(now())
 
   @@index([subjectId, status])
