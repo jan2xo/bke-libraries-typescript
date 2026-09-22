@@ -16,6 +16,7 @@ interface OrderRow {
   accountId: string;
   status: "PENDING" | "PAID" | "CANCELLED" | "REFUNDED" | "PARTIALLY_REFUNDED";
   fulfillmentMode: CommerceSettlementFulfillmentMode;
+  fulfillmentSnapshot: unknown;
   currency: string;
   totalMinor: number;
 }
@@ -56,6 +57,7 @@ function mapRecord(
     invoiceStatus: "FINAL" as const,
     settlementDisposition,
     fulfillmentMode: order.fulfillmentMode,
+    fulfillmentSnapshot: order.fulfillmentSnapshot,
     items: Object.freeze(items.map((item): CommerceSettlementFulfillmentOrderItem => Object.freeze({
       orderItemId: item.id,
       productId: item.productId,
@@ -81,7 +83,7 @@ export function createPostgresCommerceSettlementFulfillmentRepository(
       try {
         await client.query("BEGIN");
         const orderResult = await client.query<OrderRow>(
-          `SELECT "id", "accountId", "status", "fulfillmentMode", "currency", "totalMinor"
+          `SELECT "id", "accountId", "status", "fulfillmentMode", "fulfillmentSnapshot", "currency", "totalMinor"
              FROM "Order"
             WHERE "id" = $1
             FOR UPDATE`,
