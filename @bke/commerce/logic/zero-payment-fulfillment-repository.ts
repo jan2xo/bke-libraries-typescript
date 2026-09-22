@@ -15,6 +15,7 @@ export interface CommerceZeroPaymentRecord {
   readonly invoiceId: string;
   readonly accountId: string;
   readonly fulfillmentMode: CommerceOrderFulfillmentMode;
+  readonly fulfillmentSnapshot: unknown;
   readonly orderStatus: "PAID";
   readonly invoiceStatus: "FINAL";
   readonly items: readonly CommerceZeroPaymentOrderItem[];
