@@ -33,6 +33,7 @@ function fixture(mode: "ACCOUNT_ENTITLEMENT" | "CLAIM_CODE") {
             invoiceStatus: "FINAL" as const,
             settlementDisposition: "STANDARD" as const,
             fulfillmentMode: mode,
+            fulfillmentSnapshot: { recipientEmail: "recipient@example.test" },
             items: [{
               orderItemId: "item-1",
               productId: "product-1",
@@ -55,6 +56,7 @@ function fixture(mode: "ACCOUNT_ENTITLEMENT" | "CLAIM_CODE") {
     claimUnits: {
       async issue(input) {
         claimCalls += 1;
+        expect(input.fulfillmentSnapshot).toEqual({ recipientEmail: "recipient@example.test" });
         return { status: "ISSUED" as const, unitCount: input.quantity };
       },
     },
@@ -121,6 +123,7 @@ describe("Commerce settlement fulfillment", () => {
               invoiceStatus: "FINAL" as const,
               settlementDisposition: "STANDARD" as const,
               fulfillmentMode: "CLAIM_CODE" as const,
+              fulfillmentSnapshot: { recipientEmail: "recipient@example.test" },
               items: [{
                 orderItemId: "item-1",
                 productId: "product-1",
