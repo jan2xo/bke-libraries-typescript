@@ -35,6 +35,8 @@ describe("Entitlements durable-right grant", () => {
             grantSnapshot: input.grantSnapshot,
             validFrom: input.validFrom,
             validUntil: input.validUntil ?? null,
+            statusChangedAt: null,
+            statusReason: null,
             createdAt: new Date("2026-09-02T00:00:01.000Z"),
           },
         };
