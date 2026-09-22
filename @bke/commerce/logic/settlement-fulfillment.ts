@@ -59,6 +59,7 @@ export function createCommerceSettlementFulfillmentCapability(dependencies: {
             sourceReference,
             quantity: item.quantity,
             scopeSnapshot: item.entitlementSnapshot ?? item.policySnapshot,
+            fulfillmentSnapshot: commercial.value.fulfillmentSnapshot,
             grantSnapshot: {
               source: "commerce-settlement",
               orderId: commercial.value.orderId,
