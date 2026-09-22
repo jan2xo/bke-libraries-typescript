@@ -30,6 +30,7 @@ function capability(options: {
             invoiceId: "invoice-1",
             accountId: "account-1",
             fulfillmentMode: options.mode ?? "ACCOUNT_ENTITLEMENT",
+            fulfillmentSnapshot: { recipientEmail: "recipient@example.test" },
             orderStatus: "PAID" as const,
             invoiceStatus: "FINAL" as const,
             items: [
@@ -58,8 +59,9 @@ function capability(options: {
     },
     ...(options.claimUnitsConfigured === false ? {} : {
       claimUnits: {
-        async issue(input: { quantity: number }) {
+        async issue(input) {
           claimCalls += 1;
+          expect(input.fulfillmentSnapshot).toEqual({ recipientEmail: "recipient@example.test" });
           const status = options.claim ?? "ISSUED";
           if (status === "ISSUED" || status === "EXISTING") {
             return { status, unitCount: input.quantity } as const;
