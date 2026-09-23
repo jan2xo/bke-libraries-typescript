@@ -1,0 +1,1 @@
+ALTER TYPE "EntitlementStatus" ADD VALUE IF NOT EXISTS 'REVOKED';
