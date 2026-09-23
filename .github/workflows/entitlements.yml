@@ -70,5 +70,7 @@ jobs:
         run: npx tsx @bke/entitlements/tests/persistence-isolation.certify.ts
       - name: Test Entitlements logic
         run: npm run test --workspace=@bke/entitlements
-      - name: Certify Entitlements PostgreSQL behavior
+      - name: Certify Entitlements grant PostgreSQL behavior
         run: npx tsx @bke/entitlements/tests/durable-right-grant.postgres.certify.ts
+      - name: Certify Entitlements revocation PostgreSQL behavior
+        run: npx tsx @bke/entitlements/tests/durable-right-revocation.postgres.certify.ts
