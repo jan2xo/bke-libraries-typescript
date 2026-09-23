@@ -1,7 +1,7 @@
 export const ENTITLEMENTS_DURABLE_RIGHT_GRANT_CAPABILITY_ID =
   "bke.entitlements.durable-right-grant.v1" as const;
 
-export type EntitlementsDurableRightStatus = "ACTIVE";
+export type EntitlementsDurableRightStatus = "ACTIVE" | "REVOKED";
 
 export interface EntitlementsGrantDurableRightInput {
   readonly subjectId: string;
