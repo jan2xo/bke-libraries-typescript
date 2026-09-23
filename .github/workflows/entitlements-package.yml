@@ -39,7 +39,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/entitlements --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-entitlements-0.2.0.tgz"
+          test "$artifact" = "bke-entitlements-0.2.1.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "ENTITLEMENTS_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -60,8 +60,9 @@ jobs:
           grep -Fx 'package/prisma/schema.prisma' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-durable-right-grant-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-durable-right-revocation-repository.ts' artifacts/package-contents.txt
-          grep -Fx 'package/migrations/0002_entitlements_durable_right_revocation/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/migrations/0001_entitlements_durable_right_baseline/migration.sql' artifacts/package-contents.txt
+          grep -Fx 'package/migrations/0001a_entitlements_durable_right_revoked_enum/migration.sql' artifacts/package-contents.txt
+          grep -Fx 'package/migrations/0002_entitlements_durable_right_revocation/migration.sql' artifacts/package-contents.txt
           grep -Fx 'package/docs/EXTRACTION-SOURCE.md' artifacts/package-contents.txt
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
             echo '::error::Tests or dependency caches must not ship in @bke/entitlements.'
@@ -122,10 +123,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-entitlements-0.2.0
+          name: bke-entitlements-0.2.1
           path: |
-            artifacts/bke-entitlements-0.2.0.tgz
-            artifacts/bke-entitlements-0.2.0.tgz.sha256
+            artifacts/bke-entitlements-0.2.1.tgz
+            artifacts/bke-entitlements-0.2.1.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Entitlements release
