@@ -74,3 +74,7 @@ jobs:
         run: npx tsx @bke/entitlements/tests/durable-right-grant.postgres.certify.ts
       - name: Certify Entitlements revocation PostgreSQL behavior
         run: npx tsx @bke/entitlements/tests/durable-right-revocation.postgres.certify.ts
+      - name: Certify Entitlements transactional migration ordering
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+          npx tsx @bke/entitlements/tests/migration-transaction.postgres.certify.ts
