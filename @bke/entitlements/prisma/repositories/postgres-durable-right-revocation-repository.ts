@@ -14,6 +14,7 @@ type EntitlementLifecycleRow = {
   revokedAt: Date | null;
   revocationReference: string | null;
   revocationSnapshot: unknown;
+  matches?: boolean;
 };
 
 function json(value: unknown): string {
@@ -55,11 +56,22 @@ export function createPostgresEntitlementsDurableRightRevocationRepository(
       try {
         await client.query("BEGIN");
         const found = await client.query<EntitlementLifecycleRow>(
-          `SELECT "id", "status", "revokedAt", "revocationReference", "revocationSnapshot"
+          `SELECT "id", "status", "revokedAt", "revocationReference", "revocationSnapshot",
+                  (
+                    "status" = 'REVOKED'
+                    AND "revocationReference" = $2
+                    AND "revokedAt" = $3::timestamp
+                    AND "revocationSnapshot" = $4::jsonb
+                  ) AS "matches"
              FROM "Entitlement"
             WHERE "id" = $1
             FOR UPDATE`,
-          [input.entitlementId],
+          [
+            input.entitlementId,
+            input.revocationReference,
+            input.revokedAt,
+            json(input.revocationSnapshot),
+          ],
         );
 
         const current = found.rows[0];
@@ -69,12 +81,8 @@ export function createPostgresEntitlementsDurableRightRevocationRepository(
         }
 
         if (current.status === "REVOKED") {
-          const sameRevocation =
-            current.revocationReference === input.revocationReference &&
-            current.revokedAt?.getTime() === input.revokedAt.getTime() &&
-            JSON.stringify(current.revocationSnapshot ?? null) === json(input.revocationSnapshot);
           await client.query("COMMIT");
-          return sameRevocation
+          return current.matches
             ? { status: "EXISTING", value: snapshot(current) }
             : { status: "REJECTED", code: "REVOCATION_CONFLICT" };
         }
