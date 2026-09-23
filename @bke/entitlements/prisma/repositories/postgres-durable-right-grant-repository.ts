@@ -14,7 +14,7 @@ type EntitlementRow = {
   subjectId: string;
   resourceId: string;
   sourceReference: string;
-  status: "ACTIVE";
+  status: "ACTIVE" | "REVOKED";
   quantity: number;
   scopeSnapshot: unknown;
   grantSnapshot: unknown;

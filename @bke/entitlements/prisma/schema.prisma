@@ -4,6 +4,7 @@ datasource db {
 
 enum EntitlementStatus {
   ACTIVE
+  REVOKED
 }
 
 model Entitlement {
@@ -17,9 +18,13 @@ model Entitlement {
   grantSnapshot   Json
   validFrom       DateTime
   validUntil      DateTime?
+  revokedAt       DateTime?
+  revocationReference String?
+  revocationSnapshot Json?
   createdAt       DateTime          @default(now())
 
   @@index([subjectId, status])
   @@index([resourceId, status])
   @@index([validUntil])
+  @@index([revocationReference])
 }
