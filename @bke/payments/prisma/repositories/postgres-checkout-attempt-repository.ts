@@ -15,7 +15,7 @@ interface CheckoutAttemptRow {
   currency: string;
   payerSnapshot: unknown;
   itemsSnapshot: unknown;
-  status: "CREATING" | "PENDING" | "FAILED";
+  status: "CREATING" | "PENDING" | "CANCELLED" | "FAILED";
   externalCheckoutId: string | null;
   checkoutUrl: string | null;
   failureCode: string | null;
