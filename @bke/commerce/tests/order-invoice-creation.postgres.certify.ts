@@ -1,5 +1,7 @@
 import { Client } from "pg";
 import { createCommerceOrderInvoiceCreationCapability } from "../logic/order-invoice-creation";
+import { createCommerceOrderSourceLookupCapability } from "../logic/order-source-lookup";
+import { createPostgresCommerceOrderSourceLookupRepository } from "../prisma/repositories/postgres-order-source-lookup-repository";
 import { createPostgresCommerceOrderInvoiceCreationRepository } from "../prisma/repositories/postgres-order-invoice-creation-repository";
 
 const connectionString = process.env.DATABASE_URL?.trim();
