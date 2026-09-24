@@ -52,6 +52,7 @@ export function calculateCommerceOrderTotals(input: CommerceCreateOrderInvoiceIn
 function validateInput(input: CommerceCreateOrderInvoiceInput): boolean {
   if (
     !validText(input.accountId, 256) ||
+    !validOptionalText(input.sourceReference, 200) ||
     !validText(input.orderNumber, 128) ||
     !validText(input.invoiceNumber, 128) ||
     !validText(input.currency, 16) ||
@@ -104,6 +105,7 @@ export function createCommerceOrderInvoiceCreationCapability(
         return await repository.create({
           ...input,
           accountId: input.accountId.trim(),
+          sourceReference: input.sourceReference?.trim() || null,
           orderNumber: input.orderNumber.trim(),
           invoiceNumber: input.invoiceNumber.trim(),
           currency: input.currency.trim().toUpperCase(),
