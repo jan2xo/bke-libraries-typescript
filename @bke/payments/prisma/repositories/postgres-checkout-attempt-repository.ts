@@ -55,6 +55,17 @@ export function createPostgresPaymentsCheckoutAttemptRepository(
   }
 
   return Object.freeze({
+    async findBySourceReference(sourceReference: string) {
+      return withClient(async (client) => {
+        const result = await client.query<CheckoutAttemptRow>(
+          `SELECT * FROM "PaymentCheckoutAttempt" WHERE "sourceReference" = $1 LIMIT 1`,
+          [sourceReference],
+        );
+        const row = result.rows[0];
+        return row ? toRecord(row) : null;
+      });
+    },
+
     async claim(input: PaymentsCheckoutAttemptClaim) {
       return withClient(async (client) => {
         const inserted = await client.query<CheckoutAttemptRow>(
