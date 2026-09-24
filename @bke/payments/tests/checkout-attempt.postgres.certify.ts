@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createPaymentsCheckoutAttemptCapability } from "../logic/checkout-attempt";
+import { createPaymentsCheckoutAttemptLookupCapability } from "../logic/checkout-attempt-lookup";
 import type { PaymentsCheckoutProvider } from "../logic/checkout-attempt-provider";
 import { createPostgresPaymentsCheckoutAttemptRepository } from "../prisma/repositories/postgres-checkout-attempt-repository";
 
