@@ -15,6 +15,7 @@ const capability = createCommerceOrderInvoiceCreationCapability(
 
 const input = {
   accountId: "opaque-account",
+  sourceReference: "checkout:postgres-cert",
   renewalSubscriptionId: "opaque-renewal-subscription",
   orderNumber: "ORD-CERT-1",
   invoiceNumber: "INV-CERT-1",
@@ -126,6 +127,7 @@ try {
 
   const ordinary = await capability.create({
     ...input,
+    sourceReference: "checkout:postgres-cert-2",
     renewalSubscriptionId: undefined,
     orderNumber: "ORD-CERT-2",
     invoiceNumber: "INV-CERT-2",
@@ -138,6 +140,30 @@ try {
   );
   if (ordinaryRow.rows[0]?.renewalSubscriptionId !== null) {
     throw new Error(`Ordinary order must keep renewal linkage null: ${JSON.stringify(ordinaryRow.rows[0])}`);
+  }
+
+  const sourceLookup = createCommerceOrderSourceLookupCapability(
+    createPostgresCommerceOrderSourceLookupRepository(connectionString),
+  );
+  const recovered = await sourceLookup.find({
+    sourceReference: "checkout:postgres-cert",
+  });
+  if (recovered.status !== "FOUND") {
+    throw new Error("Commerce checkout source recovery did not find the durable order.");
+  }
+  if (
+    recovered.value.orderId !== created.value.orderId ||
+    recovered.value.accountId !== "opaque-account" ||
+    recovered.value.sourceReference !== "checkout:postgres-cert" ||
+    recovered.value.status !== "PENDING"
+  ) {
+    throw new Error(`Commerce checkout source recovery drifted: ${JSON.stringify(recovered)}`);
+  }
+  const missing = await sourceLookup.find({
+    sourceReference: "checkout:postgres-missing",
+  });
+  if (missing.status !== "NOT_FOUND") {
+    throw new Error("Commerce checkout source recovery invented a missing order.");
   }
 
   console.log("Commerce Order + Invoice atomic creation + renewal linkage GREEN");
