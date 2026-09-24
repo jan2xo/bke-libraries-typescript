@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPaymentsCheckoutAttemptCapability } from "../logic/checkout-attempt";
+import { createPaymentsCheckoutAttemptLookupCapability } from "../logic/checkout-attempt-lookup";
 import type {
   PaymentsCheckoutAttemptClaim,
   PaymentsCheckoutAttemptRecord,
@@ -14,6 +15,9 @@ function repository(): PaymentsCheckoutAttemptRepository {
   const records = new Map<string, PaymentsCheckoutAttemptRecord>();
   const now = () => new Date("2026-09-02T00:00:00.000Z");
   return {
+    async findBySourceReference(sourceReference) {
+      return records.get(sourceReference) ?? null;
+    },
     async claim(input: PaymentsCheckoutAttemptClaim) {
       const existing = records.get(input.sourceReference);
       if (existing) return { created: false, record: existing };
@@ -99,6 +103,37 @@ describe("Payments checkout attempt", () => {
     };
     const capability = createPaymentsCheckoutAttemptCapability(repository(), provider);
     await expect(capability.create(input)).resolves.toEqual({ status: "FAILED", code: "PROVIDER_UNAVAILABLE" });
+  });
+
+  it("recovers checkout state by durable source reference", async () => {
+    const provider: PaymentsCheckoutProvider = {
+      name: "fakepay",
+      async createCheckout() {
+        return { externalCheckoutId: "checkout-recovery", checkoutUrl: "https://pay.example/recovery" };
+      },
+    };
+    const repo = repository();
+    const create = createPaymentsCheckoutAttemptCapability(repo, provider);
+    const lookup = createPaymentsCheckoutAttemptLookupCapability(repo);
+
+    await create.create(input);
+    const recovered = await lookup.find({ sourceReference: input.sourceReference });
+
+    expect(recovered.status).toBe("FOUND");
+    if (recovered.status !== "FOUND") throw new Error("expected recovered checkout");
+    expect(recovered.value.commercialReference).toBe(input.commercialReference);
+    expect(recovered.value.status).toBe("PENDING");
+    expect(recovered.value.checkoutUrl).toBe("https://pay.example/recovery");
+  });
+
+  it("reports NOT_FOUND and validates lookup source references", async () => {
+    const repo = repository();
+    const lookup = createPaymentsCheckoutAttemptLookupCapability(repo);
+    await expect(lookup.find({ sourceReference: "missing" })).resolves.toEqual({ status: "NOT_FOUND" });
+    await expect(lookup.find({ sourceReference: " " })).resolves.toEqual({
+      status: "FAILED",
+      code: "INVALID_INPUT",
+    });
   });
 
   it("fails closed on invalid or internally inconsistent priced requests", async () => {
