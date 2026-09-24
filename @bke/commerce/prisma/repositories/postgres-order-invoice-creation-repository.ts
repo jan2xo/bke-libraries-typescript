@@ -35,8 +35,10 @@ export function createPostgresCommerceOrderInvoiceCreationRepository(
           `SELECT 1 FROM "Order" WHERE "number" = $1
            UNION ALL
            SELECT 1 FROM "Invoice" WHERE "number" = $2
+           UNION ALL
+           SELECT 1 FROM "Order" WHERE $3::text IS NOT NULL AND "sourceReference" = $3
            LIMIT 1`,
-          [input.orderNumber, input.invoiceNumber],
+          [input.orderNumber, input.invoiceNumber, input.sourceReference ?? null],
         );
         if (duplicate.rowCount) {
           await client.query("ROLLBACK");
@@ -48,12 +50,13 @@ export function createPostgresCommerceOrderInvoiceCreationRepository(
 
         await client.query(
           `INSERT INTO "Order"
-             ("id", "number", "accountId", "renewalSubscriptionId", "fulfillmentMode", "fulfillmentSnapshot", "status", "currency", "subtotalMinor", "taxMinor", "totalMinor", "billingSnapshot")
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'PENDING', $7, $8, $9, $10, $11::jsonb)`,
+             ("id", "number", "accountId", "sourceReference", "renewalSubscriptionId", "fulfillmentMode", "fulfillmentSnapshot", "status", "currency", "subtotalMinor", "taxMinor", "totalMinor", "billingSnapshot")
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'PENDING', $8, $9, $10, $11, $12::jsonb)`,
           [
             orderId,
             input.orderNumber,
             input.accountId,
+            input.sourceReference ?? null,
             input.renewalSubscriptionId ?? null,
             input.fulfillmentMode ?? "ACCOUNT_ENTITLEMENT",
             json(input.fulfillmentSnapshot ?? {}),
@@ -125,6 +128,7 @@ export function createPostgresCommerceOrderInvoiceCreationRepository(
           status: "CREATED",
           value: {
             orderId,
+            sourceReference: input.sourceReference ?? null,
             orderNumber: input.orderNumber,
             orderStatus: "PENDING",
             fulfillmentMode: input.fulfillmentMode ?? "ACCOUNT_ENTITLEMENT",
