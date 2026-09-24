@@ -8,6 +8,7 @@ import {
 
 const validInput = {
   accountId: "account-1",
+  sourceReference: "checkout:source-1",
   orderNumber: "ORD-1001",
   invoiceNumber: "INV-1001",
   currency: "php",
@@ -73,9 +74,18 @@ describe("Commerce order + invoice creation", () => {
       },
     };
     const capability = createCommerceOrderInvoiceCreationCapability(repository);
-    const result = await capability.create({ ...validInput, accountId: " account-1 ", currency: " php " });
+    const result = await capability.create({
+      ...validInput,
+      accountId: " account-1 ",
+      sourceReference: " checkout:source-1 ",
+      currency: " php ",
+    });
     expect(result.status).toBe("CREATED");
-    expect(received).toMatchObject({ accountId: "account-1", currency: "PHP" });
+    expect(received).toMatchObject({
+      accountId: "account-1",
+      sourceReference: "checkout:source-1",
+      currency: "PHP",
+    });
   });
 
   it("fails closed on invalid monetary input", async () => {

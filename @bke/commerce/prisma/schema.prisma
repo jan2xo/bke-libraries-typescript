@@ -191,6 +191,7 @@ model Order {
   id                    String              @id
   number                String              @unique
   accountId             String
+  sourceReference       String?             @unique
   renewalSubscriptionId String?
   fulfillmentMode       CommerceFulfillmentMode @default(ACCOUNT_ENTITLEMENT)
   fulfillmentSnapshot   Json                    @default("{}")

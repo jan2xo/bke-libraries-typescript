@@ -1,7 +1,7 @@
 {
   "name": "@bke/payments",
-  "version": "0.8.0",
-  "description": "Reusable BKE provider-agnostic Payments capabilities with certified PayMongo adapter",
+  "version": "0.9.0",
+  "description": "Reusable BKE provider-agnostic Payments capabilities with checkout recovery and certified PayMongo adapter",
   "type": "module",
   "engines": { "node": ">=22.12.0" },
   "files": ["contracts", "logic", "providers", "prisma", "migrations", "docs", "module.manifest.ts", "prisma.config.ts", "README.md"],

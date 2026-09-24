@@ -31,6 +31,10 @@ export interface PaymentsCheckoutAttemptClaim {
 }
 
 export interface PaymentsCheckoutAttemptRepository {
+  findBySourceReference(
+    sourceReference: string,
+  ): Promise<PaymentsCheckoutAttemptRecord | null>;
+
   claim(input: PaymentsCheckoutAttemptClaim): Promise<{
     readonly created: boolean;
     readonly record: PaymentsCheckoutAttemptRecord;

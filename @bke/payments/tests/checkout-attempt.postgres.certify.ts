@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createPaymentsCheckoutAttemptCapability } from "../logic/checkout-attempt";
+import { createPaymentsCheckoutAttemptLookupCapability } from "../logic/checkout-attempt-lookup";
 import type { PaymentsCheckoutProvider } from "../logic/checkout-attempt-provider";
 import { createPostgresPaymentsCheckoutAttemptRepository } from "../prisma/repositories/postgres-checkout-attempt-repository";
 
@@ -79,6 +80,25 @@ try {
   if (foreignKeys.rowCount !== 0) throw new Error("Payments staging table must not own cross-module foreign keys");
 } finally {
   await client.end();
+}
+
+const lookup = createPaymentsCheckoutAttemptLookupCapability(
+  createPostgresPaymentsCheckoutAttemptRepository(connectionString),
+);
+const recovered = await lookup.find({ sourceReference });
+if (recovered.status !== "FOUND") {
+  throw new Error("Payments checkout recovery did not find the durable attempt.");
+}
+if (
+  recovered.value.commercialReference !== input.commercialReference ||
+  recovered.value.status !== "PENDING" ||
+  recovered.value.checkoutUrl !== first.value.checkoutUrl
+) {
+  throw new Error(`Payments checkout recovery drifted: ${JSON.stringify(recovered)}`);
+}
+const missing = await lookup.find({ sourceReference: `missing:${randomUUID()}` });
+if (missing.status !== "NOT_FOUND") {
+  throw new Error("Payments checkout recovery invented a missing attempt.");
 }
 
 console.log("Payments checkout-attempt PostgreSQL certification GREEN");
