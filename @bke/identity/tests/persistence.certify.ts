@@ -10,6 +10,7 @@ const expectedTables = [
   "AdministratorMfaMethod",
   "AdministratorRecoveryCode",
   "EmergencyMfaEnrollmentAuthorization",
+  "ExternalIdentity",
   "MfaChallenge",
   "PasswordCredential",
   "PasswordResetToken",
@@ -94,11 +95,17 @@ try {
      ORDER BY "started_at"
   `);
 
+  const expectedMigrations = [
+    "0001_identity_baseline",
+    "0002_identity_federated_authentication",
+  ];
   if (
-    ledger.rows.length !== 1 ||
-    ledger.rows[0]?.migrationName !== "0001_identity_baseline" ||
-    !ledger.rows[0]?.finishedAt ||
-    ledger.rows[0]?.rolledBackAt !== null
+    ledger.rows.length !== expectedMigrations.length ||
+    ledger.rows.some((row, index) =>
+      row.migrationName !== expectedMigrations[index] ||
+      !row.finishedAt ||
+      row.rolledBackAt !== null
+    )
   ) {
     throw new Error(`Unexpected Identity Prisma migration ledger: ${JSON.stringify(ledger.rows)}`);
   }

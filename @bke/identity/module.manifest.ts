@@ -5,6 +5,7 @@ import {
   IDENTITY_LOOKUP_CAPABILITY_ID,
   IDENTITY_PASSWORD_AUTHENTICATION_CAPABILITY_ID,
 } from "./contracts/identity.contract";
+import { IDENTITY_FEDERATED_AUTHENTICATION_CAPABILITY_ID } from "./contracts/federated-authentication.contract";
 import { IDENTITY_LOGIN_MFA_CHALLENGE_ISSUANCE_CAPABILITY_ID } from "./contracts/login-mfa-challenge.contract";
 import { IDENTITY_LOGIN_MFA_VERIFICATION_CAPABILITY_ID } from "./contracts/login-mfa-verification.contract";
 import { IDENTITY_MAGIC_LOGIN_CONSUME_CAPABILITY_ID } from "./contracts/magic-login-consume.contract";
@@ -29,6 +30,7 @@ export const identityModuleManifest = Object.freeze({
   provides: [
     IDENTITY_LOOKUP_CAPABILITY_ID,
     IDENTITY_PASSWORD_AUTHENTICATION_CAPABILITY_ID,
+    IDENTITY_FEDERATED_AUTHENTICATION_CAPABILITY_ID,
     IDENTITY_EMAIL_VERIFICATION_ISSUANCE_CAPABILITY_ID,
     IDENTITY_EMAIL_VERIFICATION_COMPLETION_CAPABILITY_ID,
     IDENTITY_PASSWORD_CHANGE_CAPABILITY_ID,

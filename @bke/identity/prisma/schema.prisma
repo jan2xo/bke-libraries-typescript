@@ -30,6 +30,11 @@ enum SessionAuthenticationMethod {
   PASSWORD_RECOVERY
   MAGIC_LINK
   MFA_ENROLLMENT
+  GOOGLE_OIDC
+}
+
+enum IdentityFederatedProvider {
+  GOOGLE
 }
 
 enum SessionAssuranceLevel {
@@ -60,10 +65,29 @@ model User {
   recoveryCodes               AdministratorRecoveryCode[]
   mfaChallenges               MfaChallenge[]
   emergencyMfaAuthorizations  EmergencyMfaEnrollmentAuthorization[]
+  externalIdentities           ExternalIdentity[]
 
   @@index([lifecycleState])
   @@index([retentionExpiresAt])
   @@index([legalHoldAt])
+}
+
+model ExternalIdentity {
+  id                   String                    @id
+  provider             IdentityFederatedProvider
+  subject              String
+  userId               String
+  emailAtLink          String
+  emailVerifiedAtLink  Boolean
+  nameAtLink           String?
+  linkedAt             DateTime                  @default(now())
+  lastAuthenticatedAt  DateTime                  @default(now())
+  lastObservedEmail    String
+  user                 User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subject])
+  @@unique([userId, provider])
+  @@index([userId])
 }
 
 model PasswordCredential {

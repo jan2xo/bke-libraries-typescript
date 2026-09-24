@@ -29,6 +29,7 @@ function assuranceFor(
       };
     case "PASSWORD":
     case "MFA_ENROLLMENT":
+    case "GOOGLE_OIDC":
       return {
         mfaVerifiedAt: null,
         recentAuthenticatedAt: now,
