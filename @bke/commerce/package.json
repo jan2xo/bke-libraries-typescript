@@ -1,7 +1,7 @@
 {
   "name": "@bke/commerce",
-  "version": "0.14.0",
-  "description": "Reusable BKE commercial pricing, checkout, claim-aware settlement, payment-outcome, renewal-planning, and subscription lifecycle capabilities",
+  "version": "0.15.0",
+  "description": "Reusable BKE commercial pricing, checkout, claim-aware settlement, checkout recovery, payment-outcome, renewal-planning, and subscription lifecycle capabilities",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
