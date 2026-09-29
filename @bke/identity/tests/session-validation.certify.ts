@@ -127,7 +127,7 @@ try {
   const adminResult = await validation.validate(admin.token);
   if (
     adminResult.status !== "VALID" ||
-    !adminResult.context.administratorMfaEnabled ||
+    !adminResult.context.mfaEnabled ||
     !adminResult.context.session.mfaVerifiedAt
   ) {
     throw new Error(`Admin MFA session context was not preserved: ${JSON.stringify(adminResult)}`);
