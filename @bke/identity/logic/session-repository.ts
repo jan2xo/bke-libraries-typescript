@@ -29,7 +29,7 @@ export type IdentitySessionPersistenceResult =
 export interface IdentityPersistedSessionContext {
   readonly session: IdentityIssuedSession;
   readonly principal: IdentityPrincipal;
-  readonly administratorMfaEnabled: boolean;
+  readonly mfaEnabled: boolean;
   readonly revokedAt: Date | null;
 }
 
