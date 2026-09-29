@@ -67,10 +67,14 @@ export function createIdentityRecentAuthCompletionCapability(
 
       const completedAt = clock();
 
-      if (principal.role === "CUSTOMER") {
+      if (!validatedSession.context.mfaEnabled) {
+        if (principal.role !== "CUSTOMER") {
+          return { status: "INVALID", code: "MFA_REQUIRED" };
+        }
+
         let committed;
         try {
-          committed = await repository.upgradeCustomerSession({
+          committed = await repository.upgradePasswordOnlyCustomerSession({
             sessionId: session.id,
             userId: principal.id,
             completedAt,
@@ -156,7 +160,7 @@ export function createIdentityRecentAuthCompletionCapability(
 
       let committed;
       try {
-        committed = await repository.completeAdminRecentAuth({
+        committed = await repository.completeMfaRecentAuth({
           sessionId: session.id,
           userId: principal.id,
           challengeId: challenge.id,
