@@ -6,7 +6,7 @@ import type {
 
 type PrincipalRow = {
   email: string;
-  role: "CUSTOMER" | "ADMIN";
+  mfaEnabled: boolean;
 };
 
 export function createPostgresIdentityRecentAuthChallengeRepository(
@@ -28,9 +28,12 @@ export function createPostgresIdentityRecentAuthChallengeRepository(
         await client.query("BEGIN");
 
         const principal = await client.query<PrincipalRow>(
-          `SELECT "email", "role"
-             FROM "User"
-            WHERE "id" = $1
+          `SELECT
+             u."email",
+             (m."enabledAt" IS NOT NULL) AS "mfaEnabled"
+             FROM "User" u
+             LEFT JOIN "AdministratorMfaMethod" m ON m."userId" = u."id"
+            WHERE u."id" = $1
             LIMIT 1`,
           [input.userId],
         );
@@ -40,7 +43,7 @@ export function createPostgresIdentityRecentAuthChallengeRepository(
           await client.query("ROLLBACK");
           return { status: "PRINCIPAL_NOT_FOUND" as const };
         }
-        if (row.role !== "ADMIN") {
+        if (!row.mfaEnabled) {
           await client.query("ROLLBACK");
           return { status: "FORBIDDEN" as const };
         }
