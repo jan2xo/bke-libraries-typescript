@@ -83,7 +83,7 @@ function validationFor(input: { userId: string; sessionId: string; role: "CUSTOM
             suspendedAt: null,
             lifecycleState: "ACTIVE" as const,
           },
-          administratorMfaEnabled: input.role === "ADMIN",
+          mfaEnabled: input.role === "ADMIN",
         },
       };
     },
