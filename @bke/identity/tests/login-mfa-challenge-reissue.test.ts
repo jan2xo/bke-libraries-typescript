@@ -16,7 +16,6 @@ function repository(overrides: Partial<IdentityLoginMfaRepository> = {}): Identi
       expiresAt: new Date(now.getTime() + 60_000),
       consumedAt: null,
       attemptCount: 0,
-      userRole: "ADMIN" as const,
     })),
     findUnusedRecoveryCode: vi.fn(async () => null),
     incrementChallengeAttempt: vi.fn(async () => undefined),
@@ -58,13 +57,12 @@ describe("Identity login MFA challenge reissue", () => {
     { expiresAt: now },
     { attemptCount: 5 },
     { purpose: "RECENT_AUTH" as const },
-    { userRole: "CUSTOMER" as const },
   ])("rejects invalid pending challenge state %#", async (patch) => {
     const repo = repository({
       findChallengeByTokenHash: vi.fn(async () => ({
         id: "challenge-1", userId: "admin-1", purpose: "LOGIN" as const,
         codeHash: "code-hash", expiresAt: new Date(now.getTime() + 60_000),
-        consumedAt: null, attemptCount: 0, userRole: "ADMIN" as const, ...patch,
+        consumedAt: null, attemptCount: 0, ...patch,
       })),
     });
     await expect(createIdentityLoginMfaChallengeReissueCapability(repo, proof, issuance(), () => now)
