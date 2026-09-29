@@ -49,6 +49,12 @@ async function createUser(id: string, role: "ADMIN" | "CUSTOMER" = "ADMIN") {
 
 try {
   await createUser("mfa-challenge-admin");
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ($1, $2, $3, $3, $3)`,
+    ["mfa-challenge-admin-method", "mfa-challenge-admin", now],
+  );
 
   const first = await issuance.issue({ userId: "mfa-challenge-admin" });
   if (first.status !== "ISSUED") {
