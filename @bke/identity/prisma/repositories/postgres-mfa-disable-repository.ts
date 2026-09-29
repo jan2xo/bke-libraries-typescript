@@ -25,13 +25,8 @@ export function createPostgresIdentityMfaDisableRepository(
         );
         if (!user.rows[0]) {
           await client.query("ROLLBACK");
-          return "NOT_FOUND" as const;
+          return { status: "NOT_FOUND" as const };
         }
-        if (user.rows[0].role !== "ADMIN") {
-          await client.query("ROLLBACK");
-          return "FORBIDDEN" as const;
-        }
-
         const method = await client.query<{ enabledAt: Date | null }>(
           `SELECT "enabledAt"
              FROM "AdministratorMfaMethod"
@@ -41,7 +36,7 @@ export function createPostgresIdentityMfaDisableRepository(
         );
         if (!method.rows[0]?.enabledAt) {
           await client.query("ROLLBACK");
-          return "MFA_NOT_ENABLED" as const;
+          return { status: "MFA_NOT_ENABLED" as const };
         }
 
         await client.query(
@@ -72,7 +67,10 @@ export function createPostgresIdentityMfaDisableRepository(
         );
 
         await client.query("COMMIT");
-        return "DISABLED" as const;
+        return {
+          status: "DISABLED" as const,
+          enrollmentRequired: user.rows[0].role === "ADMIN",
+        };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;
