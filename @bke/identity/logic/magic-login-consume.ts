@@ -51,10 +51,13 @@ export function createIdentityMagicLoginConsumeCapability(
         if (persisted.status === "INVALID_TOKEN") {
           return { status: "REJECTED", code: "INVALID_TOKEN" };
         }
-        if (persisted.status === "ADMIN_PASSWORD_REQUIRED") {
+        if (
+          persisted.status === "ADMIN_PASSWORD_REQUIRED" ||
+          persisted.status === "MFA_PASSWORD_REQUIRED"
+        ) {
           return {
             status: "REJECTED",
-            code: "ADMIN_PASSWORD_REQUIRED",
+            code: persisted.status,
             userId: persisted.userId,
           };
         }
