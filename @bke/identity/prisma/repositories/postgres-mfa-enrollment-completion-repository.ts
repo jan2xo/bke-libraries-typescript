@@ -32,12 +32,10 @@ export function createPostgresIdentityMfaEnrollmentCompletionRepository(
              c."expiresAt",
              c."consumedAt",
              c."attemptCount",
-             u."role" AS "userRole",
              m."id" AS "mfaMethodId",
              m."enabledAt" AS "mfaEnabledAt",
              m."pendingExpiresAt"
            FROM "MfaChallenge" c
-           JOIN "User" u ON u."id" = c."userId"
            LEFT JOIN "AdministratorMfaMethod" m ON m."userId" = c."userId"
           WHERE c."userId" = $1
             AND c."tokenHash" = $2
