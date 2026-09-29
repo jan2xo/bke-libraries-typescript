@@ -26,7 +26,7 @@ export function createIdentityPasswordLoginCapability(
         return authenticated;
       }
 
-      if (authenticated.route === "ADMIN_MFA_CHALLENGE") {
+      if (authenticated.route === "MFA_CHALLENGE") {
         const issued = await loginMfaChallengeIssuance.issue({
           userId: authenticated.principal.id,
         });
@@ -40,7 +40,7 @@ export function createIdentityPasswordLoginCapability(
         return issued;
       }
 
-      const mfaEnrollmentRequired = authenticated.route === "ADMIN_MFA_ENROLLMENT";
+      const mfaEnrollmentRequired = authenticated.route === "MFA_ENROLLMENT";
       const issued = await sessionIssuance.issue({
         userId: authenticated.principal.id,
         authenticationMethod: mfaEnrollmentRequired ? "MFA_ENROLLMENT" : "PASSWORD",

@@ -18,13 +18,13 @@ export interface IdentityRecentAuthRecoveryCodeRecord {
   readonly id: string;
 }
 
-export interface IdentityRecentAuthCustomerCommitInput {
+export interface IdentityRecentAuthPasswordOnlyCustomerCommitInput {
   readonly sessionId: string;
   readonly userId: string;
   readonly completedAt: Date;
 }
 
-export interface IdentityRecentAuthAdminCommitInput {
+export interface IdentityRecentAuthMfaCommitInput {
   readonly sessionId: string;
   readonly userId: string;
   readonly challengeId: string;
@@ -55,11 +55,11 @@ export interface IdentityRecentAuthCompletionRepository {
 
   incrementChallengeAttempt(challengeId: string): Promise<void>;
 
-  upgradeCustomerSession(
-    input: IdentityRecentAuthCustomerCommitInput,
+  upgradePasswordOnlyCustomerSession(
+    input: IdentityRecentAuthPasswordOnlyCustomerCommitInput,
   ): Promise<IdentityRecentAuthCommitResult>;
 
-  completeAdminRecentAuth(
-    input: IdentityRecentAuthAdminCommitInput,
+  completeMfaRecentAuth(
+    input: IdentityRecentAuthMfaCommitInput,
   ): Promise<IdentityRecentAuthCommitResult>;
 }

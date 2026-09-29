@@ -26,13 +26,13 @@ export function createIdentityMfaDisableCapability(
         return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
       }
 
-      if (result === "NOT_FOUND") {
+      if (result.status === "NOT_FOUND") {
         return { status: "INVALID", code: "NOT_FOUND" };
       }
-      if (result === "FORBIDDEN") {
+      if (result.status === "FORBIDDEN") {
         return { status: "INVALID", code: "FORBIDDEN" };
       }
-      if (result === "MFA_NOT_ENABLED") {
+      if (result.status === "MFA_NOT_ENABLED") {
         return { status: "INVALID", code: "MFA_NOT_ENABLED" };
       }
 
@@ -40,7 +40,7 @@ export function createIdentityMfaDisableCapability(
         status: "DISABLED",
         userId,
         disabledAt,
-        enrollmentRequired: true,
+        enrollmentRequired: result.enrollmentRequired,
       };
     },
   });

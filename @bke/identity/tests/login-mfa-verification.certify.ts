@@ -193,8 +193,14 @@ try {
     challengeToken: "mfa-customer-token",
     code: "444444",
   });
-  if (customer.status !== "INVALID" || customer.code !== "INVALID_CHALLENGE") {
-    throw new Error(`Non-admin login MFA challenge was accepted: ${JSON.stringify(customer)}`);
+  if (
+    customer.status !== "VERIFIED" ||
+    customer.userId !== "mfa-customer" ||
+    customer.authenticationMethod !== "PASSWORD_EMAIL_OTP"
+  ) {
+    throw new Error(
+      `Customer login MFA challenge was not verified: ${JSON.stringify(customer)}`,
+    );
   }
 
   console.log("Identity login MFA verification certification GREEN");

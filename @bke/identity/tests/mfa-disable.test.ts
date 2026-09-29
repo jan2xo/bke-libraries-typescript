@@ -5,7 +5,14 @@ import { createIdentityMfaDisableCapability } from "../logic/mfa-disable";
 const now = new Date("2026-08-31T04:00:00.000Z");
 
 function repository(
-  result: "DISABLED" | "NOT_FOUND" | "FORBIDDEN" | "MFA_NOT_ENABLED" = "DISABLED",
+  result:
+    | { status: "DISABLED"; enrollmentRequired: boolean }
+    | { status: "NOT_FOUND" }
+    | { status: "FORBIDDEN" }
+    | { status: "MFA_NOT_ENABLED" } = {
+      status: "DISABLED",
+      enrollmentRequired: true,
+    },
 ): IdentityMfaDisableRepository {
   return {
     disableMfa: vi.fn(async () => result),
@@ -30,7 +37,7 @@ describe("Identity MFA disable", () => {
     ["MFA_NOT_ENABLED", "MFA_NOT_ENABLED"],
   ] as const)("maps %s persistence authority result", async (repositoryResult, code) => {
     const capability = createIdentityMfaDisableCapability(
-      repository(repositoryResult),
+      repository({ status: repositoryResult }),
       () => now,
     );
 
@@ -41,7 +48,10 @@ describe("Identity MFA disable", () => {
   });
 
   it("returns the authoritative disable timestamp after one successful transition", async () => {
-    const repo = repository();
+    const repo = repository({
+      status: "DISABLED",
+      enrollmentRequired: true,
+    });
     const capability = createIdentityMfaDisableCapability(repo, () => now);
 
     await expect(capability.disable({ userId: " admin-1 " })).resolves.toEqual({
@@ -51,6 +61,21 @@ describe("Identity MFA disable", () => {
       enrollmentRequired: true,
     });
     expect(repo.disableMfa).toHaveBeenCalledWith("admin-1", now);
+  });
+
+  it("allows an optional-MFA customer to disable MFA without forcing re-enrollment", async () => {
+    const repo = repository({
+      status: "DISABLED",
+      enrollmentRequired: false,
+    });
+    const capability = createIdentityMfaDisableCapability(repo, () => now);
+
+    await expect(capability.disable({ userId: "customer-1" })).resolves.toEqual({
+      status: "DISABLED",
+      userId: "customer-1",
+      disabledAt: now,
+      enrollmentRequired: false,
+    });
   });
 
   it("fails closed when persistence is unavailable", async () => {

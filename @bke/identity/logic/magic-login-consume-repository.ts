@@ -17,6 +17,7 @@ export type IdentityMagicLoginConsumePersistenceResult =
     }
   | { readonly status: "INVALID_TOKEN" }
   | { readonly status: "ADMIN_PASSWORD_REQUIRED"; readonly userId: string }
+  | { readonly status: "MFA_PASSWORD_REQUIRED"; readonly userId: string }
   | { readonly status: "ACCOUNT_NOT_ACTIVE"; readonly userId: string };
 
 export interface IdentityMagicLoginConsumeRepository {

@@ -56,11 +56,14 @@ const issueSession = createIdentitySessionIssuanceCapability(
 const client = new Client({ connectionString });
 await client.connect();
 
-async function createAdmin(id: string) {
+async function createPrincipal(
+  id: string,
+  role: "ADMIN" | "CUSTOMER" = "ADMIN",
+) {
   await client.query(
     `INSERT INTO "User" ("id", "email", "name", "role", "updatedAt", "lifecycleState")
-     VALUES ($1, $2, $3, 'ADMIN', $4, 'ACTIVE')`,
-    [id, `${id}@example.com`, id, now],
+     VALUES ($1, $2, $3, $4::"IdentityRole", $5, 'ACTIVE')`,
+    [id, `${id}@example.com`, id, role, now],
   );
 }
 
@@ -77,7 +80,7 @@ async function issueAdminSession(userId: string) {
 
 try {
   // Happy path: start -> complete -> rotate recovery codes -> revoke active sessions.
-  await createAdmin("mfa-complete-admin");
+  await createPrincipal("mfa-complete-admin");
   const sessionA = await issueAdminSession("mfa-complete-admin");
   const sessionB = await issueAdminSession("mfa-complete-admin");
 
@@ -185,8 +188,53 @@ try {
     throw new Error(`Consumed enrollment challenge was reusable: ${JSON.stringify(replay)}`);
   }
 
+  // Customer enrollment uses the same transactional MFA authority.
+  await createPrincipal("mfa-complete-customer", "CUSTOMER");
+  const customerSession = await issueAdminSession("mfa-complete-customer");
+  const customerEnrollment = await start.start({
+    userId: "mfa-complete-customer",
+  });
+  if (customerEnrollment.status !== "STARTED") {
+    throw new Error(
+      `Customer enrollment start failed: ${JSON.stringify(customerEnrollment)}`,
+    );
+  }
+  const customerCompletion = await complete.complete({
+    userId: "mfa-complete-customer",
+    challengeToken: customerEnrollment.challengeToken,
+    code: customerEnrollment.delivery.code,
+  });
+  if (
+    customerCompletion.status !== "COMPLETED" ||
+    customerCompletion.recoveryCodes.length !== 10
+  ) {
+    throw new Error(
+      `Customer enrollment completion failed: ${JSON.stringify(customerCompletion)}`,
+    );
+  }
+  const customerState = await client.query<{
+    enabledAt: Date | null;
+    revokedAt: Date | null;
+    revocationReason: string | null;
+  }>(
+    `SELECT m."enabledAt", s."revokedAt", s."revocationReason"
+       FROM "AdministratorMfaMethod" m
+       JOIN "Session" s ON s."id" = $1
+      WHERE m."userId" = 'mfa-complete-customer'`,
+    [customerSession],
+  );
+  if (
+    customerState.rows[0]?.enabledAt?.getTime() !== now.getTime() ||
+    customerState.rows[0]?.revokedAt?.getTime() !== now.getTime() ||
+    customerState.rows[0]?.revocationReason !== "MFA_ENROLLED"
+  ) {
+    throw new Error(
+      `Customer enrollment durable state mismatch: ${JSON.stringify(customerState.rows[0])}`,
+    );
+  }
+
   // Wrong proof burns one attempt but leaves enrollment pending and sessions alive.
-  await createAdmin("mfa-complete-wrong-code");
+  await createPrincipal("mfa-complete-wrong-code");
   const wrongSession = await issueAdminSession("mfa-complete-wrong-code");
   const wrongEnrollment = await start.start({ userId: "mfa-complete-wrong-code" });
   if (wrongEnrollment.status !== "STARTED") throw new Error("Wrong-code enrollment did not start.");
@@ -226,7 +274,7 @@ try {
   }
 
   // Preserve V1 helper compatibility: an unused pre-existing recovery code may prove enrollment.
-  await createAdmin("mfa-complete-recovery");
+  await createPrincipal("mfa-complete-recovery");
   const recoveryEnrollment = await start.start({ userId: "mfa-complete-recovery" });
   if (recoveryEnrollment.status !== "STARTED") throw new Error("Recovery enrollment did not start.");
   const oldRecoveryRaw = "ABCDE-FGHIJ-KLMNO-P";
@@ -254,7 +302,7 @@ try {
   }
 
   // Adversarial rollback: duplicate replacement hashes force a unique violation mid-transaction.
-  await createAdmin("mfa-complete-rollback");
+  await createPrincipal("mfa-complete-rollback");
   const rollbackSession = await issueAdminSession("mfa-complete-rollback");
   const rollbackEnrollment = await start.start({ userId: "mfa-complete-rollback" });
   if (rollbackEnrollment.status !== "STARTED") throw new Error("Rollback enrollment did not start.");

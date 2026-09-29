@@ -49,6 +49,12 @@ async function createUser(id: string, role: "ADMIN" | "CUSTOMER" = "ADMIN") {
 
 try {
   await createUser("mfa-challenge-admin");
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ($1, $2, $3, $3, $3)`,
+    ["mfa-challenge-admin-method", "mfa-challenge-admin", now],
+  );
 
   const first = await issuance.issue({ userId: "mfa-challenge-admin" });
   if (first.status !== "ISSUED") {
@@ -141,16 +147,32 @@ try {
     throw new Error(`Issued challenge could not be verified: ${JSON.stringify(verified)}`);
   }
 
-  await createUser("mfa-challenge-customer", "CUSTOMER");
-  const forbidden = await issuance.issue({ userId: "mfa-challenge-customer" });
-  if (forbidden.status !== "REJECTED" || forbidden.code !== "FORBIDDEN") {
-    throw new Error(`Customer received an administrator MFA challenge: ${JSON.stringify(forbidden)}`);
+  await createUser("mfa-challenge-customer-no-mfa", "CUSTOMER");
+  const customerNoMfa = await issuance.issue({
+    userId: "mfa-challenge-customer-no-mfa",
+  });
+  if (customerNoMfa.status !== "REJECTED" || customerNoMfa.code !== "FORBIDDEN") {
+    throw new Error(
+      `Customer without MFA received a login MFA challenge: ${JSON.stringify(customerNoMfa)}`,
+    );
   }
-  const customerChallenges = await client.query(
-    `SELECT 1 FROM "MfaChallenge" WHERE "userId" = 'mfa-challenge-customer'`,
+
+  await createUser("mfa-challenge-customer", "CUSTOMER");
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ($1, $2, $3, $3, $3)`,
+    ["mfa-challenge-customer-method", "mfa-challenge-customer", now],
   );
-  if ((customerChallenges.rowCount ?? 0) !== 0) {
-    throw new Error("Rejected customer challenge mutated PostgreSQL.");
+  const customer = await issuance.issue({ userId: "mfa-challenge-customer" });
+  if (
+    customer.status !== "ISSUED" ||
+    customer.challenge.delivery.recipientEmail !==
+      "mfa-challenge-customer@example.com"
+  ) {
+    throw new Error(
+      `MFA-enabled customer challenge was not issued: ${JSON.stringify(customer)}`,
+    );
   }
 
   const missing = await issuance.issue({ userId: "mfa-challenge-missing" });

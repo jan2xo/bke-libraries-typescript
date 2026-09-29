@@ -7,7 +7,11 @@ import type { IdentitySessionValidationCapability } from "../contracts/session-v
 
 const now = new Date("2026-09-01T08:00:00.000Z");
 
-function validSession(role: "CUSTOMER" | "ADMIN" = "CUSTOMER", recentAuthenticatedAt: Date | null = now) {
+function validSession(
+  role: "CUSTOMER" | "ADMIN" = "CUSTOMER",
+  recentAuthenticatedAt: Date | null = now,
+  mfaEnabled = role === "ADMIN",
+) {
   return {
     status: "VALID" as const,
     context: {
@@ -16,11 +20,11 @@ function validSession(role: "CUSTOMER" | "ADMIN" = "CUSTOMER", recentAuthenticat
         userId: "user-1",
         expiresAt: new Date(now.getTime() + 60_000),
         lastAuthenticatedAt: now,
-        mfaVerifiedAt: role === "ADMIN" ? now : null,
+        mfaVerifiedAt: mfaEnabled ? now : null,
         recentAuthenticatedAt,
         lastSeenAt: now,
         absoluteExpiresAt: new Date(now.getTime() + 60_000),
-        authenticationMethod: role === "ADMIN" ? ("PASSWORD_EMAIL_OTP" as const) : ("PASSWORD" as const),
+        authenticationMethod: mfaEnabled ? ("PASSWORD_EMAIL_OTP" as const) : ("PASSWORD" as const),
         assuranceLevel: "RECENTLY_AUTHENTICATED" as const,
         createdAt: new Date(now.getTime() - 60_000),
       },
@@ -34,7 +38,7 @@ function validSession(role: "CUSTOMER" | "ADMIN" = "CUSTOMER", recentAuthenticat
         suspendedAt: null,
         lifecycleState: "ACTIVE" as const,
       },
-      administratorMfaEnabled: role === "ADMIN",
+      mfaEnabled,
     },
   };
 }
@@ -62,6 +66,19 @@ describe("Identity password change", () => {
     const result = await h.capability.change({ sessionToken: "session-token", currentPassword: "CurrentPassword1", newPassword: "NewPassword123" });
     expect(result).toEqual({ status: "CHANGED", userId: "user-1", role: "CUSTOMER", replacementAuthenticationMethod: "PASSWORD" });
     expect(h.repository.changePassword).toHaveBeenCalledWith({ userId: "user-1", passwordHash: "new-hash", changedAt: now });
+  });
+
+  it("keeps MFA enabled for customer replacement authentication", async () => {
+    const h = harness(validSession("CUSTOMER", now, true));
+    await expect(h.capability.change({
+      sessionToken: "session-token",
+      currentPassword: "CurrentPassword1",
+      newPassword: "NewPassword123",
+    })).resolves.toMatchObject({
+      status: "CHANGED",
+      role: "CUSTOMER",
+      replacementAuthenticationMethod: "PASSWORD_EMAIL_OTP",
+    });
   });
 
   it("returns the ADMIN replacement-session method used by V1", async () => {

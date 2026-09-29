@@ -20,6 +20,7 @@ type MagicLoginRow = {
   role: "CUSTOMER" | "ADMIN" | null;
   suspendedAt: Date | null;
   lifecycleState: string | null;
+  mfaEnabled: boolean;
 };
 
 type SessionRow = {
@@ -81,9 +82,11 @@ export function createPostgresIdentityMagicLoginConsumeRepository(
              u."id" AS "userId",
              u."role",
              u."suspendedAt",
-             u."lifecycleState"
+             u."lifecycleState",
+             (m."enabledAt" IS NOT NULL) AS "mfaEnabled"
            FROM "VerificationToken" vt
            LEFT JOIN "User" u ON u."email" = vt."identifier"
+           LEFT JOIN "AdministratorMfaMethod" m ON m."userId" = u."id"
           WHERE vt."tokenHash" = $1
           LIMIT 1
           FOR UPDATE OF vt`,
@@ -114,6 +117,14 @@ export function createPostgresIdentityMagicLoginConsumeRepository(
         if (row.suspendedAt !== null || row.lifecycleState !== "ACTIVE") {
           await client.query("ROLLBACK");
           return { status: "ACCOUNT_NOT_ACTIVE" as const, userId: row.userId };
+        }
+
+        if (row.mfaEnabled) {
+          await client.query("ROLLBACK");
+          return {
+            status: "MFA_PASSWORD_REQUIRED" as const,
+            userId: row.userId,
+          };
         }
 
         const consumed = await client.query(

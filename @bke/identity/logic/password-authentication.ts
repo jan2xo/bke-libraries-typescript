@@ -21,14 +21,14 @@ function normalizeEmail(rawEmail: string): string | null {
 
 function routeFor(
   role: "CUSTOMER" | "ADMIN",
-  administratorMfaEnabled: boolean,
+  mfaEnabled: boolean,
 ): IdentityPrimaryAuthenticationRoute {
-  if (role === "CUSTOMER") {
-    return "CUSTOMER_SESSION";
+  if (mfaEnabled) {
+    return "MFA_CHALLENGE";
   }
-  return administratorMfaEnabled
-    ? "ADMIN_MFA_CHALLENGE"
-    : "ADMIN_MFA_ENROLLMENT";
+  return role === "ADMIN"
+    ? "MFA_ENROLLMENT"
+    : "SESSION";
 }
 
 export function createIdentityPasswordAuthenticationCapability(
@@ -76,7 +76,7 @@ export function createIdentityPasswordAuthenticationCapability(
         principal: record.principal,
         route: routeFor(
           record.principal.role,
-          record.administratorMfaEnabled,
+          record.mfaEnabled,
         ),
       };
     },

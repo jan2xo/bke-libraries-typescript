@@ -20,6 +20,7 @@ const hmac = (value: string) =>
 
 const validToken = "magic-valid-token-abcdefghijklmnopqrstuvwxyz";
 const adminToken = "magic-admin-token-abcdefghijklmnopqrstuvwxyz";
+const mfaCustomerToken = "magic-mfa-customer-token-abcdefghijklmnopqrst";
 const inactiveToken = "magic-inactive-token-abcdefghijklmnopqrstuv";
 const wrongPurposeToken = "magic-wrong-purpose-abcdefghijklmnopqrstuvwxyz";
 const usedToken = "magic-used-token-abcdefghijklmnopqrstuvwxyz";
@@ -31,6 +32,7 @@ try {
     `INSERT INTO "User" ("id", "email", "name", "role", "updatedAt", "lifecycleState", "suspendedAt")
      VALUES
        ('magic-consume-active', 'magic-consume-active@example.com', 'Active Customer', 'CUSTOMER', $1, 'ACTIVE', NULL),
+       ('magic-consume-mfa', 'magic-consume-mfa@example.com', 'MFA Customer', 'CUSTOMER', $1, 'ACTIVE', NULL),
        ('magic-consume-admin', 'magic-consume-admin@example.com', 'Admin', 'ADMIN', $1, 'ACTIVE', NULL),
        ('magic-consume-inactive', 'magic-consume-inactive@example.com', 'Inactive Customer', 'CUSTOMER', $1, 'SUSPENDED', $1)`,
     [now],
@@ -42,6 +44,7 @@ try {
      VALUES
        ('magic-consume-valid', 'magic-consume-active@example.com', 'MAGIC_LOGIN', $1, $8, NULL),
        ('magic-consume-admin-token', 'magic-consume-admin@example.com', 'MAGIC_LOGIN', $2, $8, NULL),
+       ('magic-consume-mfa-token', 'magic-consume-mfa@example.com', 'MAGIC_LOGIN', $11, $8, NULL),
        ('magic-consume-inactive-token', 'magic-consume-inactive@example.com', 'MAGIC_LOGIN', $3, $8, NULL),
        ('magic-consume-wrong-purpose', 'magic-consume-active@example.com', 'VERIFY_EMAIL', $4, $8, NULL),
        ('magic-consume-used', 'magic-consume-active@example.com', 'MAGIC_LOGIN', $5, $8, $7),
@@ -58,7 +61,15 @@ try {
       new Date(now.getTime() + 15 * 60_000),
       new Date(now.getTime() - 1),
       hmac(missingUserToken),
+      hmac(mfaCustomerToken),
     ],
+  );
+
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ('magic-consume-mfa-method', 'magic-consume-mfa', $1, $1, $1)`,
+    [now],
   );
 
   const capability = createIdentityMagicLoginConsumeCapability(
@@ -116,6 +127,19 @@ try {
     admin.userId !== "magic-consume-admin"
   ) {
     throw new Error(`Administrator magic-login block mismatch: ${JSON.stringify(admin)}`);
+  }
+
+  const mfaCustomer = await capability.consume({
+    token: mfaCustomerToken,
+  });
+  if (
+    mfaCustomer.status !== "REJECTED" ||
+    mfaCustomer.code !== "MFA_PASSWORD_REQUIRED" ||
+    mfaCustomer.userId !== "magic-consume-mfa"
+  ) {
+    throw new Error(
+      `MFA customer magic-login bypass was not blocked: ${JSON.stringify(mfaCustomer)}`,
+    );
   }
 
   const inactive = await capability.consume({ token: inactiveToken });

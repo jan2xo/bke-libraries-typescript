@@ -19,6 +19,7 @@ try {
     `INSERT INTO "User" ("id", "email", "name", "role", "updatedAt", "lifecycleState")
      VALUES
        ('magic-user', 'magic@example.com', 'Magic User', 'CUSTOMER', $1, 'ACTIVE'),
+       ('magic-mfa-user', 'magic-mfa@example.com', 'Magic MFA User', 'CUSTOMER', $1, 'ACTIVE'),
        ('magic-admin', 'admin@example.com', 'Magic Admin', 'ADMIN', $1, 'ACTIVE')`,
     [now],
   );
@@ -29,6 +30,13 @@ try {
        ('existing-magic', 'magic@example.com', 'MAGIC_LOGIN', 'existing-magic-hash', $1, NULL),
        ('verify-email-token', 'magic@example.com', 'VERIFY_EMAIL', 'verify-email-hash', $1, NULL)`,
     [new Date(now.getTime() + 5 * 60_000)],
+  );
+
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ('magic-mfa-method', 'magic-mfa-user', $1, $1, $1)`,
+    [now],
   );
 
   const capability = createIdentityMagicLoginRequestCapability(
@@ -143,6 +151,9 @@ try {
     `SELECT COUNT(*)::text AS "count" FROM "VerificationToken"`,
   );
   const admin = await capability.request({ email: "admin@example.com" });
+  const mfaCustomer = await capability.request({
+    email: "magic-mfa@example.com",
+  });
   const missing = await capability.request({ email: "missing@example.com" });
   const afterIneligible = await client.query<{ count: string }>(
     `SELECT COUNT(*)::text AS "count" FROM "VerificationToken"`,
@@ -150,11 +161,15 @@ try {
   if (
     admin.status !== "ACCEPTED" ||
     admin.delivery !== null ||
+    mfaCustomer.status !== "ACCEPTED" ||
+    mfaCustomer.delivery !== null ||
     missing.status !== "ACCEPTED" ||
     missing.delivery !== null ||
     beforeIneligible.rows[0]?.count !== afterIneligible.rows[0]?.count
   ) {
-    throw new Error("Admin/missing magic-login request leaked eligibility or mutated persistence.");
+    throw new Error(
+      "Admin/MFA-customer/missing magic-login request leaked eligibility or mutated persistence.",
+    );
   }
 
   console.log("Identity magic-login request certification GREEN");

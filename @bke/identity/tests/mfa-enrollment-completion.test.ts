@@ -20,7 +20,6 @@ function challenge(
     expiresAt: new Date("2026-08-31T06:10:00.000Z"),
     consumedAt: null,
     attemptCount: 0,
-    userRole: "ADMIN",
     mfaMethodId: "mfa-method-1",
     mfaEnabledAt: null,
     pendingExpiresAt: new Date("2026-08-31T06:10:00.000Z"),
@@ -178,7 +177,6 @@ describe("Identity MFA enrollment completion", () => {
     ["consumed", challenge({ consumedAt: new Date(now.getTime() - 1) })],
     ["expired", challenge({ expiresAt: now })],
     ["attempt ceiling", challenge({ attemptCount: 5 })],
-    ["non-admin", challenge({ userRole: "CUSTOMER" })],
   ])("rejects invalid enrollment challenge: %s", async (_label, record) => {
     const repo = repository({
       findEnrollmentChallenge: vi.fn(async () => record),

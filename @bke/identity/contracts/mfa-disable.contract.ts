@@ -9,7 +9,7 @@ export type IdentityMfaDisableResult =
       readonly status: "DISABLED";
       readonly userId: string;
       readonly disabledAt: Date;
-      readonly enrollmentRequired: true;
+      readonly enrollmentRequired: boolean;
     }
   | {
       readonly status: "INVALID";

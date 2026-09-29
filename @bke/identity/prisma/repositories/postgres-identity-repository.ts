@@ -22,7 +22,7 @@ type IdentityRow = {
 
 type IdentityAuthenticationRow = IdentityRow & {
   passwordHash: string;
-  administratorMfaEnabled: boolean;
+  mfaEnabled: boolean;
 };
 
 const principalProjection = `
@@ -89,12 +89,12 @@ async function findPasswordAuthentication(
          u."suspendedAt" AS "suspendedAt",
          u."lifecycleState" AS "lifecycleState",
          credential."passwordHash" AS "passwordHash",
-         (administrator_mfa."enabledAt" IS NOT NULL) AS "administratorMfaEnabled"
+         (mfa."enabledAt" IS NOT NULL) AS "mfaEnabled"
        FROM "User" u
        INNER JOIN "PasswordCredential" credential
                ON credential."userId" = u."id"
-       LEFT JOIN "AdministratorMfaMethod" administrator_mfa
-              ON administrator_mfa."userId" = u."id"
+       LEFT JOIN "AdministratorMfaMethod" mfa
+              ON mfa."userId" = u."id"
       WHERE u."email" = $1
       LIMIT 1`,
       [email],
@@ -106,7 +106,7 @@ async function findPasswordAuthentication(
     return {
       principal: toPrincipal(row),
       passwordHash: row.passwordHash,
-      administratorMfaEnabled: row.administratorMfaEnabled,
+      mfaEnabled: row.mfaEnabled,
     };
   } finally {
     await client.end();

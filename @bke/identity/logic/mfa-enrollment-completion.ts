@@ -48,8 +48,7 @@ export function createIdentityMfaEnrollmentCompletionCapability(
         challenge.purpose !== "ENROLLMENT" ||
         challenge.consumedAt ||
         challenge.expiresAt <= now ||
-        challenge.attemptCount >= 5 ||
-        challenge.userRole !== "ADMIN"
+        challenge.attemptCount >= 5
       ) {
         return { status: "INVALID", code: "INVALID_CHALLENGE" };
       }

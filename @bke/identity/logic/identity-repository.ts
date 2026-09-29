@@ -3,7 +3,7 @@ import type { IdentityPrincipal } from "../contracts/identity.contract";
 export interface IdentityPasswordAuthenticationRecord {
   readonly principal: IdentityPrincipal;
   readonly passwordHash: string;
-  readonly administratorMfaEnabled: boolean;
+  readonly mfaEnabled: boolean;
 }
 
 export interface IdentityRepository {

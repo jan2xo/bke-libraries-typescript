@@ -28,7 +28,10 @@ function completedSession(userId: string): IdentityIssuedSession {
   return { ...session(userId), recentAuthenticatedAt: now, assuranceLevel: "RECENTLY_AUTHENTICATED" };
 }
 
-function createHarness(role: "CUSTOMER" | "ADMIN" = "ADMIN") {
+function createHarness(
+  role: "CUSTOMER" | "ADMIN" = "ADMIN",
+  mfaEnabled = role === "ADMIN",
+) {
   const issued = session("user-1");
   const sessionValidation: IdentitySessionValidationCapability = {
     validate: vi.fn(async () => ({
@@ -45,7 +48,7 @@ function createHarness(role: "CUSTOMER" | "ADMIN" = "ADMIN") {
           suspendedAt: null,
           lifecycleState: "ACTIVE" as const,
         },
-        administratorMfaEnabled: role === "ADMIN",
+        mfaEnabled,
       },
     })),
   };
@@ -54,8 +57,8 @@ function createHarness(role: "CUSTOMER" | "ADMIN" = "ADMIN") {
     findRecentAuthChallenge: vi.fn(async () => ({ id: "challenge-1", userId: "user-1", purpose: "RECENT_AUTH" as const, codeHash: "email-code-hash", expiresAt: new Date(now.getTime() + 60_000), consumedAt: null, attemptCount: 0 })),
     findUnusedRecoveryCode: vi.fn(async () => null),
     incrementChallengeAttempt: vi.fn(async () => undefined),
-    upgradeCustomerSession: vi.fn(async () => ({ status: "COMPLETED" as const, session: completedSession("user-1") })),
-    completeAdminRecentAuth: vi.fn(async () => ({ status: "COMPLETED" as const, session: completedSession("user-1") })),
+    upgradePasswordOnlyCustomerSession: vi.fn(async () => ({ status: "COMPLETED" as const, session: completedSession("user-1") })),
+    completeMfaRecentAuth: vi.fn(async () => ({ status: "COMPLETED" as const, session: completedSession("user-1") })),
   };
   const passwordVerifier: IdentityPasswordVerifier = { verify: vi.fn(async () => true) };
   const proofProvider: IdentityEmailMfaProofProvider = {
@@ -74,7 +77,7 @@ function createHarness(role: "CUSTOMER" | "ADMIN" = "ADMIN") {
 
 describe("Identity recent-auth completion", () => {
   it("upgrades a CUSTOMER session using password only", async () => {
-    const h = createHarness("CUSTOMER");
+    const h = createHarness("CUSTOMER", false);
     const result = await h.capability.complete({ sessionToken: "session-token", password: "correct" });
     expect(result.status).toBe("COMPLETED");
     if (result.status === "COMPLETED") {
@@ -82,14 +85,37 @@ describe("Identity recent-auth completion", () => {
       expect(result.session.assuranceLevel).toBe("RECENTLY_AUTHENTICATED");
       expect(result.session.recentAuthenticatedAt).toEqual(now);
     }
-    expect(h.repository.upgradeCustomerSession).toHaveBeenCalledWith({ sessionId: "session-user-1", userId: "user-1", completedAt: now });
+    expect(h.repository.upgradePasswordOnlyCustomerSession).toHaveBeenCalledWith({ sessionId: "session-user-1", userId: "user-1", completedAt: now });
     expect(h.repository.findRecentAuthChallenge).not.toHaveBeenCalled();
+  });
+
+  it("requires MFA proof for an MFA-enabled customer", async () => {
+    const h = createHarness("CUSTOMER", true);
+    await expect(
+      h.capability.complete({
+        sessionToken: "session-token",
+        password: "correct",
+      }),
+    ).resolves.toEqual({ status: "INVALID", code: "MFA_REQUIRED" });
+
+    const result = await h.capability.complete({
+      sessionToken: "session-token",
+      password: "correct",
+      challengeToken: "challenge-token",
+      code: "123456",
+    });
+    expect(result.status).toBe("COMPLETED");
+    if (result.status === "COMPLETED") {
+      expect(result.verificationMethod).toBe("PASSWORD_EMAIL_OTP");
+    }
+    expect(h.repository.completeMfaRecentAuth).toHaveBeenCalled();
+    expect(h.repository.upgradePasswordOnlyCustomerSession).not.toHaveBeenCalled();
   });
 
   it("requires ADMIN RECENT_AUTH MFA proof", async () => {
     const h = createHarness("ADMIN");
     await expect(h.capability.complete({ sessionToken: "session-token", password: "correct" })).resolves.toEqual({ status: "INVALID", code: "MFA_REQUIRED" });
-    expect(h.repository.completeAdminRecentAuth).not.toHaveBeenCalled();
+    expect(h.repository.completeMfaRecentAuth).not.toHaveBeenCalled();
   });
 
   it("atomically completes ADMIN email OTP recent-auth", async () => {
@@ -97,7 +123,7 @@ describe("Identity recent-auth completion", () => {
     const result = await h.capability.complete({ sessionToken: "session-token", password: "correct", challengeToken: "challenge-token", code: "123456" });
     expect(result.status).toBe("COMPLETED");
     if (result.status === "COMPLETED") expect(result.verificationMethod).toBe("PASSWORD_EMAIL_OTP");
-    expect(h.repository.completeAdminRecentAuth).toHaveBeenCalledWith({ sessionId: "session-user-1", userId: "user-1", challengeId: "challenge-1", recoveryCodeId: null, completedAt: now });
+    expect(h.repository.completeMfaRecentAuth).toHaveBeenCalledWith({ sessionId: "session-user-1", userId: "user-1", challengeId: "challenge-1", recoveryCodeId: null, completedAt: now });
   });
 
   it("supports ADMIN recovery proof", async () => {
@@ -106,7 +132,7 @@ describe("Identity recent-auth completion", () => {
     const result = await h.capability.complete({ sessionToken: "session-token", password: "correct", challengeToken: "challenge-token", code: "ABCDE-FGHIJ" });
     expect(result.status).toBe("COMPLETED");
     if (result.status === "COMPLETED") expect(result.verificationMethod).toBe("PASSWORD_RECOVERY");
-    expect(h.repository.completeAdminRecentAuth).toHaveBeenCalledWith(expect.objectContaining({ recoveryCodeId: "recovery-1" }));
+    expect(h.repository.completeMfaRecentAuth).toHaveBeenCalledWith(expect.objectContaining({ recoveryCodeId: "recovery-1" }));
   });
 
   it("increments attempts on bad ADMIN MFA code without committing", async () => {
@@ -114,7 +140,7 @@ describe("Identity recent-auth completion", () => {
     const result = await h.capability.complete({ sessionToken: "session-token", password: "correct", challengeToken: "challenge-token", code: "000000" });
     expect(result).toEqual({ status: "INVALID", code: "INVALID_CODE" });
     expect(h.repository.incrementChallengeAttempt).toHaveBeenCalledWith("challenge-1");
-    expect(h.repository.completeAdminRecentAuth).not.toHaveBeenCalled();
+    expect(h.repository.completeMfaRecentAuth).not.toHaveBeenCalled();
   });
 
   it("rejects invalid password before touching MFA state", async () => {
@@ -130,12 +156,12 @@ describe("Identity recent-auth completion", () => {
     vi.mocked(h.repository.findRecentAuthChallenge).mockResolvedValue({ id: "challenge-login", userId: "user-1", purpose: "LOGIN", codeHash: "email-code-hash", expiresAt: new Date(now.getTime() + 60_000), consumedAt: null, attemptCount: 0 });
     const result = await h.capability.complete({ sessionToken: "session-token", password: "correct", challengeToken: "challenge-token", code: "123456" });
     expect(result).toEqual({ status: "INVALID", code: "INVALID_CHALLENGE" });
-    expect(h.repository.completeAdminRecentAuth).not.toHaveBeenCalled();
+    expect(h.repository.completeMfaRecentAuth).not.toHaveBeenCalled();
   });
 
   it("fails closed when the session becomes invalid at commit time", async () => {
     const h = createHarness("ADMIN");
-    vi.mocked(h.repository.completeAdminRecentAuth).mockResolvedValue({ status: "SESSION_REJECTED" });
+    vi.mocked(h.repository.completeMfaRecentAuth).mockResolvedValue({ status: "SESSION_REJECTED" });
     const result = await h.capability.complete({ sessionToken: "session-token", password: "correct", challengeToken: "challenge-token", code: "123456" });
     expect(result).toEqual({ status: "INVALID", code: "INVALID_SESSION" });
   });

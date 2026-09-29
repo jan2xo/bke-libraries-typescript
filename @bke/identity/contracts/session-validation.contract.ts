@@ -19,7 +19,7 @@ export type IdentitySessionValidationFailureCode =
 export interface IdentitySessionContext {
   readonly session: IdentityIssuedSession;
   readonly principal: IdentityPrincipal;
-  readonly administratorMfaEnabled: boolean;
+  readonly mfaEnabled: boolean;
 }
 
 export type IdentitySessionValidationResult =

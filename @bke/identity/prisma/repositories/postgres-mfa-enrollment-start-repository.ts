@@ -7,7 +7,6 @@ import type {
 
 type EnrollmentPrincipalRow = {
   email: string;
-  role: "CUSTOMER" | "ADMIN";
   mfaMethodId: string | null;
   mfaEnabledAt: Date | null;
 };
@@ -31,7 +30,6 @@ export function createPostgresIdentityMfaEnrollmentStartRepository(
         const principal = await client.query<EnrollmentPrincipalRow>(
           `SELECT
              u."email",
-             u."role",
              m."id" AS "mfaMethodId",
              m."enabledAt" AS "mfaEnabledAt"
            FROM "User" u
@@ -45,10 +43,6 @@ export function createPostgresIdentityMfaEnrollmentStartRepository(
         if (!row) {
           await client.query("ROLLBACK");
           return { status: "PRINCIPAL_NOT_FOUND" as const };
-        }
-        if (row.role !== "ADMIN") {
-          await client.query("ROLLBACK");
-          return { status: "FORBIDDEN" as const };
         }
         if (row.mfaEnabledAt) {
           await client.query("ROLLBACK");

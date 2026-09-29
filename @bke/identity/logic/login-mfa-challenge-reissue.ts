@@ -43,8 +43,7 @@ export function createIdentityLoginMfaChallengeReissueCapability(
         pending.purpose !== "LOGIN" ||
         pending.consumedAt !== null ||
         pending.expiresAt <= now ||
-        pending.attemptCount >= MAX_ATTEMPTS ||
-        pending.userRole !== "ADMIN"
+        pending.attemptCount >= MAX_ATTEMPTS
       ) {
         return { status: "REJECTED", code: "INVALID_MFA_CHALLENGE" };
       }

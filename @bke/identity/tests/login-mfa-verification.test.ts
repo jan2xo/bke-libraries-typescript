@@ -19,7 +19,6 @@ function challenge(
     expiresAt: new Date("2026-08-31T03:10:00.000Z"),
     consumedAt: null,
     attemptCount: 0,
-    userRole: "ADMIN",
     ...overrides,
   };
 }
@@ -110,7 +109,6 @@ describe("Identity login MFA verification", () => {
     ["already consumed", challenge({ consumedAt: new Date("2026-08-31T02:59:00.000Z") })],
     ["expired", challenge({ expiresAt: now })],
     ["attempt ceiling", challenge({ attemptCount: 5 })],
-    ["non-admin", challenge({ userRole: "CUSTOMER" })],
   ])("rejects an invalid login challenge: %s", async (_label, record) => {
     const repo = repository({ findChallengeByTokenHash: vi.fn(async () => record) });
     const capability = createIdentityLoginMfaVerificationCapability(

@@ -28,9 +28,9 @@ function validNewPassword(password: string): boolean {
 }
 
 function replacementMethod(
-  role: "CUSTOMER" | "ADMIN",
+  mfaEnabled: boolean,
 ): IdentitySessionAuthenticationMethod {
-  return role === "ADMIN" ? "PASSWORD_EMAIL_OTP" : "PASSWORD";
+  return mfaEnabled ? "PASSWORD_EMAIL_OTP" : "PASSWORD";
 }
 
 export function createIdentityPasswordChangeCapability(
@@ -123,7 +123,7 @@ export function createIdentityPasswordChangeCapability(
         userId,
         role: validated.context.principal.role,
         replacementAuthenticationMethod: replacementMethod(
-          validated.context.principal.role,
+          validated.context.mfaEnabled,
         ),
       };
     },

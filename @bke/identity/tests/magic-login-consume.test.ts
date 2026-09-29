@@ -108,6 +108,19 @@ describe("Identity magic-login consume", () => {
     });
 
     await expect(
+      harness({
+        status: "MFA_PASSWORD_REQUIRED",
+        userId: "user-1",
+      }).capability.consume({
+        token: "raw-magic-token-long-enough",
+      }),
+    ).resolves.toEqual({
+      status: "REJECTED",
+      code: "MFA_PASSWORD_REQUIRED",
+      userId: "user-1",
+    });
+
+    await expect(
       harness({ status: "ACCOUNT_NOT_ACTIVE", userId: "user-1" }).capability.consume({
         token: "raw-magic-token-long-enough",
       }),

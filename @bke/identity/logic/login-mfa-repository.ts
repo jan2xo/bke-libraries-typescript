@@ -8,7 +8,6 @@ export interface IdentityLoginMfaChallengeRecord {
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;
   readonly attemptCount: number;
-  readonly userRole: "CUSTOMER" | "ADMIN";
 }
 
 export interface IdentityLoginMfaRecoveryCodeRecord {

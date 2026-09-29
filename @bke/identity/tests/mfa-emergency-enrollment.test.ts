@@ -40,7 +40,7 @@ function validSession(options?: {
         suspendedAt: null,
         lifecycleState: "ACTIVE" as const,
       },
-      administratorMfaEnabled: false,
+      mfaEnabled: false,
     },
   };
 }
