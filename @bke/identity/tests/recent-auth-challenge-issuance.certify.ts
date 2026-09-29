@@ -42,6 +42,12 @@ async function createUser(id: string, role: "ADMIN" | "CUSTOMER" = "ADMIN") {
 
 try {
   await createUser("recent-auth-admin");
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ($1, $2, $3, $3, $3)`,
+    ["recent-auth-admin-method", "recent-auth-admin", now],
+  );
 
   // Seed an unrelated LOGIN challenge; RECENT_AUTH replacement must not delete it.
   await client.query(
