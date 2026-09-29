@@ -33,8 +33,11 @@ async function createUser(id: string, role: "ADMIN" | "CUSTOMER") {
   );
 }
 
-async function createEnabledAdmin(id: string) {
-  await createUser(id, "ADMIN");
+async function createEnabledPrincipal(
+  id: string,
+  role: "ADMIN" | "CUSTOMER" = "ADMIN",
+) {
+  await createUser(id, role);
   await client.query(
     `INSERT INTO "AdministratorMfaMethod"
        ("id", "userId", "encryptedSecret", "enabledAt", "verifiedAt", "pendingExpiresAt", "updatedAt")
@@ -96,7 +99,7 @@ async function stateFor(userId: string, sessionId: string) {
 
 try {
   // Happy path: method disable, recovery/challenge purge and session revocation commit together.
-  const happySession = await createEnabledAdmin("mfa-disable-admin");
+  const happySession = await createEnabledPrincipal("mfa-disable-admin");
   const disabled = await capability.disable({ userId: "mfa-disable-admin" });
   if (
     disabled.status !== "DISABLED" ||
@@ -125,19 +128,41 @@ try {
     throw new Error(`Repeated disable did not fail closed: ${JSON.stringify(repeated)}`);
   }
 
-  // Authority failures must not manufacture state transitions.
-  await createUser("mfa-disable-customer", "CUSTOMER");
+  // Optional customer MFA may be disabled without forcing re-enrollment.
+  const customerSession = await createEnabledPrincipal(
+    "mfa-disable-customer",
+    "CUSTOMER",
+  );
   const customer = await capability.disable({ userId: "mfa-disable-customer" });
-  if (customer.status !== "INVALID" || customer.code !== "FORBIDDEN") {
-    throw new Error(`Customer disabled admin MFA: ${JSON.stringify(customer)}`);
+  if (
+    customer.status !== "DISABLED" ||
+    customer.enrollmentRequired !== false
+  ) {
+    throw new Error(
+      `Customer optional MFA disable failed: ${JSON.stringify(customer)}`,
+    );
   }
+  const customerState = await stateFor(
+    "mfa-disable-customer",
+    customerSession,
+  );
+  if (
+    !customerState ||
+    customerState.enabledAt !== null ||
+    customerState.revocationReason !== "MFA_DISABLED"
+  ) {
+    throw new Error(
+      `Customer MFA disable durable state is invalid: ${JSON.stringify(customerState)}`,
+    );
+  }
+
   const missing = await capability.disable({ userId: "mfa-disable-missing" });
   if (missing.status !== "INVALID" || missing.code !== "NOT_FOUND") {
     throw new Error(`Missing principal did not fail closed: ${JSON.stringify(missing)}`);
   }
 
   // Adversarial rollback: force the last session-revocation step to throw.
-  const rollbackSession = await createEnabledAdmin("mfa-disable-rollback");
+  const rollbackSession = await createEnabledPrincipal("mfa-disable-rollback");
   await client.query(`
     CREATE OR REPLACE FUNCTION "cert_fail_mfa_disable_session_revoke"()
     RETURNS trigger AS $$
