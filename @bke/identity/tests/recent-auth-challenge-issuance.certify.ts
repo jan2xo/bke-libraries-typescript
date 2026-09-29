@@ -154,16 +154,32 @@ try {
     throw new Error("RECENT_AUTH replacement deleted an unrelated LOGIN challenge.");
   }
 
-  await createUser("recent-auth-customer", "CUSTOMER");
-  const forbidden = await capability.issue({ userId: "recent-auth-customer" });
-  if (forbidden.status !== "REJECTED" || forbidden.code !== "FORBIDDEN") {
-    throw new Error(`Customer received recent-auth admin MFA challenge: ${JSON.stringify(forbidden)}`);
+  await createUser("recent-auth-customer-no-mfa", "CUSTOMER");
+  const customerNoMfa = await capability.issue({
+    userId: "recent-auth-customer-no-mfa",
+  });
+  if (customerNoMfa.status !== "REJECTED" || customerNoMfa.code !== "FORBIDDEN") {
+    throw new Error(
+      `Customer without MFA received a recent-auth challenge: ${JSON.stringify(customerNoMfa)}`,
+    );
   }
-  const customerChallenges = await client.query(
-    `SELECT 1 FROM "MfaChallenge" WHERE "userId" = 'recent-auth-customer'`,
+
+  await createUser("recent-auth-customer", "CUSTOMER");
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ($1, $2, $3, $3, $3)`,
+    ["recent-auth-customer-method", "recent-auth-customer", now],
   );
-  if ((customerChallenges.rowCount ?? 0) !== 0) {
-    throw new Error("Rejected customer recent-auth challenge mutated PostgreSQL.");
+  const customer = await capability.issue({ userId: "recent-auth-customer" });
+  if (
+    customer.status !== "ISSUED" ||
+    customer.challenge.delivery.recipientEmail !==
+      "recent-auth-customer@example.com"
+  ) {
+    throw new Error(
+      `MFA-enabled customer recent-auth challenge was not issued: ${JSON.stringify(customer)}`,
+    );
   }
 
   const missing = await capability.issue({ userId: "recent-auth-missing" });
