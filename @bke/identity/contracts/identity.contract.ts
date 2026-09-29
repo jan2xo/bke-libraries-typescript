@@ -44,9 +44,9 @@ export interface IdentityPasswordAuthenticationInput {
 }
 
 export type IdentityPrimaryAuthenticationRoute =
-  | "CUSTOMER_SESSION"
-  | "ADMIN_MFA_CHALLENGE"
-  | "ADMIN_MFA_ENROLLMENT";
+  | "SESSION"
+  | "MFA_CHALLENGE"
+  | "MFA_ENROLLMENT";
 
 export type IdentityPasswordAuthenticationFailureCode =
   | "INVALID_INPUT"
