@@ -17,8 +17,8 @@ const customer: IdentityPrincipal = Object.freeze({
 
 const administrator: IdentityPrincipal = Object.freeze({ ...customer, id: "admin-1", email: "admin@example.com", name: "Administrator", role: "ADMIN" });
 
-function authenticationRecord(principal: IdentityPrincipal, administratorMfaEnabled = false): IdentityPasswordAuthenticationRecord {
-  return { principal, passwordHash: "$argon2id$fixture", administratorMfaEnabled };
+function authenticationRecord(principal: IdentityPrincipal, mfaEnabled = false): IdentityPasswordAuthenticationRecord {
+  return { principal, passwordHash: "$argon2id$fixture", mfaEnabled };
 }
 function repository(overrides: Partial<IdentityRepository> = {}): IdentityRepository {
   return { findById: async () => null, findByEmail: async () => null, findPasswordAuthenticationByEmail: async () => authenticationRecord(customer), ...overrides };
@@ -29,16 +29,20 @@ describe("Identity password authentication capability", () => {
   it("normalizes email and routes an authenticated customer to session creation", async () => {
     let persistedEmail = "";
     const identity = createIdentityPasswordAuthenticationCapability(repository({ findPasswordAuthenticationByEmail: async (email) => { persistedEmail = email; return authenticationRecord(customer); } }), verifier());
-    await expect(identity.authenticate({ email: " Customer@Example.COM ", password: "correct-password" })).resolves.toEqual({ status: "PRIMARY_AUTHENTICATED", principal: customer, route: "CUSTOMER_SESSION" });
+    await expect(identity.authenticate({ email: " Customer@Example.COM ", password: "correct-password" })).resolves.toEqual({ status: "PRIMARY_AUTHENTICATED", principal: customer, route: "SESSION" });
     expect(persistedEmail).toBe("customer@example.com");
+  });
+  it("routes an MFA-enabled customer to an MFA challenge", async () => {
+    const identity = createIdentityPasswordAuthenticationCapability(repository({ findPasswordAuthenticationByEmail: async () => authenticationRecord(customer, true) }), verifier());
+    await expect(identity.authenticate({ email: "customer@example.com", password: "correct-password" })).resolves.toMatchObject({ status: "PRIMARY_AUTHENTICATED", principal: customer, route: "MFA_CHALLENGE" });
   });
   it("routes an administrator with MFA enabled to an MFA challenge", async () => {
     const identity = createIdentityPasswordAuthenticationCapability(repository({ findPasswordAuthenticationByEmail: async () => authenticationRecord(administrator, true) }), verifier());
-    await expect(identity.authenticate({ email: "admin@example.com", password: "correct-password" })).resolves.toMatchObject({ status: "PRIMARY_AUTHENTICATED", principal: administrator, route: "ADMIN_MFA_CHALLENGE" });
+    await expect(identity.authenticate({ email: "admin@example.com", password: "correct-password" })).resolves.toMatchObject({ status: "PRIMARY_AUTHENTICATED", principal: administrator, route: "MFA_CHALLENGE" });
   });
   it("routes an administrator without enabled MFA to enrollment", async () => {
     const identity = createIdentityPasswordAuthenticationCapability(repository({ findPasswordAuthenticationByEmail: async () => authenticationRecord(administrator, false) }), verifier());
-    await expect(identity.authenticate({ email: "admin@example.com", password: "correct-password" })).resolves.toMatchObject({ status: "PRIMARY_AUTHENTICATED", route: "ADMIN_MFA_ENROLLMENT" });
+    await expect(identity.authenticate({ email: "admin@example.com", password: "correct-password" })).resolves.toMatchObject({ status: "PRIMARY_AUTHENTICATED", route: "MFA_ENROLLMENT" });
   });
   it("collapses missing identities and bad passwords into INVALID_CREDENTIALS", async () => {
     const missing = createIdentityPasswordAuthenticationCapability(repository({ findPasswordAuthenticationByEmail: async () => null }), verifier());
