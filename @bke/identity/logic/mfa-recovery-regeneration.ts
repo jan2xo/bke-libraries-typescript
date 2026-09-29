@@ -45,9 +45,8 @@ export function createIdentityMfaRecoveryRegenerationCapability(
       }
 
       if (
-        validated.context.principal.role !== "ADMIN" ||
         !validated.context.session.mfaVerifiedAt ||
-        !validated.context.administratorMfaEnabled
+        !validated.context.mfaEnabled
       ) {
         return { status: "INVALID", code: "FORBIDDEN" };
       }
