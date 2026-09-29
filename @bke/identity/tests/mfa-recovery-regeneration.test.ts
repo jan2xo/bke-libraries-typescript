@@ -10,7 +10,7 @@ function validSession(options?: {
   role?: "CUSTOMER" | "ADMIN";
   recentAuthenticatedAt?: Date | null;
   mfaVerifiedAt?: Date | null;
-  administratorMfaEnabled?: boolean;
+  mfaEnabled?: boolean;
 }) {
   const role = options?.role ?? "ADMIN";
   return {
@@ -39,7 +39,7 @@ function validSession(options?: {
         suspendedAt: null,
         lifecycleState: "ACTIVE" as const,
       },
-      administratorMfaEnabled: options?.administratorMfaEnabled === undefined ? true : options.administratorMfaEnabled,
+      mfaEnabled: options?.mfaEnabled === undefined ? true : options.mfaEnabled,
     },
   };
 }
@@ -61,7 +61,7 @@ function harness(
 }
 
 describe("Identity MFA recovery regeneration", () => {
-  it("replaces 10 recovery hashes for a recent MFA-verified admin", async () => {
+  it("replaces 10 recovery hashes for a recent MFA-verified principal", async () => {
     const h = harness();
     const result = await h.capability.regenerate({ sessionToken: "session-token" });
     expect(result).toMatchObject({ status: "REGENERATED", userId: "admin-1", replacementAuthenticationMethod: "PASSWORD_EMAIL_OTP" });
@@ -80,10 +80,26 @@ describe("Identity MFA recovery regeneration", () => {
     await expect(boundary.capability.regenerate({ sessionToken: "session-token" })).resolves.toMatchObject({ status: "REGENERATED" });
   });
 
-  it("requires ADMIN role, MFA proof, and enabled MFA", async () => {
-    for (const session of [validSession({ role: "CUSTOMER" }), validSession({ mfaVerifiedAt: null }), validSession({ administratorMfaEnabled: false })]) {
+  it("supports an MFA-verified customer", async () => {
+    const h = harness(validSession({ role: "CUSTOMER" }));
+    await expect(
+      h.capability.regenerate({ sessionToken: "session-token" }),
+    ).resolves.toMatchObject({
+      status: "REGENERATED",
+      replacementAuthenticationMethod: "PASSWORD_EMAIL_OTP",
+    });
+    expect(h.repository.regenerate).toHaveBeenCalled();
+  });
+
+  it("requires MFA proof and enabled MFA regardless of principal role", async () => {
+    for (const session of [
+      validSession({ mfaVerifiedAt: null }),
+      validSession({ mfaEnabled: false }),
+    ]) {
       const h = harness(session);
-      await expect(h.capability.regenerate({ sessionToken: "session-token" })).resolves.toEqual({ status: "INVALID", code: "FORBIDDEN" });
+      await expect(
+        h.capability.regenerate({ sessionToken: "session-token" }),
+      ).resolves.toEqual({ status: "INVALID", code: "FORBIDDEN" });
       expect(h.recoveryCodeProvider.issue).not.toHaveBeenCalled();
       expect(h.repository.regenerate).not.toHaveBeenCalled();
     }
