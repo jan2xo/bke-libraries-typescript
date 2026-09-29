@@ -29,7 +29,7 @@ const persisted = (overrides: Partial<IdentityPersistedSessionContext> = {}): Id
     suspendedAt: null,
     lifecycleState: "ACTIVE",
   },
-  administratorMfaEnabled: false,
+  mfaEnabled: false,
   revokedAt: null,
   ...overrides,
 });
@@ -57,7 +57,7 @@ describe("Identity session validation", () => {
   it("returns the current session context for a valid token", async () => {
     const record = persisted();
     const validation = createIdentitySessionValidationCapability(repository(record), tokenProvider(), () => now);
-    await expect(validation.validate("raw-token")).resolves.toEqual({ status: "VALID", context: { session: record.session, principal: record.principal, administratorMfaEnabled: false } });
+    await expect(validation.validate("raw-token")).resolves.toEqual({ status: "VALID", context: { session: record.session, principal: record.principal, mfaEnabled: false } });
   });
 
   it("best-effort revokes an expired session and fails closed", async () => {
