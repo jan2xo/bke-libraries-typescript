@@ -24,6 +24,7 @@ try {
   const now = new Date();
   const users = [
     ["auth-cert-customer", "auth-customer@example.com", "CUSTOMER"],
+    ["auth-cert-customer-mfa", "auth-customer-mfa@example.com", "CUSTOMER"],
     ["auth-cert-admin-mfa", "auth-admin-mfa@example.com", "ADMIN"],
     ["auth-cert-admin-enroll", "auth-admin-enroll@example.com", "ADMIN"],
     ["auth-cert-no-credential", "auth-no-credential@example.com", "CUSTOMER"],
@@ -40,6 +41,7 @@ try {
 
   for (const userId of [
     "auth-cert-customer",
+    "auth-cert-customer-mfa",
     "auth-cert-admin-mfa",
     "auth-cert-admin-enroll",
   ]) {
@@ -53,8 +55,16 @@ try {
   await client.query(
     `INSERT INTO "AdministratorMfaMethod"
        ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
-     VALUES ($1, $2, $3, $3, $3)`,
-    ["auth-cert-admin-mfa-method", "auth-cert-admin-mfa", now],
+     VALUES
+       ($1, $2, $5, $5, $5),
+       ($3, $4, $5, $5, $5)`,
+    [
+      "auth-cert-customer-mfa-method",
+      "auth-cert-customer-mfa",
+      "auth-cert-admin-mfa-method",
+      "auth-cert-admin-mfa",
+      now,
+    ],
   );
 
   const authentication = createIdentityPasswordAuthenticationCapability(
@@ -69,9 +79,21 @@ try {
   if (
     customer.status !== "PRIMARY_AUTHENTICATED" ||
     customer.principal.id !== "auth-cert-customer" ||
-    customer.route !== "CUSTOMER_SESSION"
+    customer.route !== "SESSION"
   ) {
     throw new Error(`Customer authentication certification failed: ${JSON.stringify(customer)}`);
+  }
+
+  const customerMfa = await authentication.authenticate({
+    email: "auth-customer-mfa@example.com",
+    password,
+  });
+  if (
+    customerMfa.status !== "PRIMARY_AUTHENTICATED" ||
+    customerMfa.principal.id !== "auth-cert-customer-mfa" ||
+    customerMfa.route !== "MFA_CHALLENGE"
+  ) {
+    throw new Error(`Customer MFA routing certification failed: ${JSON.stringify(customerMfa)}`);
   }
 
   const adminMfa = await authentication.authenticate({
@@ -81,7 +103,7 @@ try {
   if (
     adminMfa.status !== "PRIMARY_AUTHENTICATED" ||
     adminMfa.principal.id !== "auth-cert-admin-mfa" ||
-    adminMfa.route !== "ADMIN_MFA_CHALLENGE"
+    adminMfa.route !== "MFA_CHALLENGE"
   ) {
     throw new Error(`Admin MFA routing certification failed: ${JSON.stringify(adminMfa)}`);
   }
@@ -93,7 +115,7 @@ try {
   if (
     adminEnrollment.status !== "PRIMARY_AUTHENTICATED" ||
     adminEnrollment.principal.id !== "auth-cert-admin-enroll" ||
-    adminEnrollment.route !== "ADMIN_MFA_ENROLLMENT"
+    adminEnrollment.route !== "MFA_ENROLLMENT"
   ) {
     throw new Error(
       `Admin MFA enrollment routing certification failed: ${JSON.stringify(adminEnrollment)}`,
