@@ -19,10 +19,12 @@ export function createPostgresIdentityMagicLoginRequestRepository(
       await client.connect();
       try {
         const result = await client.query<IdentityMagicLoginPrincipal>(
-          `SELECT "email"
-             FROM "User"
-            WHERE "email" = $1
-              AND "role" = 'CUSTOMER'
+          `SELECT u."email"
+             FROM "User" u
+             LEFT JOIN "AdministratorMfaMethod" m ON m."userId" = u."id"
+            WHERE u."email" = $1
+              AND u."role" = 'CUSTOMER'
+              AND m."enabledAt" IS NULL
             LIMIT 1`,
           [email],
         );
