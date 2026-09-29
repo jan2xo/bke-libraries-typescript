@@ -34,7 +34,7 @@ describe("Identity V1 auth parity orchestration", () => {
   it("issues a PASSWORD session immediately for a customer password login", async () => {
     const sessionIssue = vi.fn(async () => ({ status: "ISSUED" as const, token: "session-token", session }));
     const capability = createIdentityPasswordLoginCapability(
-      { authenticate: vi.fn(async () => ({ status: "PRIMARY_AUTHENTICATED" as const, principal, route: "CUSTOMER_SESSION" as const })) },
+      { authenticate: vi.fn(async () => ({ status: "PRIMARY_AUTHENTICATED" as const, principal, route: "SESSION" as const })) },
       { issue: sessionIssue },
       { issue: vi.fn() },
     );
@@ -64,7 +64,7 @@ describe("Identity V1 auth parity orchestration", () => {
       },
     }));
     const capability = createIdentityPasswordLoginCapability(
-      { authenticate: vi.fn(async () => ({ status: "PRIMARY_AUTHENTICATED" as const, principal: admin, route: "ADMIN_MFA_CHALLENGE" as const })) },
+      { authenticate: vi.fn(async () => ({ status: "PRIMARY_AUTHENTICATED" as const, principal: admin, route: "MFA_CHALLENGE" as const })) },
       { issue: sessionIssue },
       { issue: challengeIssue },
     );
