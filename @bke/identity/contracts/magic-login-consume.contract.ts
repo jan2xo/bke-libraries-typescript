@@ -19,7 +19,11 @@ export type IdentityMagicLoginConsumeResult =
     }
   | {
       readonly status: "REJECTED";
-      readonly code: "INVALID_TOKEN" | "ADMIN_PASSWORD_REQUIRED" | "ACCOUNT_NOT_ACTIVE";
+      readonly code:
+        | "INVALID_TOKEN"
+        | "ADMIN_PASSWORD_REQUIRED"
+        | "MFA_PASSWORD_REQUIRED"
+        | "ACCOUNT_NOT_ACTIVE";
       readonly userId?: string;
     }
   | {
