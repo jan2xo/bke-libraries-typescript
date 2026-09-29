@@ -160,14 +160,22 @@ try {
 
   await createUser("mfa-enroll-customer", "CUSTOMER");
   const customer = await capability.start({ userId: "mfa-enroll-customer" });
-  if (customer.status !== "REJECTED" || customer.code !== "FORBIDDEN") {
-    throw new Error(`Customer started administrator MFA enrollment: ${JSON.stringify(customer)}`);
+  if (
+    customer.status !== "STARTED" ||
+    customer.delivery.recipientEmail !== "mfa-enroll-customer@example.com"
+  ) {
+    throw new Error(
+      `Customer MFA enrollment did not start: ${JSON.stringify(customer)}`,
+    );
   }
   const customerMethod = await client.query(
-    `SELECT 1 FROM "AdministratorMfaMethod" WHERE "userId" = 'mfa-enroll-customer'`,
+    `SELECT 1 FROM "AdministratorMfaMethod"
+      WHERE "userId" = 'mfa-enroll-customer'
+        AND "enabledAt" IS NULL
+        AND "pendingExpiresAt" IS NOT NULL`,
   );
-  if ((customerMethod.rowCount ?? 0) !== 0) {
-    throw new Error("Rejected customer enrollment mutated MFA method state.");
+  if ((customerMethod.rowCount ?? 0) !== 1) {
+    throw new Error("Customer enrollment did not persist one pending MFA method.");
   }
 
   const missing = await capability.start({ userId: "mfa-enroll-missing" });
