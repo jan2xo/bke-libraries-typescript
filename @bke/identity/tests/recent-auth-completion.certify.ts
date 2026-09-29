@@ -25,12 +25,21 @@ const mfaKey = createHash("sha256").update(mfaEncryptionKey).digest();
 const hashEmailCode = (code: string) => createHmac("sha256", mfaKey).update(`admin-email-otp-code:${code.trim().replace(/\s/g, "")}`).digest("hex");
 
 async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; sessionId: string; tokenHash: string; assuranceLevel: "BASIC" | "MFA_VERIFIED"; }) {
+  const mfaEnabled = input.assuranceLevel === "MFA_VERIFIED";
   await client.query(
     `INSERT INTO "User" ("id", "email", "name", "role", "createdAt", "updatedAt", "lifecycleState")
      VALUES ($1, $2, $3, $4::"IdentityRole", $5, $6, 'ACTIVE')`,
     [input.id, `${input.id}@example.com`, input.id, input.role, new Date("2026-01-01T00:00:00.000Z"), now],
   );
   await client.query(`INSERT INTO "PasswordCredential" ("userId", "passwordHash") VALUES ($1, $2)`, [input.id, passwordHash]);
+  if (mfaEnabled) {
+    await client.query(
+      `INSERT INTO "AdministratorMfaMethod"
+         ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+       VALUES ($1, $2, $3, $3, $3)`,
+      [`recent-auth-mfa-${input.id}`, input.id, now],
+    );
+  }
   await client.query(
     `INSERT INTO "Session" (
        "id", "tokenHash", "userId", "expiresAt", "lastAuthenticatedAt",
@@ -46,15 +55,16 @@ async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; session
       input.id,
       new Date(now.getTime() + 30 * 60_000),
       new Date(now.getTime() - 60_000),
-      input.role === "ADMIN" ? new Date(now.getTime() - 30_000) : null,
+      mfaEnabled ? new Date(now.getTime() - 30_000) : null,
       new Date(now.getTime() + 2 * 60 * 60_000),
-      input.role === "ADMIN" ? "PASSWORD_EMAIL_OTP" : "PASSWORD",
+      mfaEnabled ? "PASSWORD_EMAIL_OTP" : "PASSWORD",
       input.assuranceLevel,
     ],
   );
 }
 
 function validationFor(input: { userId: string; sessionId: string; role: "CUSTOMER" | "ADMIN"; assuranceLevel: "BASIC" | "MFA_VERIFIED"; }): IdentitySessionValidationCapability {
+  const mfaEnabled = input.assuranceLevel === "MFA_VERIFIED";
   return {
     async validate() {
       return {
@@ -65,11 +75,11 @@ function validationFor(input: { userId: string; sessionId: string; role: "CUSTOM
             userId: input.userId,
             expiresAt: new Date(now.getTime() + 30 * 60_000),
             lastAuthenticatedAt: new Date(now.getTime() - 60_000),
-            mfaVerifiedAt: input.role === "ADMIN" ? new Date(now.getTime() - 30_000) : null,
+            mfaVerifiedAt: mfaEnabled ? new Date(now.getTime() - 30_000) : null,
             recentAuthenticatedAt: null,
             lastSeenAt: new Date(now.getTime() - 60_000),
             absoluteExpiresAt: new Date(now.getTime() + 2 * 60 * 60_000),
-            authenticationMethod: input.role === "ADMIN" ? "PASSWORD_EMAIL_OTP" : "PASSWORD",
+            authenticationMethod: mfaEnabled ? "PASSWORD_EMAIL_OTP" : "PASSWORD",
             assuranceLevel: input.assuranceLevel,
             createdAt: new Date(now.getTime() - 10 * 60_000),
           },
@@ -83,7 +93,7 @@ function validationFor(input: { userId: string; sessionId: string; role: "CUSTOM
             suspendedAt: null,
             lifecycleState: "ACTIVE" as const,
           },
-          mfaEnabled: input.role === "ADMIN",
+          mfaEnabled,
         },
       };
     },
