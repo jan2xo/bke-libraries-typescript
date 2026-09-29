@@ -1,10 +1,10 @@
 import { Client } from "pg";
 import type {
-  IdentityRecentAuthAdminCommitInput,
+  IdentityRecentAuthMfaCommitInput,
   IdentityRecentAuthChallengeRecord,
   IdentityRecentAuthCommitResult,
   IdentityRecentAuthCompletionRepository,
-  IdentityRecentAuthCustomerCommitInput,
+  IdentityRecentAuthPasswordOnlyCustomerCommitInput,
   IdentityRecentAuthPasswordRecord,
   IdentityRecentAuthRecoveryCodeRecord,
 } from "../../logic/recent-auth-completion-repository";
@@ -144,8 +144,8 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
       }
     },
 
-    async upgradeCustomerSession(
-      input: IdentityRecentAuthCustomerCommitInput,
+    async upgradePasswordOnlyCustomerSession(
+      input: IdentityRecentAuthPasswordOnlyCustomerCommitInput,
     ): Promise<IdentityRecentAuthCommitResult> {
       const client = new Client({ connectionString: normalizedConnectionString });
       await client.connect();
@@ -162,6 +162,7 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
               AND EXISTS (
                 SELECT 1 FROM "User" u
                  WHERE u."id" = s."userId"
+                   AND u."role" = 'CUSTOMER'::"IdentityRole"
                    AND u."suspendedAt" IS NULL
               )
           RETURNING ${SESSION_RETURNING}`,
@@ -176,8 +177,8 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
       }
     },
 
-    async completeAdminRecentAuth(
-      input: IdentityRecentAuthAdminCommitInput,
+    async completeMfaRecentAuth(
+      input: IdentityRecentAuthMfaCommitInput,
     ): Promise<IdentityRecentAuthCommitResult> {
       const client = new Client({ connectionString: normalizedConnectionString });
       await client.connect();
@@ -227,8 +228,13 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
               AND EXISTS (
                 SELECT 1 FROM "User" u
                  WHERE u."id" = s."userId"
-                   AND u."role" = 'ADMIN'::"IdentityRole"
                    AND u."suspendedAt" IS NULL
+              )
+              AND s."mfaVerifiedAt" IS NOT NULL
+              AND EXISTS (
+                SELECT 1 FROM "AdministratorMfaMethod" m
+                 WHERE m."userId" = s."userId"
+                   AND m."enabledAt" IS NOT NULL
               )
           RETURNING ${SESSION_RETURNING}`,
           [input.sessionId, input.userId, input.completedAt],
