@@ -30,10 +30,8 @@ export function createPostgresIdentityLoginMfaRepository(
              c."codeHash",
              c."expiresAt",
              c."consumedAt",
-             c."attemptCount",
-             u."role" AS "userRole"
+             c."attemptCount"
            FROM "MfaChallenge" c
-           JOIN "User" u ON u."id" = c."userId"
           WHERE c."tokenHash" = $1
           LIMIT 1`,
           [tokenHash],
