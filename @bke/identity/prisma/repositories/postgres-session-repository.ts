@@ -47,7 +47,7 @@ type SessionValidationRow = SessionRow & {
     | "PRIVACY_REVIEW"
     | "PSEUDONYMIZED"
     | "PURGE_ELIGIBLE";
-  administratorMfaEnabled: boolean;
+  mfaEnabled: boolean;
 };
 
 function toIssuedSession(row: SessionRow): IdentityIssuedSession {
@@ -81,7 +81,7 @@ function toPersistedSessionContext(
       suspendedAt: row.userSuspendedAt,
       lifecycleState: row.userLifecycleState,
     },
-    administratorMfaEnabled: row.administratorMfaEnabled,
+    mfaEnabled: row.mfaEnabled,
     revokedAt: row.revokedAt,
   };
 }
@@ -210,7 +210,7 @@ export function createPostgresIdentitySessionRepository(
              u."createdAt" AS "userEstablishedAt",
              u."suspendedAt" AS "userSuspendedAt",
              u."lifecycleState" AS "userLifecycleState",
-             (mfa."enabledAt" IS NOT NULL) AS "administratorMfaEnabled"
+             (mfa."enabledAt" IS NOT NULL) AS "mfaEnabled"
            FROM "Session" s
            JOIN "User" u ON u."id" = s."userId"
            LEFT JOIN "AdministratorMfaMethod" mfa ON mfa."userId" = u."id"
