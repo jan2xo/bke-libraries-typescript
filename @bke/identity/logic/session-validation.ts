@@ -92,7 +92,7 @@ export function createIdentitySessionValidationCapability(
         context: {
           session,
           principal,
-          administratorMfaEnabled: persisted.administratorMfaEnabled,
+          mfaEnabled: persisted.mfaEnabled,
         },
       };
     },
