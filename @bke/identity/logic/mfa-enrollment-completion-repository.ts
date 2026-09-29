@@ -6,7 +6,6 @@ export interface IdentityMfaEnrollmentChallengeRecord {
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;
   readonly attemptCount: number;
-  readonly userRole: "CUSTOMER" | "ADMIN";
   readonly mfaMethodId: string | null;
   readonly mfaEnabledAt: Date | null;
   readonly pendingExpiresAt: Date | null;
