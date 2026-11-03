@@ -87,8 +87,8 @@ function createGoogleIdentityRepositoryFactory(
   return Object.freeze({
     async bindSubject(userId: string, subject: string) {
       const client = await getClient();
-      if (!transactionBound) await client.query("BEGIN");
       try {
+        if (!transactionBound) await client.query("BEGIN");
         const user = await client.query<UserStateRow>(
           `SELECT "suspendedAt", "lifecycleState"
              FROM "User"
@@ -135,6 +135,8 @@ function createGoogleIdentityRepositoryFactory(
       } catch (error) {
         if (!transactionBound) await client.query("ROLLBACK").catch(() => undefined);
         throw error;
+      } finally {
+        if (ownsConnection && client instanceof Client) await client.end();
       }
     },
 
