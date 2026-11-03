@@ -2,6 +2,7 @@ import { createHash, createHmac } from "node:crypto";
 import argon2 from "argon2";
 import { Client } from "pg";
 import type { IdentitySessionValidationCapability } from "../contracts/session-validation.contract";
+import type { IdentityIssuedSession } from "../contracts/session.contract";
 import { createIdentityRecentAuthCompletionCapability } from "../logic/recent-auth-completion";
 import { createIdentityMfaEnrollmentStartCapability } from "../logic/mfa-enrollment-start";
 import { createIdentityMfaEnrollmentCompletionCapability } from "../logic/mfa-enrollment-completion";
@@ -30,7 +31,7 @@ await client.connect();
 const mfaKey = createHash("sha256").update(mfaEncryptionKey).digest();
 const hashEmailCode = (code: string) => createHmac("sha256", mfaKey).update(`admin-email-otp-code:${code.trim().replace(/\s/g, "")}`).digest("hex");
 
-async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; sessionId: string; tokenHash: string; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: "PASSWORD" | "PASSWORD_EMAIL_OTP" | "GOOGLE_OIDC" | "MFA_ENROLLMENT"; hasPassword?: boolean; }) {
+async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; sessionId: string; tokenHash: string; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: IdentityIssuedSession["authenticationMethod"]; hasPassword?: boolean; }) {
   const mfaEnabled = input.assuranceLevel === "MFA_VERIFIED";
   await client.query(
     `INSERT INTO "User" ("id", "email", "name", "emailVerified", "role", "createdAt", "updatedAt", "lifecycleState")
@@ -71,7 +72,7 @@ async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; session
   );
 }
 
-function validationFor(input: { userId: string; sessionId: string; role: "CUSTOMER" | "ADMIN"; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: "PASSWORD" | "PASSWORD_EMAIL_OTP" | "GOOGLE_OIDC"; recentAuthenticatedAt?: Date | null; }): IdentitySessionValidationCapability {
+function validationFor(input: { userId: string; sessionId: string; role: "CUSTOMER" | "ADMIN"; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: "PASSWORD" | "PASSWORD_EMAIL_OTP" | "GOOGLE_OIDC" | "MFA_ENROLLMENT"; recentAuthenticatedAt?: Date | null; }): IdentitySessionValidationCapability {
   const mfaEnabled = input.assuranceLevel === "MFA_VERIFIED";
   return {
     async validate() {
