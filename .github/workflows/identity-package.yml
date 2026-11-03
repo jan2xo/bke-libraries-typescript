@@ -52,6 +52,9 @@ jobs:
             package/module.manifest.ts \
             package/contracts/identity.contract.ts \
             package/contracts/google-identity.contract.ts \
+            package/contracts/google-authentication.contract.ts \
+            package/docs/GOOGLE-OIDC.md \
+            package/logic/google-authentication.ts \
             package/contracts/password-login.contract.ts \
             package/contracts/login-mfa-challenge-reissue.contract.ts \
             package/contracts/password-change-session.contract.ts \
@@ -114,18 +117,20 @@ jobs:
           import { IDENTITY_LOOKUP_CAPABILITY_ID, type IdentityPrincipal } from "@bke/identity/contracts/identity.contract";
           import { IDENTITY_PASSWORD_LOGIN_CAPABILITY_ID } from "@bke/identity/contracts/password-login.contract";
           import { IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID } from "@bke/identity/contracts/google-identity.contract";
+          import { IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID } from "@bke/identity/contracts/google-authentication.contract";
           import { IDENTITY_LOGIN_MFA_CHALLENGE_REISSUE_CAPABILITY_ID } from "@bke/identity/contracts/login-mfa-challenge-reissue.contract";
           import { IDENTITY_PASSWORD_CHANGE_SESSION_CAPABILITY_ID } from "@bke/identity/contracts/password-change-session.contract";
           import { IDENTITY_SESSION_ADMINISTRATION_CAPABILITY_ID } from "@bke/identity/contracts/session-administration.contract";
           import { createIdentityLookupCapability } from "@bke/identity/logic/identity-service";
           import { createIdentityGooglePrincipalBindingCapability } from "@bke/identity/logic/google-identity";
+          import { createIdentityGoogleAuthenticationCapability } from "@bke/identity/logic/google-authentication";
           import { createIdentityPasswordLoginCapability } from "@bke/identity/logic/password-login";
           import { createIdentityLoginMfaChallengeReissueCapability } from "@bke/identity/logic/login-mfa-challenge-reissue";
           import { createIdentityPasswordChangeSessionCapability } from "@bke/identity/logic/password-change-session";
           import { createIdentitySessionAdministrationCapability } from "@bke/identity/logic/session-administration";
           import { createArgon2PasswordVerifier } from "@bke/identity/providers/argon2-password-verifier";
           import { createPostgresIdentityRepository } from "@bke/identity/prisma/repositories/postgres-identity-repository";
-          import { createPostgresIdentityGoogleIdentityRepository } from "@bke/identity/prisma/repositories/postgres-google-identity-repository";
+          import { createPostgresIdentityGoogleIdentityRepository, createTransactionBoundPostgresGoogleIdentityRepository } from "@bke/identity/prisma/repositories/postgres-google-identity-repository";
           import { createPostgresIdentitySessionAdministrationRepository } from "@bke/identity/prisma/repositories/postgres-session-administration-repository";
           import { identityModuleManifest } from "@bke/identity/module.manifest";
 
@@ -135,6 +140,7 @@ jobs:
           for (const id of [
             IDENTITY_PASSWORD_LOGIN_CAPABILITY_ID,
             IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID,
+            IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID,
             IDENTITY_LOGIN_MFA_CHALLENGE_REISSUE_CAPABILITY_ID,
             IDENTITY_PASSWORD_CHANGE_SESSION_CAPABILITY_ID,
             IDENTITY_SESSION_ADMINISTRATION_CAPABILITY_ID,
@@ -145,7 +151,9 @@ jobs:
           for (const value of [
             createIdentityLookupCapability,
             createIdentityGooglePrincipalBindingCapability,
+            createIdentityGoogleAuthenticationCapability,
             createPostgresIdentityGoogleIdentityRepository,
+            createTransactionBoundPostgresGoogleIdentityRepository,
             createIdentityPasswordLoginCapability,
             createIdentityLoginMfaChallengeReissueCapability,
             createIdentityPasswordChangeSessionCapability,
@@ -157,6 +165,7 @@ jobs:
             if (typeof value !== "function") throw new Error("Packed Identity consumer exports are incomplete.");
           }
           if (IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID !== "bke.identity.google-principal-binding.v1") throw new Error("Unexpected Google binding capability id.");
+          if (IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID !== "bke.identity.google-authentication.v1") throw new Error("Unexpected Google authentication capability id.");
           console.log("Packed @bke/identity 0.5.0 Google identity consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke

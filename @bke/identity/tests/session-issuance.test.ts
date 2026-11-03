@@ -216,6 +216,30 @@ describe("Identity session issuance capability", () => {
     ).resolves.toEqual({ status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" });
   });
 
+  it.each(["GOOGLE_OIDC_EMAIL_OTP", "GOOGLE_OIDC_RECOVERY"] as const)(
+    "does not infer recent authentication from Google app-MFA method %s",
+    async (authenticationMethod) => {
+      let persisted: IdentitySessionPersistenceInput | undefined;
+      const sessions = createIdentitySessionIssuanceCapability(
+        repository(async (input) => {
+          persisted = input;
+          return { status: "CREATED", session: { ...input, createdAt: now } };
+        }),
+        tokenProvider(),
+        () => now,
+      );
+
+      const result = await sessions.issue({ userId: "user-1", authenticationMethod });
+      expect(result.status).toBe("ISSUED");
+      expect(persisted).toMatchObject({
+        mfaVerifiedAt: now,
+        recentAuthenticatedAt: null,
+        assuranceLevel: "MFA_VERIFIED",
+      });
+      expect(result.status === "ISSUED" && result.session.recentAuthenticatedAt).toBeNull();
+    },
+  );
+
   it("issues Google OIDC sessions with basic assurance and no automatic MFA or recent-auth proof", async () => {
     const sessions = createIdentitySessionIssuanceCapability(repository(), tokenProvider(), () => now);
     const result = await sessions.issue({ userId: "user-1", authenticationMethod: "GOOGLE_OIDC" });
