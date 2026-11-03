@@ -12,6 +12,8 @@ export interface IdentityRecentAuthChallengeRecord {
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;
   readonly attemptCount: number;
+  readonly sessionId: string | null;
+  readonly primaryAuthenticationMethod: "PASSWORD" | "GOOGLE_OIDC";
 }
 
 export interface IdentityRecentAuthRecoveryCodeRecord {
@@ -30,6 +32,11 @@ export interface IdentityRecentAuthMfaCommitInput {
   readonly challengeId: string;
   readonly recoveryCodeId: string | null;
   readonly completedAt: Date;
+  readonly authenticationMethod:
+    | "PASSWORD_EMAIL_OTP"
+    | "PASSWORD_RECOVERY"
+    | "GOOGLE_OIDC_EMAIL_OTP"
+    | "GOOGLE_OIDC_RECOVERY";
 }
 
 export type IdentityRecentAuthCommitResult =
@@ -39,26 +46,19 @@ export type IdentityRecentAuthCommitResult =
   | { readonly status: "RECOVERY_REJECTED" };
 
 export interface IdentityRecentAuthCompletionRepository {
-  findPasswordRecord(
-    userId: string,
-  ): Promise<IdentityRecentAuthPasswordRecord | null>;
-
+  findPasswordRecord(userId: string): Promise<IdentityRecentAuthPasswordRecord | null>;
   findRecentAuthChallenge(
     userId: string,
     tokenHash: string,
   ): Promise<IdentityRecentAuthChallengeRecord | null>;
-
   findUnusedRecoveryCode(
     userId: string,
     codeHash: string,
   ): Promise<IdentityRecentAuthRecoveryCodeRecord | null>;
-
   incrementChallengeAttempt(challengeId: string): Promise<void>;
-
   upgradePasswordOnlyCustomerSession(
     input: IdentityRecentAuthPasswordOnlyCustomerCommitInput,
   ): Promise<IdentityRecentAuthCommitResult>;
-
   completeMfaRecentAuth(
     input: IdentityRecentAuthMfaCommitInput,
   ): Promise<IdentityRecentAuthCommitResult>;

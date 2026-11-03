@@ -2,13 +2,20 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createPostgresIdentityGoogleIdentityRepository, createTransactionBoundPostgresGoogleIdentityRepository } from "../prisma/repositories/postgres-google-identity-repository";
 import { createIdentityGooglePrincipalBindingCapability } from "../logic/google-identity";
+import { createIdentityGoogleAuthenticationCapability } from "../logic/google-authentication";
+import { createHmacSessionTokenProvider } from "../providers/hmac-session-token-provider";
+import { createIdentitySessionIssuanceCapability } from "../logic/session-issuance";
+import { createIdentitySessionValidationCapability } from "../logic/session-validation";
+import { createIdentitySessionTerminationCapability } from "../logic/session-termination";
+import { createPostgresIdentitySessionRepository } from "../prisma/repositories/postgres-session-repository";
+import { createPostgresIdentitySessionTerminationRepository } from "../prisma/repositories/postgres-session-termination-repository";
 
 const connectionString = process.env.DATABASE_URL?.trim();
 if (!connectionString) throw new Error("DATABASE_URL is required for Google Identity certification.");
 
 const client = new Client({ connectionString });
 await client.connect();
-const ids = Array.from({ length: 7 }, () => randomUUID());
+const ids = Array.from({ length: 8 }, () => randomUUID());
 const now = new Date();
 
 try {
@@ -32,12 +39,59 @@ try {
   }
   await client.query("COMMIT");
 
-  const capability = createIdentityGooglePrincipalBindingCapability(
-    createPostgresIdentityGoogleIdentityRepository(connectionString),
-  );
+  const googleRepository = createPostgresIdentityGoogleIdentityRepository(connectionString);
+  const capability = createIdentityGooglePrincipalBindingCapability(googleRepository);
+  const authentication = createIdentityGoogleAuthenticationCapability(googleRepository);
   const subject = `google-${randomUUID()}`;
   const bound = await capability.bindToUser({ userId: ids[0]!, subject });
   if (bound.status !== "BOUND") throw new Error("First binding failed.");
+
+  const authenticatedCustomer = await authentication.authenticate({ subject });
+  if (
+    authenticatedCustomer.status !== "PRIMARY_AUTHENTICATED" ||
+    authenticatedCustomer.principal.id !== ids[0] ||
+    authenticatedCustomer.route !== "SESSION"
+  ) {
+    throw new Error("Bound Google subject did not authenticate to the original BKE customer.");
+  }
+
+  const sessionSecret = `google-session-cert-${randomUUID()}`;
+  const tokens = createHmacSessionTokenProvider(sessionSecret);
+  const sessions = createPostgresIdentitySessionRepository(connectionString);
+  const issuance = createIdentitySessionIssuanceCapability(sessions, tokens, () => now);
+  const validation = createIdentitySessionValidationCapability(sessions, tokens, () => now);
+  const termination = createIdentitySessionTerminationCapability(
+    createPostgresIdentitySessionTerminationRepository(connectionString),
+    tokens,
+    () => now,
+  );
+  const issuedSession = await issuance.issue({
+    userId: ids[0]!,
+    authenticationMethod: "GOOGLE_OIDC",
+  });
+  if (
+    issuedSession.status !== "ISSUED" ||
+    issuedSession.session.assuranceLevel !== "BASIC" ||
+    issuedSession.session.mfaVerifiedAt !== null ||
+    issuedSession.session.recentAuthenticatedAt !== null
+  ) {
+    throw new Error("Google login alone received app-MFA or recent-auth assurance.");
+  }
+  const validatedSession = await validation.validate(issuedSession.token);
+  if (
+    validatedSession.status !== "VALID" ||
+    validatedSession.context.principal.id !== ids[0]
+  ) {
+    throw new Error("Google session did not validate to the bound BKE identity.");
+  }
+  const terminated = await termination.terminate(issuedSession.token);
+  if (terminated.status !== "TERMINATED") {
+    throw new Error("Google session could not be terminated through the existing adapter.");
+  }
+  const afterTermination = await validation.validate(issuedSession.token);
+  if (afterTermination.status !== "INVALID") {
+    throw new Error("Terminated Google session remained valid.");
+  }
 
   const found = await capability.findPrincipalBySubject({ subject });
   if (found.status !== "FOUND" || found.principal.id !== ids[0]) {
@@ -46,6 +100,25 @@ try {
 
   if ((await capability.bindToUser({ userId: ids[0]!, subject })).status !== "ALREADY_BOUND") {
     throw new Error("Repeat binding was not idempotent.");
+  }
+
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ($1, $2, $3, $3, $3)`,
+    [`google-cert-mfa-${ids[7]}`, ids[7], now],
+  );
+  const enrolledSubject = `google-${randomUUID()}`;
+  if ((await capability.bindToUser({ userId: ids[7]!, subject: enrolledSubject })).status !== "BOUND") {
+    throw new Error("Enrolled administrator Google subject failed to bind.");
+  }
+  const enrolledAuth = await authentication.authenticate({ subject: enrolledSubject });
+  if (
+    enrolledAuth.status !== "PRIMARY_AUTHENTICATED" ||
+    enrolledAuth.principal.id !== ids[7] ||
+    enrolledAuth.route !== "MFA_CHALLENGE"
+  ) {
+    throw new Error("Google authentication did not route an enrolled administrator through app MFA.");
   }
 
   const subjectCollision = await capability.bindToUser({
@@ -143,6 +216,71 @@ try {
   );
   if (afterRollback.rows[0]?.bindingExists || afterRollback.rows[0]?.userExists) {
     throw new Error("Google registration and binding escaped the host transaction rollback.");
+  }
+
+  const committedRegistrationUserId = randomUUID();
+  const committedRegistrationSubject = `google-${randomUUID()}`;
+  await client.query("BEGIN");
+  await client.query(
+    `INSERT INTO "User" (
+       "id", "email", "name", "emailVerified", "role", "updatedAt", "lifecycleState"
+     ) VALUES ($1, $2, 'registration', NULL, 'CUSTOMER', $3, 'ACTIVE')`,
+    [
+      committedRegistrationUserId,
+      `${committedRegistrationUserId}@identity-cert.example.invalid`,
+      now,
+    ],
+  );
+  const committedBind = await transactionCapability.bindToUser({
+    userId: committedRegistrationUserId,
+    subject: committedRegistrationSubject,
+  });
+  if (committedBind.status !== "BOUND") {
+    await client.query("ROLLBACK");
+    throw new Error("Transaction-bound registration could not persist a valid subject.");
+  }
+  await client.query("COMMIT");
+  ids.push(committedRegistrationUserId);
+  const committedLookup = await capability.findPrincipalBySubject({
+    subject: committedRegistrationSubject,
+  });
+  if (
+    committedLookup.status !== "FOUND" ||
+    committedLookup.principal.id !== committedRegistrationUserId
+  ) {
+    throw new Error("Committed host registration did not retain its Google binding.");
+  }
+
+  const conflictRegistrationUserId = randomUUID();
+  await client.query("BEGIN");
+  await client.query(
+    `INSERT INTO "User" (
+       "id", "email", "name", "emailVerified", "role", "updatedAt", "lifecycleState"
+     ) VALUES ($1, $2, 'registration', NULL, 'CUSTOMER', $3, 'ACTIVE')`,
+    [
+      conflictRegistrationUserId,
+      `${conflictRegistrationUserId}@identity-cert.example.invalid`,
+      now,
+    ],
+  );
+  const registrationConflict = await transactionCapability.bindToUser({
+    userId: conflictRegistrationUserId,
+    subject,
+  });
+  if (
+    registrationConflict.status !== "REJECTED" ||
+    registrationConflict.code !== "SUBJECT_ALREADY_BOUND"
+  ) {
+    await client.query("ROLLBACK");
+    throw new Error("A duplicate Google subject did not fail host registration.");
+  }
+  await client.query("ROLLBACK");
+  const conflictRollback = await client.query(
+    `SELECT EXISTS (SELECT 1 FROM "User" WHERE "id" = $1) AS "userExists"`,
+    [conflictRegistrationUserId],
+  );
+  if (conflictRollback.rows[0]?.userExists) {
+    throw new Error("A failed subject collision left an orphan registration.");
   }
 
   console.log("Google Identity binding PostgreSQL certification GREEN");

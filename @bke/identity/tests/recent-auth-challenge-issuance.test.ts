@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { IdentityEmailMfaChallengeMaterialProvider } from "../logic/email-mfa-challenge-material-provider";
+import type { IdentitySessionValidationCapability } from "../contracts/session-validation.contract";
 import { createIdentityRecentAuthChallengeIssuanceCapability } from "../logic/recent-auth-challenge-issuance";
 import type {
   IdentityRecentAuthChallengePersistenceInput,
@@ -37,6 +38,54 @@ function repository(
 }
 
 describe("Identity recent-auth challenge issuance", () => {
+  it("derives the Google session binding from a validated session token", async () => {
+    let persisted: IdentityRecentAuthChallengePersistenceInput | undefined;
+    const repo = repository({
+      replacePendingRecentAuthChallenge: vi.fn(async (input) => {
+        persisted = input;
+        return { status: "CREATED" as const, recipientEmail: "customer@example.com" };
+      }),
+    });
+    const sessionValidation = {
+      validate: vi.fn(async () => ({
+        status: "VALID" as const,
+        context: {
+          session: {
+            id: "google-session-1",
+            authenticationMethod: "GOOGLE_OIDC",
+          },
+          principal: { id: "customer-1" },
+          mfaEnabled: false,
+        },
+      })),
+    } as unknown as IdentitySessionValidationCapability;
+    const capability = createIdentityRecentAuthChallengeIssuanceCapability(
+      repo,
+      materialProvider(),
+      () => now,
+      sessionValidation,
+    );
+
+    await expect(
+      capability.issue({ sessionToken: "opaque-session-token" }),
+    ).resolves.toMatchObject({ status: "ISSUED" });
+    expect(persisted).toMatchObject({
+      userId: "customer-1",
+      sessionId: "google-session-1",
+    });
+  });
+
+  it("rejects an empty Google session token before issuing a challenge", async () => {
+    const material = materialProvider();
+    const repo = repository();
+    const capability = createIdentityRecentAuthChallengeIssuanceCapability(repo, material, () => now);
+    await expect(capability.issue({ sessionToken: " " })).resolves.toEqual({
+      status: "FAILED", code: "INVALID_INPUT",
+    });
+    expect(material.issue).not.toHaveBeenCalled();
+    expect(repo.replacePendingRecentAuthChallenge).not.toHaveBeenCalled();
+  });
+
   it("issues a 10-minute RECENT_AUTH challenge while persisting hashes only", async () => {
     let persisted: IdentityRecentAuthChallengePersistenceInput | undefined;
     const repo = repository({

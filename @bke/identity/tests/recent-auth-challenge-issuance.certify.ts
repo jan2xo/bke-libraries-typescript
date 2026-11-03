@@ -4,13 +4,14 @@ import { createIdentityRecentAuthChallengeIssuanceCapability } from "../logic/re
 import { createHmacEmailMfaChallengeMaterialProvider } from "../providers/hmac-email-mfa-challenge-material-provider";
 import { createHmacEmailMfaProofProvider } from "../providers/hmac-email-mfa-proof-provider";
 import { createPostgresIdentityRecentAuthChallengeRepository } from "../prisma/repositories/postgres-recent-auth-challenge-repository";
+import type { IdentitySessionValidationCapability } from "../contracts/session-validation.contract";
 
 const connectionString = process.env.DATABASE_URL?.trim();
 if (!connectionString) {
   throw new Error("DATABASE_URL is required for recent-auth challenge certification.");
 }
 
-const now = new Date("2026-08-31T08:00:00.000Z");
+const now = new Date();
 const sessionSecret = "identity-recent-auth-challenge-cert-session-secret";
 const mfaEncryptionKey = "identity-recent-auth-challenge-cert-encryption-key";
 const materialProvider = createHmacEmailMfaChallengeMaterialProvider(
@@ -24,19 +25,39 @@ const proofProvider = createHmacEmailMfaProofProvider(
 const repository = createPostgresIdentityRecentAuthChallengeRepository(
   connectionString,
 );
+const sessionValidation = {
+  validate: async (token: string) => {
+    const entries: Record<string, { id: string; userId: string }> = {
+      "verified-google-session": { id: "recent-auth-google-session", userId: "recent-auth-google-customer" },
+      "unverified-google-session": { id: "recent-auth-google-unverified-session", userId: "recent-auth-google-unverified-customer" },
+    };
+    const entry = entries[token];
+    if (!entry) return { status: "INVALID" as const, code: "SESSION_NOT_FOUND" as const };
+    return {
+      status: "VALID" as const,
+      context: {
+        session: { id: entry.id, authenticationMethod: "GOOGLE_OIDC" },
+        principal: { id: entry.userId },
+        mfaEnabled: false,
+      },
+    };
+  },
+} as unknown as IdentitySessionValidationCapability;
 const capability = createIdentityRecentAuthChallengeIssuanceCapability(
-  repository,
-  materialProvider,
-  () => now,
+  repository, materialProvider, () => now, sessionValidation,
 );
 const client = new Client({ connectionString });
 await client.connect();
 
-async function createUser(id: string, role: "ADMIN" | "CUSTOMER" = "ADMIN") {
+async function createUser(
+  id: string,
+  role: "ADMIN" | "CUSTOMER" = "ADMIN",
+  emailVerified: Date | null = now,
+) {
   await client.query(
-    `INSERT INTO "User" ("id", "email", "name", "role", "updatedAt", "lifecycleState")
-     VALUES ($1, $2, $3, $4::"IdentityRole", $5, 'ACTIVE')`,
-    [id, `${id}@example.com`, id, role, now],
+    `INSERT INTO "User" ("id", "email", "name", "emailVerified", "role", "updatedAt", "lifecycleState")
+     VALUES ($1, $2, $3, $4, $5::"IdentityRole", $6, 'ACTIVE')`,
+    [id, `${id}@example.com`, id, emailVerified, role, now],
   );
 }
 
@@ -186,6 +207,77 @@ try {
     throw new Error(
       `MFA-enabled customer recent-auth challenge was not issued: ${JSON.stringify(customer)}`,
     );
+  }
+
+  await createUser("recent-auth-google-customer", "CUSTOMER");
+  const googleSessionId = "recent-auth-google-session";
+  await client.query(
+    `INSERT INTO "GoogleIdentity" ("userId", "subject", "updatedAt") VALUES ($1, $2, $3)`,
+    ["recent-auth-google-customer", "recent-auth-google-subject", now],
+  );
+  await client.query(
+    `INSERT INTO "Session" (
+       "id", "tokenHash", "userId", "expiresAt", "lastAuthenticatedAt",
+       "mfaVerifiedAt", "recentAuthenticatedAt", "lastSeenAt", "absoluteExpiresAt",
+       "authenticationMethod", "assuranceLevel"
+     ) VALUES ($1, $2, $3, $4, $5, NULL, NULL, $5, $6, 'GOOGLE_OIDC', 'BASIC')`,
+    [
+      googleSessionId,
+      "recent-auth-google-session-token-hash",
+      "recent-auth-google-customer",
+      new Date(now.getTime() + 30 * 60_000),
+      now,
+      new Date(now.getTime() + 14 * 24 * 60 * 60_000),
+    ],
+  );
+  const googleCustomerChallenge = await capability.issue({ sessionToken: "verified-google-session" });
+  if (googleCustomerChallenge.status !== "ISSUED") {
+    throw new Error(
+      `Verified-contact Google customer without enrolled MFA could not get local step-up: ${JSON.stringify(googleCustomerChallenge)}`,
+    );
+  }
+  const googleChallengeState = await client.query<{
+    sessionId: string | null;
+    primaryAuthenticationMethod: string;
+  }>(
+    `SELECT "sessionId", "primaryAuthenticationMethod"::text AS "primaryAuthenticationMethod"
+       FROM "MfaChallenge"
+      WHERE "tokenHash" = $1`,
+    [proofProvider.hashChallengeToken(googleCustomerChallenge.challenge.challengeToken)],
+  );
+  if (
+    googleChallengeState.rows[0]?.sessionId !== googleSessionId ||
+    googleChallengeState.rows[0]?.primaryAuthenticationMethod !== "GOOGLE_OIDC"
+  ) {
+    throw new Error("The Google step-up challenge was not bound to the live Google session.");
+  }
+  const noEnrollment = await client.query(
+    `SELECT 1 FROM "AdministratorMfaMethod" WHERE "userId" = 'recent-auth-google-customer'`,
+  );
+  if (noEnrollment.rowCount !== 0) {
+    throw new Error("Issuing an email step-up challenge silently enrolled application MFA.");
+  }
+
+  await createUser("recent-auth-google-unverified-customer", "CUSTOMER", null);
+  const unverifiedGoogleSessionId = "recent-auth-google-unverified-session";
+  await client.query(
+    `INSERT INTO "Session" (
+       "id", "tokenHash", "userId", "expiresAt", "lastAuthenticatedAt",
+       "mfaVerifiedAt", "recentAuthenticatedAt", "lastSeenAt", "absoluteExpiresAt",
+       "authenticationMethod", "assuranceLevel"
+     ) VALUES ($1, $2, $3, $4, $5, NULL, NULL, $5, $6, 'GOOGLE_OIDC', 'BASIC')`,
+    [
+      unverifiedGoogleSessionId,
+      "recent-auth-google-unverified-token-hash",
+      "recent-auth-google-unverified-customer",
+      new Date(now.getTime() + 30 * 60_000),
+      now,
+      new Date(now.getTime() + 14 * 24 * 60 * 60_000),
+    ],
+  );
+  const unverifiedGoogle = await capability.issue({ sessionToken: "unverified-google-session" });
+  if (unverifiedGoogle.status !== "REJECTED" || unverifiedGoogle.code !== "FORBIDDEN") {
+    throw new Error("An unverified contact email received a Google customer step-up challenge.");
   }
 
   const missing = await capability.issue({ userId: "recent-auth-missing" });

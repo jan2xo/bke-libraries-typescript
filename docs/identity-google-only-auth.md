@@ -14,8 +14,18 @@ Starting canonical library source: d541638650cf8274356cbfce9141f6592c1f4e9c. Exi
 
 ## Required proof and boundaries
 
-Library unit and isolated PostgreSQL certification must execute legitimate existing/new Google binding, wrong/unverified assertion, subject/email collision, concurrent binding, inactive principal, admin assurance, session issuance/validation/revocation, MFA/recent-auth and preserved existing-consumer scenarios. Bind evidence and any package bytes to the exact candidate. A package version is immutable and must be bumped if released.
+Library unit and isolated PostgreSQL certification must execute legitimate existing/new Google binding, unbound and malformed subject handling, subject/email collision, concurrent binding, inactive principal, admin assurance, session issuance/validation/revocation, MFA/recent-auth and preserved existing-consumer scenarios. Bind evidence and any package bytes to the exact candidate. A package version is immutable and must be bumped if released.
 
 The Digital Solutions consumer must be implemented separately against an independently certified immutable package. Google Cloud client configuration, real browser sign-in, native Agent/browser handoff, Workers Free resource proof and production release remain separate gates. No live secrets, Google project changes, package publication, merge, production mutation or billing activation is authorized by this document.
 
-Status at creation: acceptance recorded; implementation and certification PENDING. Coding: owner-selected GPT-6 Luna low effort. Primary agent reviews and coordinates.
+## Approved fresh application-factor policy
+
+Owner approval: sensitive actions for Google-authenticated accounts use a fresh BKE factor challenge bound to the exact active session and principal. The public Google challenge request supplies only the opaque session token; Identity validates it and derives user/session identifiers from persisted state. Challenges are expiring, single-use, attempt-limited, and the completion transaction checks active session, principal lifecycle, challenge binding, and recovery-code consumption.
+
+Ordinary Google sign-in is BASIC. Google sign-in followed by app MFA is MFA_VERIFIED without a recent-auth timestamp. Successful fresh BKE factor completion records recent application authentication; it does not claim fresh Google Account authentication. Verified-contact CUSTOMER accounts may use email OTP without enabling or enrolling MFA. ADMIN and recovery paths require enrolled MFA. Freshly verified factors for enrolled MFA principals may refresh mfaVerifiedAt; unenrolled customers remain unenrolled.
+
+Google documents that account reauthentication requests are unsupported and that auth_time needs a published and verified application with session-age claims enabled: https://developers.google.com/identity/siwg/security-bundle. Do not infer primary authentication freshness from ID-token iat, authorization-code timing, or prompt parameters.
+
+The receiving web host remains responsible for the OIDC callback, state, nonce, PKCE, one-time code consumption, signature, canonical issuer, audience, and expiry validation. The identity library accepts only a validated stable subject; it does not validate raw Google assertions. The client ID is public configuration; no client secret is stored here. Real browser sign-in remains unverified until the host has its configured client and passes the receiving-path test.
+
+Status: source candidate and Actions certification pending. Coding: owner-selected GPT-6 Luna low effort. Primary agent reviews and coordinates.

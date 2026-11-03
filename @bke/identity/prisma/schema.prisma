@@ -65,6 +65,7 @@ model User {
   credential                  PasswordCredential?
   googleIdentity              GoogleIdentity?
   sessions                    Session[]
+  mfaChallenges               MfaChallenge[]
   administratorMfa            AdministratorMfaMethod?
   recoveryCodes               AdministratorRecoveryCode[]
   mfaChallenges               MfaChallenge[]
@@ -110,6 +111,7 @@ model Session {
   revocationReason      String?
   createdAt             DateTime                    @default(now())
   user                  User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mfaChallenges         MfaChallenge[]
 
   @@index([userId, expiresAt])
   @@index([userId, revokedAt])
@@ -147,6 +149,7 @@ model MfaChallenge {
   userId       String
   purpose      MfaChallengePurpose @default(LOGIN)
   primaryAuthenticationMethod MfaChallengeAuthenticationMethod @default(PASSWORD)
+  sessionId    String?
   tokenHash    String              @unique
   codeHash     String?
   expiresAt    DateTime
@@ -154,8 +157,10 @@ model MfaChallenge {
   attemptCount Int                 @default(0)
   createdAt    DateTime            @default(now())
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session      Session?            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+  @@index([sessionId])
 }
 
 model EmergencyMfaEnrollmentAuthorization {
