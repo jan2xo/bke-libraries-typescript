@@ -247,6 +247,112 @@ try {
     throw new Error("Google CUSTOMER step-up silently enabled application MFA.");
   }
 
+  const googleAdminId = "recent-google-bootstrap-admin";
+  const googleAdminSessionId = "recent-google-bootstrap-admin-session";
+  await seedUser({
+    id: googleAdminId,
+    role: "ADMIN",
+    sessionId: googleAdminSessionId,
+    tokenHash: "recent-google-bootstrap-admin-token",
+    assuranceLevel: "BASIC",
+    authenticationMethod: "GOOGLE_OIDC",
+    hasPassword: false,
+  });
+  await createChallenge({
+    id: "recent-google-bootstrap-admin-challenge",
+    userId: googleAdminId,
+    token: "recent-google-bootstrap-admin-challenge-token",
+    code: "123456",
+    sessionId: googleAdminSessionId,
+    primaryAuthenticationMethod: "GOOGLE_OIDC",
+  });
+  const googleAdminCapability = createIdentityRecentAuthCompletionCapability(
+    repository,
+    validationFor({
+      userId: googleAdminId,
+      sessionId: googleAdminSessionId,
+      role: "ADMIN",
+      assuranceLevel: "BASIC",
+      authenticationMethod: "GOOGLE_OIDC",
+    }),
+    passwordVerifier,
+    proofProvider,
+    () => now,
+  );
+  const googleAdminResult = await googleAdminCapability.complete({
+    sessionToken: "recent-google-bootstrap-admin-session-token",
+    challengeToken: "recent-google-bootstrap-admin-challenge-token",
+    code: "123456",
+  });
+  if (
+    googleAdminResult.status !== "COMPLETED" ||
+    googleAdminResult.verificationMethod !== "GOOGLE_OIDC_EMAIL_OTP" ||
+    googleAdminResult.session.mfaVerifiedAt !== null ||
+    googleAdminResult.session.recentAuthenticatedAt?.getTime() !== now.getTime()
+  ) {
+    throw new Error("Google ADMIN app-factor bootstrap did not record recent authentication without asserting MFA.");
+  }
+  const googleAdminEnrollment = await client.query(
+    `SELECT 1 FROM "AdministratorMfaMethod" WHERE "userId" = $1`,
+    [googleAdminId],
+  );
+  if (googleAdminEnrollment.rowCount !== 0) {
+    throw new Error("Google ADMIN app-factor bootstrap silently enrolled MFA.");
+  }
+
+  const changedEnrollmentUserId = "recent-google-enrollment-race-admin";
+  const changedEnrollmentSessionId = "recent-google-enrollment-race-session";
+  await seedUser({
+    id: changedEnrollmentUserId,
+    role: "ADMIN",
+    sessionId: changedEnrollmentSessionId,
+    tokenHash: "recent-google-enrollment-race-token",
+    assuranceLevel: "BASIC",
+    authenticationMethod: "GOOGLE_OIDC",
+    hasPassword: false,
+  });
+  await createChallenge({
+    id: "recent-google-enrollment-race-challenge",
+    userId: changedEnrollmentUserId,
+    token: "recent-google-enrollment-race-challenge-token",
+    code: "123456",
+    sessionId: changedEnrollmentSessionId,
+    primaryAuthenticationMethod: "GOOGLE_OIDC",
+  });
+  await client.query(
+    `INSERT INTO "AdministratorMfaMethod"
+       ("id", "userId", "enabledAt", "verifiedAt", "updatedAt")
+     VALUES ($1, $2, $3, $3, $3)`,
+    ["recent-google-enrollment-race-method", changedEnrollmentUserId, now],
+  );
+  const enrollmentChangedCapability = createIdentityRecentAuthCompletionCapability(
+    repository,
+    validationFor({
+      userId: changedEnrollmentUserId,
+      sessionId: changedEnrollmentSessionId,
+      role: "ADMIN",
+      assuranceLevel: "BASIC",
+      authenticationMethod: "GOOGLE_OIDC",
+    }),
+    passwordVerifier,
+    proofProvider,
+    () => now,
+  );
+  const enrollmentChanged = await enrollmentChangedCapability.complete({
+    sessionToken: "recent-google-enrollment-race-session-token",
+    challengeToken: "recent-google-enrollment-race-challenge-token",
+    code: "123456",
+  });
+  if (enrollmentChanged.status !== "INVALID" || enrollmentChanged.code !== "INVALID_SESSION") {
+    throw new Error("An unenrolled Google admin step-up was accepted after MFA enrollment changed.");
+  }
+  const unconsumedEnrollmentRaceChallenge = await client.query(
+    `SELECT "consumedAt" FROM "MfaChallenge" WHERE "id" = 'recent-google-enrollment-race-challenge'`,
+  );
+  if (unconsumedEnrollmentRaceChallenge.rows[0]?.consumedAt !== null) {
+    throw new Error("Rejected enrollment-race factor was not rolled back atomically.");
+  }
+
   await createChallenge({
     id: "recent-google-replay-challenge",
     userId: googleUserId,
@@ -289,12 +395,28 @@ try {
     throw new Error("A Google recent-auth challenge belonging to another principal was accepted.");
   }
 
+  await client.query(
+    `INSERT INTO "Session" (
+       "id", "tokenHash", "userId", "expiresAt", "lastAuthenticatedAt",
+       "mfaVerifiedAt", "recentAuthenticatedAt", "lastSeenAt", "absoluteExpiresAt",
+       "authenticationMethod", "assuranceLevel"
+     ) VALUES ($1, $2, $3, $4, $5, $6, NULL, $5, $7, 'GOOGLE_OIDC', 'MFA_VERIFIED')`,
+    [
+      "recent-google-other-session",
+      "recent-google-other-session-token",
+      googleUserId,
+      new Date(now.getTime() + 30 * 60_000),
+      now,
+      new Date(now.getTime() - 30_000),
+      new Date(now.getTime() + 14 * 24 * 60 * 60_000),
+    ],
+  );
   await createChallenge({
     id: "recent-google-wrong-session-challenge",
     userId: googleUserId,
     token: "recent-google-wrong-session-token",
     code: "123456",
-    sessionId: "different-session",
+    sessionId: "recent-google-other-session",
     primaryAuthenticationMethod: "GOOGLE_OIDC",
   });
   const wrongSessionChallenge = await googleCapability.complete({

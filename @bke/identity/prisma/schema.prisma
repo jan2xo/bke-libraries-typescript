@@ -68,7 +68,6 @@ model User {
   mfaChallenges               MfaChallenge[]
   administratorMfa            AdministratorMfaMethod?
   recoveryCodes               AdministratorRecoveryCode[]
-  mfaChallenges               MfaChallenge[]
   emergencyMfaAuthorizations  EmergencyMfaEnrollmentAuthorization[]
 
   @@index([lifecycleState])

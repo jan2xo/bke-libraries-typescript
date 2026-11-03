@@ -6,6 +6,13 @@ import { createHmacSessionTokenProvider } from "../providers/hmac-session-token-
 import { createIdentitySessionIssuanceCapability } from "../logic/session-issuance";
 import { createIdentitySessionValidationCapability } from "../logic/session-validation";
 import { createPostgresIdentityMfaEmergencyEnrollmentRepository } from "../prisma/repositories/postgres-mfa-emergency-enrollment-repository";
+import { createIdentityRecentAuthChallengeIssuanceCapability } from "../logic/recent-auth-challenge-issuance";
+import { createIdentityRecentAuthCompletionCapability } from "../logic/recent-auth-completion";
+import { createHmacEmailMfaChallengeMaterialProvider } from "../providers/hmac-email-mfa-challenge-material-provider";
+import { createHmacEmailMfaProofProvider } from "../providers/hmac-email-mfa-proof-provider";
+import { createArgon2PasswordVerifier } from "../providers/argon2-password-verifier";
+import { createPostgresIdentityRecentAuthChallengeRepository } from "../prisma/repositories/postgres-recent-auth-challenge-repository";
+import { createPostgresIdentityRecentAuthCompletionRepository } from "../prisma/repositories/postgres-recent-auth-completion-repository";
 import { createPostgresIdentitySessionRepository } from "../prisma/repositories/postgres-session-repository";
 
 const connectionString = process.env.DATABASE_URL?.trim();
@@ -268,6 +275,116 @@ try {
   );
   if (replacementValidation.status !== "VALID") {
     throw new Error(`Replacement emergency session is invalid: ${JSON.stringify(replacementValidation)}`);
+  }
+
+  const googleUserId = "mfa-emergency-google-admin";
+  const googleEmail = "mfa-emergency-google-admin@example.com";
+  await client.query(
+    `INSERT INTO "User" ("id", "email", "name", "emailVerified", "role", "updatedAt", "lifecycleState")
+     VALUES ($1, $2, 'Google Emergency Admin', $3, 'ADMIN', $3, 'ACTIVE')`,
+    [googleUserId, googleEmail, now],
+  );
+  await client.query(
+    `INSERT INTO "GoogleIdentity" ("userId", "subject", "updatedAt") VALUES ($1, $2, $3)`,
+    [googleUserId, "validated-emergency-google-subject", now],
+  );
+  const googlePrimary = sessionTokens.issue();
+  await client.query(
+    `INSERT INTO "Session" (
+       "id", "tokenHash", "userId", "expiresAt", "lastAuthenticatedAt",
+       "mfaVerifiedAt", "recentAuthenticatedAt", "lastSeenAt", "absoluteExpiresAt",
+       "authenticationMethod", "assuranceLevel"
+     ) VALUES ($1, $2, $3, $4, $5, NULL, NULL, $5, $6, 'GOOGLE_OIDC', 'BASIC')`,
+    [
+      googlePrimary.sessionId,
+      googlePrimary.tokenHash,
+      googleUserId,
+      new Date(now.getTime() + 30 * 60_000),
+      issuedAt,
+      new Date(now.getTime() + 14 * 24 * 60 * 60_000),
+    ],
+  );
+  const emailMaterial = createHmacEmailMfaChallengeMaterialProvider(sessionSecret, mfaEncryptionKey);
+  const emailProofs = createHmacEmailMfaProofProvider(sessionSecret, mfaEncryptionKey);
+  const recentChallengeRepository = createPostgresIdentityRecentAuthChallengeRepository(connectionString);
+  const recentCompletionRepository = createPostgresIdentityRecentAuthCompletionRepository(connectionString);
+  const recentChallenges = createIdentityRecentAuthChallengeIssuanceCapability(
+    recentChallengeRepository, emailMaterial, () => now, sessionValidation,
+  );
+  const recentCompletion = createIdentityRecentAuthCompletionCapability(
+    recentCompletionRepository,
+    sessionValidation,
+    createArgon2PasswordVerifier(),
+    emailProofs,
+    () => now,
+  );
+  const googleFactorChallenge = await recentChallenges.issue({ sessionToken: googlePrimary.token });
+  if (googleFactorChallenge.status !== "ISSUED") {
+    throw new Error(`Google emergency admin could not obtain its BKE factor challenge: ${JSON.stringify(googleFactorChallenge)}`);
+  }
+  const googleFactor = await recentCompletion.complete({
+    sessionToken: googlePrimary.token,
+    challengeToken: googleFactorChallenge.challenge.challengeToken,
+    code: googleFactorChallenge.challenge.delivery.code,
+  });
+  if (googleFactor.status !== "COMPLETED" ||
+      googleFactor.verificationMethod !== "GOOGLE_OIDC_EMAIL_OTP" ||
+      googleFactor.session.mfaVerifiedAt !== null ||
+      googleFactor.session.recentAuthenticatedAt?.getTime() !== now.getTime()) {
+    throw new Error("Google emergency admin BKE factor was not represented as recent authentication without MFA enrollment.");
+  }
+  const googleEmergencyToken = randomBytes(32).toString("base64url");
+  const googleAuthorizationId = "mfa-emergency-google-authorization";
+  await client.query(
+    `INSERT INTO "EmergencyMfaEnrollmentAuthorization"
+       ("id", "userId", "tokenHash", "createdAt", "expiresAt", "recoveryReason",
+        "operatorIdentity", "ownerKeyVersion", "deploymentEnvironment")
+     VALUES ($1, $2, $3, $4, $5, 'owner recovery', 'deployment-operator', 8, 'production')`,
+    [
+      googleAuthorizationId,
+      googleUserId,
+      sessionTokens.hash(googleEmergencyToken),
+      issuedAt,
+      new Date(now.getTime() + 10 * 60_000),
+    ],
+  );
+  const googleEmergencyEnrollment = await capability.enroll({
+    sessionToken: googlePrimary.token,
+    emergencyToken: googleEmergencyToken,
+  });
+  if (googleEmergencyEnrollment.status !== "ENROLLED") {
+    throw new Error(`Google emergency enrollment failed: ${JSON.stringify(googleEmergencyEnrollment)}`);
+  }
+  const replacementGoogleSession = await sessionValidation.validate(
+    googleEmergencyEnrollment.replacementSessionToken,
+  );
+  if (
+    replacementGoogleSession.status !== "VALID" ||
+    replacementGoogleSession.context.session.authenticationMethod !== "GOOGLE_OIDC" ||
+    replacementGoogleSession.context.session.mfaVerifiedAt?.getTime() !== now.getTime() ||
+    replacementGoogleSession.context.session.recentAuthenticatedAt?.getTime() !== now.getTime() ||
+    !replacementGoogleSession.context.mfaEnabled
+  ) {
+    throw new Error("Google emergency replacement lost Google identity or MFA/recent-factor assurance.");
+  }
+  const nextGoogleChallenge = await recentChallenges.issue({
+    sessionToken: googleEmergencyEnrollment.replacementSessionToken,
+  });
+  if (nextGoogleChallenge.status !== "ISSUED") {
+    throw new Error("Google emergency replacement could not enter the normal app-factor recent-auth path.");
+  }
+  const nextGoogleFactor = await recentCompletion.complete({
+    sessionToken: googleEmergencyEnrollment.replacementSessionToken,
+    challengeToken: nextGoogleChallenge.challenge.challengeToken,
+    code: nextGoogleChallenge.challenge.delivery.code,
+  });
+  if (
+    nextGoogleFactor.status !== "COMPLETED" ||
+    nextGoogleFactor.verificationMethod !== "GOOGLE_OIDC_EMAIL_OTP" ||
+    nextGoogleFactor.session.authenticationMethod !== "GOOGLE_OIDC_EMAIL_OTP" ||
+    nextGoogleFactor.session.mfaVerifiedAt?.getTime() !== now.getTime()
+  ) {
+    throw new Error("Google emergency replacement could not verify the normal app-factor path without a password.");
   }
 
   const replay = await capability.enroll({

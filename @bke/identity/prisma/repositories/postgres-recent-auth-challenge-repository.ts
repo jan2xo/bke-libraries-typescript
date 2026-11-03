@@ -11,6 +11,7 @@ type PrincipalRow = {
   suspendedAt: Date | null;
   lifecycleState: string;
   mfaEnabled: boolean;
+  mfaEnrollmentExists: boolean;
 };
 type AuthenticationMethodRow = {
   authenticationMethod: string;
@@ -42,7 +43,11 @@ export function createPostgresIdentityRecentAuthChallengeRepository(
         const principal = await client.query<PrincipalRow>(
           `SELECT u."email", u."emailVerified", u."role", u."suspendedAt",
                   u."lifecycleState",
-                  (m."enabledAt" IS NOT NULL) AS "mfaEnabled"
+                  (m."enabledAt" IS NOT NULL) AS "mfaEnabled",
+                  EXISTS (
+                    SELECT 1 FROM "AdministratorMfaMethod" enrolled
+                     WHERE enrolled."userId" = u."id"
+                  ) AS "mfaEnrollmentExists"
              FROM "User" u
              LEFT JOIN "AdministratorMfaMethod" m ON m."userId" = u."id"
             WHERE u."id" = $1
@@ -80,11 +85,10 @@ export function createPostgresIdentityRecentAuthChallengeRepository(
           primaryAuthenticationMethod = "GOOGLE_OIDC";
         }
 
-        const mayUseUnenrolledCustomerOtp =
+        const mayUseUnenrolledGoogleOtp =
           primaryAuthenticationMethod === "GOOGLE_OIDC" &&
-          user.role === "CUSTOMER" &&
           user.emailVerified !== null;
-        if (!user.mfaEnabled && !mayUseUnenrolledCustomerOtp) {
+        if (!user.mfaEnabled && (!mayUseUnenrolledGoogleOtp || user.mfaEnrollmentExists)) {
           await client.query("ROLLBACK");
           return { status: "FORBIDDEN" as const };
         }

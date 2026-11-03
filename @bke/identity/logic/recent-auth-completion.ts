@@ -52,10 +52,7 @@ export function createIdentityRecentAuthCompletionCapability(
         if ("password" in input) {
           return { status: "FAILED", code: "INVALID_INPUT" };
         }
-        if (
-          !validatedSession.context.mfaEnabled &&
-          principal.role !== "CUSTOMER"
-        ) {
+        if (!validatedSession.context.mfaEnabled && !principal.emailVerified) {
           return { status: "INVALID", code: "MFA_REQUIRED" };
         }
 

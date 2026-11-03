@@ -26,11 +26,12 @@ try {
       `INSERT INTO "User" (
          "id", "email", "name", "emailVerified", "role", "updatedAt",
          "lifecycleState", "suspendedAt"
-       ) VALUES ($1, $2, 'cert', $3, 'CUSTOMER', $4, $5::"IdentityLifecycleState", $6)`,
+       ) VALUES ($1, $2, 'cert', $3, $4::"IdentityRole", $5, $6::"IdentityLifecycleState", $7)`,
       [
         id,
         `${id}@identity-cert.example.invalid`,
         index === 3 ? null : now,
+        index === 7 ? "ADMIN" : "CUSTOMER",
         now,
         index === 2 ? "SUSPENDED" : "ACTIVE",
         index === 2 ? now : null,

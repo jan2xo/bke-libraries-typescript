@@ -100,14 +100,16 @@ export function createPostgresIdentityMfaEmergencyEnrollmentRepository(
              ("id", "tokenHash", "userId", "expiresAt", "lastAuthenticatedAt",
               "mfaVerifiedAt", "recentAuthenticatedAt", "lastSeenAt", "absoluteExpiresAt",
               "authenticationMethod", "assuranceLevel", "createdAt")
-           VALUES ($1, $2, $3, $4, $5, $5, $5, $5, $4,
-                   'MFA_ENROLLMENT', 'RECENTLY_AUTHENTICATED', $5)`,
+           VALUES ($1, $2, $3, $4, $5, $5, $6, $5, $4,
+                   $7::"SessionAuthenticationMethod", 'RECENTLY_AUTHENTICATED', $5)`,
           [
             input.replacementSession.sessionId,
             input.replacementSession.tokenHash,
             input.userId,
             input.replacementSessionExpiresAt,
             input.enrolledAt,
+            input.replacementSessionRecentAuthenticatedAt,
+            input.replacementSessionAuthenticationMethod,
           ],
         );
 

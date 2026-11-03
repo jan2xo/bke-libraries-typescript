@@ -30,6 +30,7 @@ const sessionValidation = {
     const entries: Record<string, { id: string; userId: string }> = {
       "verified-google-session": { id: "recent-auth-google-session", userId: "recent-auth-google-customer" },
       "unverified-google-session": { id: "recent-auth-google-unverified-session", userId: "recent-auth-google-unverified-customer" },
+      "admin-google-session": { id: "recent-auth-google-admin-session", userId: "recent-auth-google-admin" },
     };
     const entry = entries[token];
     if (!entry) return { status: "INVALID" as const, code: "SESSION_NOT_FOUND" as const };
@@ -256,6 +257,42 @@ try {
   );
   if (noEnrollment.rowCount !== 0) {
     throw new Error("Issuing an email step-up challenge silently enrolled application MFA.");
+  }
+
+  await createUser("recent-auth-google-admin", "ADMIN");
+  await client.query(
+    `INSERT INTO "Session" (
+       "id", "tokenHash", "userId", "expiresAt", "lastAuthenticatedAt",
+       "mfaVerifiedAt", "recentAuthenticatedAt", "lastSeenAt", "absoluteExpiresAt",
+       "authenticationMethod", "assuranceLevel"
+     ) VALUES ($1, $2, $3, $4, $5, NULL, NULL, $5, $6, 'GOOGLE_OIDC', 'BASIC')`,
+    [
+      "recent-auth-google-admin-session",
+      "recent-auth-google-admin-token-hash",
+      "recent-auth-google-admin",
+      new Date(now.getTime() + 30 * 60_000),
+      now,
+      new Date(now.getTime() + 14 * 24 * 60 * 60_000),
+    ],
+  );
+  const adminBootstrap = await capability.issue({ sessionToken: "admin-google-session" });
+  if (adminBootstrap.status !== "ISSUED") {
+    throw new Error(`Verified-contact Google admin could not get MFA-enrollment step-up: ${JSON.stringify(adminBootstrap)}`);
+  }
+  const adminBootstrapState = await client.query(
+    `SELECT "sessionId", "primaryAuthenticationMethod"::text AS "primaryAuthenticationMethod"
+       FROM "MfaChallenge" WHERE "tokenHash" = $1`,
+    [proofProvider.hashChallengeToken(adminBootstrap.challenge.challengeToken)],
+  );
+  if (adminBootstrapState.rows[0]?.sessionId !== "recent-auth-google-admin-session" ||
+      adminBootstrapState.rows[0]?.primaryAuthenticationMethod !== "GOOGLE_OIDC") {
+    throw new Error("Google admin bootstrap challenge was not bound to its active session.");
+  }
+  const adminMfaStillDisabled = await client.query(
+    `SELECT 1 FROM "AdministratorMfaMethod" WHERE "userId" = 'recent-auth-google-admin'`,
+  );
+  if (adminMfaStillDisabled.rowCount !== 0) {
+    throw new Error("Google admin bootstrap challenge silently enabled MFA.");
   }
 
   await createUser("recent-auth-google-unverified-customer", "CUSTOMER", null);

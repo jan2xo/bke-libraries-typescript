@@ -155,14 +155,6 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
         const result = await client.query<SessionRow>(
           `UPDATE "Session" s
               SET "recentAuthenticatedAt" = $3,
-                  "mfaVerifiedAt" = CASE
-                    WHEN EXISTS (
-                      SELECT 1 FROM "AdministratorMfaMethod" m
-                       WHERE m."userId" = s."userId" AND m."enabledAt" IS NOT NULL
-                    ) THEN $3
-                    ELSE s."mfaVerifiedAt"
-                  END,
-                  "authenticationMethod" = $4::"SessionAuthenticationMethod",
                   "assuranceLevel" = 'RECENTLY_AUTHENTICATED'::"SessionAssuranceLevel"
             WHERE s."id" = $1
               AND s."userId" = $2
@@ -175,6 +167,11 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
                    AND u."role" = 'CUSTOMER'::"IdentityRole"
                    AND u."suspendedAt" IS NULL
                    AND u."lifecycleState" = 'ACTIVE'::"IdentityLifecycleState"
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM "AdministratorMfaMethod" m
+                 WHERE m."userId" = s."userId"
+                   AND m."enabledAt" IS NOT NULL
               )
           RETURNING ${SESSION_RETURNING}`,
           [input.sessionId, input.userId, input.completedAt],
@@ -244,7 +241,14 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
         const session = await client.query<SessionRow>(
           `UPDATE "Session" s
               SET "recentAuthenticatedAt" = $3,
-                  "authenticationMethod" = COALESCE($4::"SessionAuthenticationMethod", s."authenticationMethod"),
+                  "mfaVerifiedAt" = CASE
+                    WHEN EXISTS (
+                      SELECT 1 FROM "AdministratorMfaMethod" m
+                       WHERE m."userId" = s."userId" AND m."enabledAt" IS NOT NULL
+                    ) THEN $3
+                    ELSE s."mfaVerifiedAt"
+                  END,
+                  "authenticationMethod" = $4::"SessionAuthenticationMethod",
                   "assuranceLevel" = 'RECENTLY_AUTHENTICATED'::"SessionAssuranceLevel"
             WHERE s."id" = $1
               AND s."userId" = $2
@@ -278,10 +282,13 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
                   AND EXISTS (
                     SELECT 1 FROM "User" customer
                      WHERE customer."id" = s."userId"
-                       AND customer."role" = 'CUSTOMER'::"IdentityRole"
                        AND customer."emailVerified" IS NOT NULL
                        AND customer."lifecycleState" = 'ACTIVE'::"IdentityLifecycleState"
                        AND customer."suspendedAt" IS NULL
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM "AdministratorMfaMethod" enrolled
+                     WHERE enrolled."userId" = s."userId"
                   )
                 )
               )

@@ -131,6 +131,22 @@ describe("Identity recent-auth completion", () => {
     });
   });
 
+  it("allows a verified-contact Google ADMIN app factor to reach enrollment without claiming MFA", async () => {
+    const h = createHarness("ADMIN", false, "GOOGLE_OIDC");
+    const result = await h.capability.complete({
+      sessionToken: "session-token",
+      challengeToken: "challenge-token",
+      code: "123456",
+    });
+    expect(result.status).toBe("COMPLETED");
+    if (result.status === "COMPLETED") {
+      expect(result.verificationMethod).toBe("GOOGLE_OIDC_EMAIL_OTP");
+      expect(result.session.recentAuthenticatedAt).toEqual(now);
+      expect(result.session.mfaVerifiedAt).toBeNull();
+    }
+    expect(h.repository.findUnusedRecoveryCode).not.toHaveBeenCalled();
+  });
+
   it("requires an app-factor challenge for Google sessions and preserves enrolled recovery semantics", async () => {
     const h = createHarness("ADMIN", true, "GOOGLE_OIDC");
     vi.mocked(h.repository.findUnusedRecoveryCode).mockResolvedValue({ id: "recovery-1" });
@@ -256,7 +272,17 @@ describe("Identity recent-auth completion", () => {
 
   it("rejects a non-RECENT_AUTH challenge", async () => {
     const h = createHarness("ADMIN");
-    vi.mocked(h.repository.findRecentAuthChallenge).mockResolvedValue({ id: "challenge-login", userId: "user-1", purpose: "LOGIN", codeHash: "email-code-hash", expiresAt: new Date(now.getTime() + 60_000), consumedAt: null, attemptCount: 0 });
+    vi.mocked(h.repository.findRecentAuthChallenge).mockResolvedValue({
+      id: "challenge-login",
+      userId: "user-1",
+      purpose: "LOGIN",
+      codeHash: "email-code-hash",
+      expiresAt: new Date(now.getTime() + 60_000),
+      consumedAt: null,
+      attemptCount: 0,
+      sessionId: null,
+      primaryAuthenticationMethod: "PASSWORD",
+    });
     const result = await h.capability.complete({ sessionToken: "session-token", password: "correct", challengeToken: "challenge-token", code: "123456" });
     expect(result).toEqual({ status: "INVALID", code: "INVALID_CHALLENGE" });
     expect(h.repository.completeMfaRecentAuth).not.toHaveBeenCalled();
