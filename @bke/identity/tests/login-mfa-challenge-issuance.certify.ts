@@ -147,6 +147,14 @@ try {
     throw new Error(`Issued challenge could not be verified: ${JSON.stringify(verified)}`);
   }
 
+
+  const googleChallenge = await issuance.issue({ userId: "mfa-challenge-admin", primaryAuthenticationMethod: "GOOGLE_OIDC" });
+  if (googleChallenge.status !== "ISSUED") throw new Error("Google login MFA challenge was not issued.");
+  const googleVerified = await verification.verify({ challengeToken: googleChallenge.challenge.challengeToken, code: googleChallenge.challenge.delivery.code });
+  if (googleVerified.status !== "VERIFIED" || googleVerified.authenticationMethod !== "GOOGLE_OIDC_EMAIL_OTP") {
+    throw new Error(`Google login MFA challenge lost its primary method: ${JSON.stringify(googleVerified)}`);
+  }
+
   await createUser("mfa-challenge-customer-no-mfa", "CUSTOMER");
   const customerNoMfa = await issuance.issue({
     userId: "mfa-challenge-customer-no-mfa",

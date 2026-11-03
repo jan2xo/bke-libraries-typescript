@@ -6,6 +6,9 @@ export type IdentitySessionAuthenticationMethod =
   | "PASSWORD_TOTP"
   | "PASSWORD_EMAIL_OTP"
   | "PASSWORD_RECOVERY"
+  | "GOOGLE_OIDC"
+  | "GOOGLE_OIDC_EMAIL_OTP"
+  | "GOOGLE_OIDC_RECOVERY"
   | "MAGIC_LINK"
   | "MFA_ENROLLMENT";
 

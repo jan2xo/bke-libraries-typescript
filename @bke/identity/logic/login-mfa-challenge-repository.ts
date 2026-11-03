@@ -1,6 +1,7 @@
 export interface IdentityLoginMfaChallengePersistenceInput {
   readonly challengeId: string;
   readonly userId: string;
+  readonly primaryAuthenticationMethod: "PASSWORD" | "GOOGLE_OIDC";
   readonly tokenHash: string;
   readonly codeHash: string;
   readonly expiresAt: Date;

@@ -3,7 +3,9 @@ export const IDENTITY_LOGIN_MFA_VERIFICATION_CAPABILITY_ID =
 
 export type IdentityLoginMfaAuthenticationMethod =
   | "PASSWORD_EMAIL_OTP"
-  | "PASSWORD_RECOVERY";
+  | "PASSWORD_RECOVERY"
+  | "GOOGLE_OIDC_EMAIL_OTP"
+  | "GOOGLE_OIDC_RECOVERY";
 
 export interface IdentityLoginMfaVerificationInput {
   readonly challengeToken: string;

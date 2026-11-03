@@ -11,6 +11,7 @@ const emergencyToken = "E".repeat(43);
 function validSession(options?: {
   role?: "CUSTOMER" | "ADMIN";
   recentAuthenticatedAt?: Date | null;
+  authenticationMethod?: "PASSWORD" | "GOOGLE_OIDC";
 }) {
   const role = options?.role ?? "ADMIN";
   return {
@@ -26,7 +27,7 @@ function validSession(options?: {
           options?.recentAuthenticatedAt === undefined ? now : options.recentAuthenticatedAt,
         lastSeenAt: now,
         absoluteExpiresAt: new Date(now.getTime() + 60_000),
-        authenticationMethod: "PASSWORD" as const,
+        authenticationMethod: options?.authenticationMethod ?? "PASSWORD",
         assuranceLevel: "RECENTLY_AUTHENTICATED" as const,
         createdAt: now,
       },
@@ -119,9 +120,28 @@ describe("Identity emergency MFA enrollment", () => {
         token: "replacement-session-token",
         tokenHash: "replacement-session-hash",
       },
+      replacementSessionAuthenticationMethod: "MFA_ENROLLMENT",
+      replacementSessionRecentAuthenticatedAt: now,
       enrolledAt: now,
       replacementSessionExpiresAt: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
     });
+  });
+
+  it("preserves a recent Google session through scoped emergency enrollment", async () => {
+    const h = harness(validSession({
+      authenticationMethod: "GOOGLE_OIDC",
+      recentAuthenticatedAt: new Date(now.getTime() - 60_000),
+    }));
+    const result = await h.capability.enroll({
+      sessionToken: "current-google-session",
+      emergencyToken,
+    });
+
+    expect(result.status).toBe("ENROLLED");
+    expect(h.repository.enroll).toHaveBeenCalledWith(expect.objectContaining({
+      replacementSessionAuthenticationMethod: "GOOGLE_OIDC",
+      replacementSessionRecentAuthenticatedAt: new Date(now.getTime() - 60_000),
+    }));
   });
 
   it("requires a valid recent ADMIN session but not pre-existing MFA", async () => {

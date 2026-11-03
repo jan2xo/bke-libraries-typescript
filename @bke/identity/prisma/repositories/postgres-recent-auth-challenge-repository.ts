@@ -6,8 +6,21 @@ import type {
 
 type PrincipalRow = {
   email: string;
+  emailVerified: Date | null;
+  role: "CUSTOMER" | "ADMIN";
+  suspendedAt: Date | null;
+  lifecycleState: string;
   mfaEnabled: boolean;
 };
+type AuthenticationMethodRow = {
+  authenticationMethod: string;
+};
+
+const GOOGLE_METHODS = [
+  "GOOGLE_OIDC",
+  "GOOGLE_OIDC_EMAIL_OTP",
+  "GOOGLE_OIDC_RECOVERY",
+] as const;
 
 export function createPostgresIdentityRecentAuthChallengeRepository(
   connectionString: string,
@@ -26,24 +39,51 @@ export function createPostgresIdentityRecentAuthChallengeRepository(
 
       try {
         await client.query("BEGIN");
-
         const principal = await client.query<PrincipalRow>(
-          `SELECT
-             u."email",
-             (m."enabledAt" IS NOT NULL) AS "mfaEnabled"
+          `SELECT u."email", u."emailVerified", u."role", u."suspendedAt",
+                  u."lifecycleState",
+                  (m."enabledAt" IS NOT NULL) AS "mfaEnabled"
              FROM "User" u
              LEFT JOIN "AdministratorMfaMethod" m ON m."userId" = u."id"
             WHERE u."id" = $1
             LIMIT 1`,
           [input.userId],
         );
-        const row = principal.rows[0];
-
-        if (!row) {
+        const user = principal.rows[0];
+        if (!user) {
           await client.query("ROLLBACK");
           return { status: "PRINCIPAL_NOT_FOUND" as const };
         }
-        if (!row.mfaEnabled) {
+        if (user.suspendedAt || user.lifecycleState !== "ACTIVE") {
+          await client.query("ROLLBACK");
+          return { status: "FORBIDDEN" as const };
+        }
+
+        let primaryAuthenticationMethod: "PASSWORD" | "GOOGLE_OIDC" = "PASSWORD";
+        if (input.sessionId) {
+          const session = await client.query<AuthenticationMethodRow>(
+            `SELECT "authenticationMethod"
+               FROM "Session"
+              WHERE "id" = $1
+                AND "userId" = $2
+                AND "revokedAt" IS NULL
+                AND "expiresAt" > NOW()
+                AND "absoluteExpiresAt" > NOW()
+              LIMIT 1`,
+            [input.sessionId, input.userId],
+          );
+          const method = session.rows[0]?.authenticationMethod;
+          if (!method || !GOOGLE_METHODS.includes(method as (typeof GOOGLE_METHODS)[number])) {
+            await client.query("ROLLBACK");
+            return { status: "FORBIDDEN" as const };
+          }
+          primaryAuthenticationMethod = "GOOGLE_OIDC";
+        }
+
+        const mayUseUnenrolledGoogleOtp =
+          primaryAuthenticationMethod === "GOOGLE_OIDC" &&
+          user.emailVerified !== null;
+        if (!user.mfaEnabled && !mayUseUnenrolledGoogleOtp) {
           await client.query("ROLLBACK");
           return { status: "FORBIDDEN" as const };
         }
@@ -52,22 +92,25 @@ export function createPostgresIdentityRecentAuthChallengeRepository(
           `DELETE FROM "MfaChallenge"
             WHERE "userId" = $1
               AND "purpose" = 'RECENT_AUTH'::"MfaChallengePurpose"
+              AND "primaryAuthenticationMethod" = $2::"MfaChallengeAuthenticationMethod"
+              AND "sessionId" IS NOT DISTINCT FROM $3
               AND "consumedAt" IS NULL`,
-          [input.userId],
+          [input.userId, primaryAuthenticationMethod, input.sessionId ?? null],
         );
 
         await client.query(
           `INSERT INTO "MfaChallenge" (
-             "id",
-             "userId",
-             "purpose",
-             "tokenHash",
-             "codeHash",
-             "expiresAt"
-           ) VALUES ($1, $2, 'RECENT_AUTH'::"MfaChallengePurpose", $3, $4, $5)`,
+             "id", "userId", "purpose", "primaryAuthenticationMethod",
+             "sessionId", "tokenHash", "codeHash", "expiresAt"
+           ) VALUES (
+             $1, $2, 'RECENT_AUTH'::"MfaChallengePurpose",
+             $3::"MfaChallengeAuthenticationMethod", $4, $5, $6, $7
+           )`,
           [
             input.challengeId,
             input.userId,
+            primaryAuthenticationMethod,
+            input.sessionId ?? null,
             input.tokenHash,
             input.codeHash,
             input.expiresAt,
@@ -75,10 +118,7 @@ export function createPostgresIdentityRecentAuthChallengeRepository(
         );
 
         await client.query("COMMIT");
-        return {
-          status: "CREATED" as const,
-          recipientEmail: row.email,
-        };
+        return { status: "CREATED" as const, recipientEmail: user.email };
       } catch (error) {
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;

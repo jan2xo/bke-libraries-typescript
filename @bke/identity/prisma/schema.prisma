@@ -17,6 +17,11 @@ enum IdentityLifecycleState {
   PURGE_ELIGIBLE
 }
 
+enum MfaChallengeAuthenticationMethod {
+  PASSWORD
+  GOOGLE_OIDC
+}
+
 enum MfaChallengePurpose {
   LOGIN
   ENROLLMENT
@@ -28,6 +33,9 @@ enum SessionAuthenticationMethod {
   PASSWORD_TOTP
   PASSWORD_EMAIL_OTP
   PASSWORD_RECOVERY
+  GOOGLE_OIDC
+  GOOGLE_OIDC_EMAIL_OTP
+  GOOGLE_OIDC_RECOVERY
   MAGIC_LINK
   MFA_ENROLLMENT
 }
@@ -55,15 +63,24 @@ model User {
   legalHoldReason             String?
   emailHash                   String?
   credential                  PasswordCredential?
+  googleIdentity              GoogleIdentity?
   sessions                    Session[]
+  mfaChallenges               MfaChallenge[]
   administratorMfa            AdministratorMfaMethod?
   recoveryCodes               AdministratorRecoveryCode[]
-  mfaChallenges               MfaChallenge[]
   emergencyMfaAuthorizations  EmergencyMfaEnrollmentAuthorization[]
 
   @@index([lifecycleState])
   @@index([retentionExpiresAt])
   @@index([legalHoldAt])
+}
+
+model GoogleIdentity {
+  userId     String   @id
+  subject    String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PasswordCredential {
@@ -93,6 +110,7 @@ model Session {
   revocationReason      String?
   createdAt             DateTime                    @default(now())
   user                  User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mfaChallenges         MfaChallenge[]
 
   @@index([userId, expiresAt])
   @@index([userId, revokedAt])
@@ -129,6 +147,8 @@ model MfaChallenge {
   id           String              @id
   userId       String
   purpose      MfaChallengePurpose @default(LOGIN)
+  primaryAuthenticationMethod MfaChallengeAuthenticationMethod @default(PASSWORD)
+  sessionId    String?
   tokenHash    String              @unique
   codeHash     String?
   expiresAt    DateTime
@@ -136,8 +156,10 @@ model MfaChallenge {
   attemptCount Int                 @default(0)
   createdAt    DateTime            @default(now())
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session      Session?            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([userId, expiresAt])
+  @@index([sessionId])
 }
 
 model EmergencyMfaEnrollmentAuthorization {

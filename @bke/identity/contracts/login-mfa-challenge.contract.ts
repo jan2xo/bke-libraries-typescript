@@ -1,8 +1,11 @@
 export const IDENTITY_LOGIN_MFA_CHALLENGE_ISSUANCE_CAPABILITY_ID =
   "bke.identity.login-mfa-challenge-issuance.v1" as const;
 
+export type IdentityMfaPrimaryAuthenticationMethod = "PASSWORD" | "GOOGLE_OIDC";
 export interface IdentityLoginMfaChallengeIssueInput {
   readonly userId: string;
+  /** Trusted host context set only after validating Google OIDC. */
+  readonly primaryAuthenticationMethod?: IdentityMfaPrimaryAuthenticationMethod;
 }
 
 export interface IdentityLoginMfaChallengeDelivery {

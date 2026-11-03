@@ -38,7 +38,7 @@ jobs:
           mkdir -p artifacts
           artifact="$(npm pack --workspace=@bke/identity --pack-destination artifacts --silent | tail -n 1)"
           artifact="$(basename "$artifact")"
-          test "$artifact" = "bke-identity-0.4.0.tgz"
+          test "$artifact" = "bke-identity-0.5.0.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
           echo "IDENTITY_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -51,11 +51,26 @@ jobs:
             package/package.json \
             package/module.manifest.ts \
             package/contracts/identity.contract.ts \
+            package/contracts/google-identity.contract.ts \
+            package/contracts/google-authentication.contract.ts \
+            package/contracts/recent-auth-completion.contract.ts \
+            package/contracts/recent-auth-challenge.contract.ts \
+            package/logic/recent-auth-challenge-repository.ts \
+            package/logic/recent-auth-completion.ts \
+            package/logic/recent-auth-challenge-issuance.ts \
+            package/prisma/repositories/postgres-recent-auth-completion-repository.ts \
+            package/prisma/repositories/postgres-recent-auth-challenge-repository.ts \
+            package/docs/GOOGLE-OIDC.md \
+            package/logic/google-authentication.ts \
             package/contracts/password-login.contract.ts \
             package/contracts/login-mfa-challenge-reissue.contract.ts \
             package/contracts/password-change-session.contract.ts \
             package/contracts/session-administration.contract.ts \
             package/logic/identity-service.ts \
+            package/logic/google-identity.ts \
+            package/logic/google-identity-repository.ts \
+            package/prisma/repositories/postgres-google-identity-repository.ts \
+            package/migrations/0002_google_identity/migration.sql \
             package/logic/password-login.ts \
             package/logic/login-mfa-challenge-reissue.ts \
             package/logic/password-change-session.ts \
@@ -108,17 +123,26 @@ jobs:
           cat > .package-smoke/smoke.ts <<'TS'
           import { IDENTITY_LOOKUP_CAPABILITY_ID, type IdentityPrincipal } from "@bke/identity/contracts/identity.contract";
           import { IDENTITY_PASSWORD_LOGIN_CAPABILITY_ID } from "@bke/identity/contracts/password-login.contract";
+          import { IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID } from "@bke/identity/contracts/google-identity.contract";
+          import { IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID } from "@bke/identity/contracts/google-authentication.contract";
+          import type { IdentityRecentAuthCompletionInput } from "@bke/identity/contracts/recent-auth-completion.contract";
           import { IDENTITY_LOGIN_MFA_CHALLENGE_REISSUE_CAPABILITY_ID } from "@bke/identity/contracts/login-mfa-challenge-reissue.contract";
           import { IDENTITY_PASSWORD_CHANGE_SESSION_CAPABILITY_ID } from "@bke/identity/contracts/password-change-session.contract";
           import { IDENTITY_SESSION_ADMINISTRATION_CAPABILITY_ID } from "@bke/identity/contracts/session-administration.contract";
           import { createIdentityLookupCapability } from "@bke/identity/logic/identity-service";
+          import { createIdentityGooglePrincipalBindingCapability } from "@bke/identity/logic/google-identity";
+          import { createIdentityGoogleAuthenticationCapability } from "@bke/identity/logic/google-authentication";
+          import { createIdentityRecentAuthCompletionCapability } from "@bke/identity/logic/recent-auth-completion";
           import { createIdentityPasswordLoginCapability } from "@bke/identity/logic/password-login";
           import { createIdentityLoginMfaChallengeReissueCapability } from "@bke/identity/logic/login-mfa-challenge-reissue";
           import { createIdentityPasswordChangeSessionCapability } from "@bke/identity/logic/password-change-session";
           import { createIdentitySessionAdministrationCapability } from "@bke/identity/logic/session-administration";
           import { createArgon2PasswordVerifier } from "@bke/identity/providers/argon2-password-verifier";
           import { createPostgresIdentityRepository } from "@bke/identity/prisma/repositories/postgres-identity-repository";
+          import { createPostgresIdentityGoogleIdentityRepository, createTransactionBoundPostgresGoogleIdentityRepository } from "@bke/identity/prisma/repositories/postgres-google-identity-repository";
           import { createPostgresIdentitySessionAdministrationRepository } from "@bke/identity/prisma/repositories/postgres-session-administration-repository";
+          import { createPostgresIdentityRecentAuthCompletionRepository } from "@bke/identity/prisma/repositories/postgres-recent-auth-completion-repository";
+          import { createPostgresIdentityRecentAuthChallengeRepository } from "@bke/identity/prisma/repositories/postgres-recent-auth-challenge-repository";
           import { identityModuleManifest } from "@bke/identity/module.manifest";
 
           const establishment = (principal: IdentityPrincipal): Date => principal.establishedAt;
@@ -126,6 +150,8 @@ jobs:
           if (IDENTITY_LOOKUP_CAPABILITY_ID !== "bke.identity.lookup.v1") throw new Error("Unexpected Identity lookup capability id.");
           for (const id of [
             IDENTITY_PASSWORD_LOGIN_CAPABILITY_ID,
+            IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID,
+            IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID,
             IDENTITY_LOGIN_MFA_CHALLENGE_REISSUE_CAPABILITY_ID,
             IDENTITY_PASSWORD_CHANGE_SESSION_CAPABILITY_ID,
             IDENTITY_SESSION_ADMINISTRATION_CAPABILITY_ID,
@@ -135,6 +161,11 @@ jobs:
           if (identityModuleManifest.moduleId !== "identity") throw new Error("Unexpected Identity manifest moduleId.");
           for (const value of [
             createIdentityLookupCapability,
+            createIdentityGooglePrincipalBindingCapability,
+            createIdentityGoogleAuthenticationCapability,
+            createIdentityRecentAuthCompletionCapability,
+            createPostgresIdentityGoogleIdentityRepository,
+            createTransactionBoundPostgresGoogleIdentityRepository,
             createIdentityPasswordLoginCapability,
             createIdentityLoginMfaChallengeReissueCapability,
             createIdentityPasswordChangeSessionCapability,
@@ -142,10 +173,16 @@ jobs:
             createArgon2PasswordVerifier,
             createPostgresIdentityRepository,
             createPostgresIdentitySessionAdministrationRepository,
+            createPostgresIdentityRecentAuthCompletionRepository,
+            createPostgresIdentityRecentAuthChallengeRepository,
           ]) {
             if (typeof value !== "function") throw new Error("Packed Identity consumer exports are incomplete.");
           }
-          console.log("Packed @bke/identity 0.4.0 auth parity consumer smoke GREEN");
+          if (IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID !== "bke.identity.google-principal-binding.v1") throw new Error("Unexpected Google binding capability id.");
+          if (IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID !== "bke.identity.google-authentication.v1") throw new Error("Unexpected Google authentication capability id.");
+          const recentAuthInput: IdentityRecentAuthCompletionInput | undefined = undefined;
+          if (recentAuthInput !== undefined) throw new Error("Unexpected recent-auth smoke value.");
+          console.log("Packed @bke/identity 0.5.0 Google identity consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit
@@ -153,10 +190,10 @@ jobs:
       - name: Upload certified package evidence
         uses: actions/upload-artifact@v7
         with:
-          name: bke-identity-0.4.0
+          name: bke-identity-0.5.0
           path: |
-            artifacts/bke-identity-0.4.0.tgz
-            artifacts/bke-identity-0.4.0.tgz.sha256
+            artifacts/bke-identity-0.5.0.tgz
+            artifacts/bke-identity-0.5.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Identity release
@@ -184,4 +221,4 @@ jobs:
             "artifacts/$IDENTITY_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/identity v${version}" \
-            --notes "Certified BKE Identity package artifact with optional customer MFA, mandatory administrator MFA, generic MFA challenge/recovery semantics, MFA-aware password changes, and magic-link MFA bypass prevention."
+            --notes "Certified BKE Identity package artifact with stable Google subject binding, honest Google session methods, session-bound BKE factor step-up and enrollment recovery, host-owned Google OIDC verification, and preserved password support for existing consumers."

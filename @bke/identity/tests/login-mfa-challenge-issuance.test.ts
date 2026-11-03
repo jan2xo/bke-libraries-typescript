@@ -71,12 +71,22 @@ describe("Identity login MFA challenge issuance", () => {
     expect(persisted).toEqual({
       challengeId: "challenge-1",
       userId: "admin-1",
+      primaryAuthenticationMethod: "PASSWORD",
       tokenHash: "hashed-challenge-token",
       codeHash: "hashed-email-code",
       expiresAt: new Date("2026-08-31T04:10:00.000Z"),
     });
     expect(JSON.stringify(persisted)).not.toContain("raw-challenge-token");
     expect(JSON.stringify(persisted)).not.toContain("123456");
+  });
+
+
+  it("persists a Google OIDC primary method when explicitly supplied by the trusted host", async () => {
+    let persisted: IdentityLoginMfaChallengePersistenceInput | undefined;
+    const repo = repository({ replacePendingLoginChallenge: vi.fn(async (input) => { persisted = input; return { status: "CREATED" as const, recipientEmail: "admin@example.com" }; }) });
+    const cap = createIdentityLoginMfaChallengeIssuanceCapability(repo, materialProvider(), () => now);
+    await cap.issue({ userId: "admin-1", primaryAuthenticationMethod: "GOOGLE_OIDC" });
+    expect(persisted?.primaryAuthenticationMethod).toBe("GOOGLE_OIDC");
   });
 
   it("maps missing and non-admin principals without returning challenge material", async () => {

@@ -21,8 +21,11 @@ export function createIdentityRecentAuthCompletionCapability(
     async complete(
       input: IdentityRecentAuthCompletionInput,
     ): Promise<IdentityRecentAuthCompletionResult> {
+      if (typeof input.sessionToken !== "string") {
+        return { status: "FAILED", code: "INVALID_INPUT" };
+      }
       const sessionToken = input.sessionToken.trim();
-      if (!sessionToken || input.password.length < 1 || input.password.length > MAX_PASSWORD_LENGTH) {
+      if (!sessionToken) {
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
 
@@ -41,6 +44,115 @@ export function createIdentityRecentAuthCompletionCapability(
       }
 
       const { session, principal } = validatedSession.context;
+
+      const isGoogleSession = session.authenticationMethod.startsWith("GOOGLE_OIDC");
+      const completedAt = clock();
+
+      if (isGoogleSession) {
+        if ("password" in input) {
+          return { status: "FAILED", code: "INVALID_INPUT" };
+        }
+        if (!validatedSession.context.mfaEnabled && !principal.emailVerified) {
+          return { status: "INVALID", code: "MFA_REQUIRED" };
+        }
+
+        const challengeToken =
+          typeof input.challengeToken === "string" ? input.challengeToken.trim() : "";
+        const code = typeof input.code === "string" ? input.code.trim() : "";
+        if (!challengeToken || !code || code.length < 6 || code.length > 32) {
+          return { status: "INVALID", code: "MFA_REQUIRED" };
+        }
+
+        let tokenHash: string;
+        try {
+          tokenHash = proofProvider.hashChallengeToken(challengeToken);
+        } catch {
+          return { status: "FAILED", code: "CODE_PROVIDER_UNAVAILABLE" };
+        }
+
+        let challenge;
+        try {
+          challenge = await repository.findRecentAuthChallenge(principal.id, tokenHash);
+        } catch {
+          return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
+        }
+        if (
+          !challenge ||
+          challenge.purpose !== "RECENT_AUTH" ||
+          challenge.userId !== principal.id ||
+          challenge.sessionId !== session.id ||
+          challenge.primaryAuthenticationMethod !== "GOOGLE_OIDC" ||
+          challenge.consumedAt ||
+          challenge.expiresAt <= completedAt ||
+          challenge.attemptCount >= 5
+        ) {
+          return { status: "INVALID", code: "INVALID_CHALLENGE" };
+        }
+
+        let emailCodeValid: boolean;
+        let recoveryCodeHash: string;
+        try {
+          emailCodeValid = Boolean(
+            challenge.codeHash && proofProvider.verifyEmailCode(challenge.codeHash, code),
+          );
+          recoveryCodeHash = proofProvider.hashRecoveryCode(code);
+        } catch {
+          return { status: "FAILED", code: "CODE_PROVIDER_UNAVAILABLE" };
+        }
+
+        let recovery = null;
+        try {
+          if (!emailCodeValid && validatedSession.context.mfaEnabled) {
+            recovery = await repository.findUnusedRecoveryCode(principal.id, recoveryCodeHash);
+          }
+        } catch {
+          return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
+        }
+        if (!emailCodeValid && !recovery) {
+          try {
+            await repository.incrementChallengeAttempt(challenge.id);
+          } catch {
+            return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
+          }
+          return { status: "INVALID", code: "INVALID_CODE" };
+        }
+
+        let committed;
+        try {
+          committed = await repository.completeMfaRecentAuth({
+            sessionId: session.id,
+            userId: principal.id,
+            challengeId: challenge.id,
+            recoveryCodeId: recovery?.id ?? null,
+            completedAt,
+            authenticationMethod: recovery ? "GOOGLE_OIDC_RECOVERY" : "GOOGLE_OIDC_EMAIL_OTP",
+          });
+        } catch {
+          return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
+        }
+        if (committed.status === "SESSION_REJECTED") {
+          return { status: "INVALID", code: "INVALID_SESSION" };
+        }
+        if (committed.status === "CHALLENGE_REJECTED") {
+          return { status: "INVALID", code: "INVALID_CHALLENGE" };
+        }
+        if (committed.status === "RECOVERY_REJECTED") {
+          return { status: "INVALID", code: "INVALID_CODE" };
+        }
+        return {
+          status: "COMPLETED",
+          session: committed.session,
+          verificationMethod: recovery ? "GOOGLE_OIDC_RECOVERY" : "GOOGLE_OIDC_EMAIL_OTP",
+        };
+      }
+
+      if (
+        typeof input.password !== "string" ||
+        input.password.length < 1 ||
+        input.password.length > MAX_PASSWORD_LENGTH
+      ) {
+        return { status: "FAILED", code: "INVALID_INPUT" };
+      }
 
       let passwordRecord;
       try {
@@ -65,7 +177,7 @@ export function createIdentityRecentAuthCompletionCapability(
         return { status: "INVALID", code: "INVALID_CREDENTIALS" };
       }
 
-      const completedAt = clock();
+      
 
       if (!validatedSession.context.mfaEnabled) {
         if (principal.role !== "CUSTOMER") {
@@ -92,8 +204,9 @@ export function createIdentityRecentAuthCompletionCapability(
         };
       }
 
-      const challengeToken = input.challengeToken?.trim() ?? "";
-      const code = input.code?.trim() ?? "";
+      const challengeToken =
+        typeof input.challengeToken === "string" ? input.challengeToken.trim() : "";
+      const code = typeof input.code === "string" ? input.code.trim() : "";
       if (!challengeToken || !code) {
         return { status: "INVALID", code: "MFA_REQUIRED" };
       }
@@ -166,6 +279,7 @@ export function createIdentityRecentAuthCompletionCapability(
           challengeId: challenge.id,
           recoveryCodeId: recovery?.id ?? null,
           completedAt,
+          authenticationMethod: recovery ? "PASSWORD_RECOVERY" : "PASSWORD_EMAIL_OTP",
         });
       } catch {
         return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };

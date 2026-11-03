@@ -1,6 +1,8 @@
 import type { IdentityModuleManifest } from "./contracts/module.contract";
 import { IDENTITY_EMAIL_VERIFICATION_COMPLETION_CAPABILITY_ID } from "./contracts/email-verification-completion.contract";
 import { IDENTITY_EMAIL_VERIFICATION_ISSUANCE_CAPABILITY_ID } from "./contracts/email-verification-issuance.contract";
+import { IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID } from "./contracts/google-authentication.contract";
+import { IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID } from "./contracts/google-identity.contract";
 import {
   IDENTITY_LOOKUP_CAPABILITY_ID,
   IDENTITY_PASSWORD_AUTHENTICATION_CAPABILITY_ID,
@@ -29,6 +31,8 @@ export const identityModuleManifest = Object.freeze({
   provides: [
     IDENTITY_LOOKUP_CAPABILITY_ID,
     IDENTITY_PASSWORD_AUTHENTICATION_CAPABILITY_ID,
+    IDENTITY_GOOGLE_PRINCIPAL_BINDING_CAPABILITY_ID,
+    IDENTITY_GOOGLE_AUTHENTICATION_CAPABILITY_ID,
     IDENTITY_EMAIL_VERIFICATION_ISSUANCE_CAPABILITY_ID,
     IDENTITY_EMAIL_VERIFICATION_COMPLETION_CAPABILITY_ID,
     IDENTITY_PASSWORD_CHANGE_CAPABILITY_ID,

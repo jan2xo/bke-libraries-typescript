@@ -1,6 +1,7 @@
 export interface IdentityRecentAuthChallengePersistenceInput {
   readonly challengeId: string;
   readonly userId: string;
+  readonly sessionId?: string;
   readonly tokenHash: string;
   readonly codeHash: string;
   readonly expiresAt: Date;

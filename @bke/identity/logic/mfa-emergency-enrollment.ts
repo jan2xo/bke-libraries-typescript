@@ -86,6 +86,14 @@ export function createIdentityMfaEmergencyEnrollmentCapability(
           emergencyTokenHash,
           recoveryCodeHashes: recoveryMaterial.map((item) => item.hash),
           replacementSession,
+          replacementSessionAuthenticationMethod:
+            validated.context.session.authenticationMethod.startsWith("GOOGLE_OIDC")
+              ? "GOOGLE_OIDC"
+              : "MFA_ENROLLMENT",
+          replacementSessionRecentAuthenticatedAt:
+            validated.context.session.authenticationMethod.startsWith("GOOGLE_OIDC")
+              ? recentAuthenticatedAt
+              : now,
           enrolledAt: now,
           replacementSessionExpiresAt: new Date(
             now.getTime() + SESSION_LIFETIME_MS,

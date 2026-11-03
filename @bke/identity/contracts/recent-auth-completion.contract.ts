@@ -3,17 +3,27 @@ import type { IdentityIssuedSession } from "./session.contract";
 export const IDENTITY_RECENT_AUTH_COMPLETION_CAPABILITY_ID =
   "bke.identity.recent-auth-completion.v1" as const;
 
-export interface IdentityRecentAuthCompletionInput {
-  readonly sessionToken: string;
-  readonly password: string;
-  readonly challengeToken?: string;
-  readonly code?: string;
-}
+/** The validated stored session selects password completion or Google-session app-factor step-up. */
+export type IdentityRecentAuthCompletionInput =
+  | {
+      readonly sessionToken: string;
+      readonly password: string;
+      readonly challengeToken?: string;
+      readonly code?: string;
+    }
+  | {
+      readonly sessionToken: string;
+      readonly password?: never;
+      readonly challengeToken: string;
+      readonly code: string;
+    };
 
 export type IdentityRecentAuthVerificationMethod =
   | "PASSWORD"
   | "PASSWORD_EMAIL_OTP"
-  | "PASSWORD_RECOVERY";
+  | "PASSWORD_RECOVERY"
+  | "GOOGLE_OIDC_EMAIL_OTP"
+  | "GOOGLE_OIDC_RECOVERY";
 
 export type IdentityRecentAuthInvalidCode =
   | "INVALID_SESSION"
@@ -45,7 +55,5 @@ export type IdentityRecentAuthCompletionResult =
     };
 
 export interface IdentityRecentAuthCompletionCapability {
-  complete(
-    input: IdentityRecentAuthCompletionInput,
-  ): Promise<IdentityRecentAuthCompletionResult>;
+  complete(input: IdentityRecentAuthCompletionInput): Promise<IdentityRecentAuthCompletionResult>;
 }

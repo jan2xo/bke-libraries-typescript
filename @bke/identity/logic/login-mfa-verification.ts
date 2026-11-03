@@ -102,9 +102,9 @@ export function createIdentityLoginMfaVerificationCapability(
       return {
         status: "VERIFIED",
         userId: challenge.userId,
-        authenticationMethod: recovery
-          ? "PASSWORD_RECOVERY"
-          : "PASSWORD_EMAIL_OTP",
+        authenticationMethod: challenge.primaryAuthenticationMethod === "GOOGLE_OIDC"
+          ? (recovery ? "GOOGLE_OIDC_RECOVERY" : "GOOGLE_OIDC_EMAIL_OTP")
+          : (recovery ? "PASSWORD_RECOVERY" : "PASSWORD_EMAIL_OTP"),
       };
     },
   });

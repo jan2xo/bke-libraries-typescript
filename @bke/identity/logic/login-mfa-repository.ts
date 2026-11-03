@@ -4,6 +4,7 @@ export interface IdentityLoginMfaChallengeRecord {
   readonly id: string;
   readonly userId: string;
   readonly purpose: IdentityLoginMfaChallengePurpose;
+  readonly primaryAuthenticationMethod: "PASSWORD" | "GOOGLE_OIDC";
   readonly codeHash: string | null;
   readonly expiresAt: Date;
   readonly consumedAt: Date | null;

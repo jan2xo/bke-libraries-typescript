@@ -1,9 +1,9 @@
 export const IDENTITY_RECENT_AUTH_CHALLENGE_ISSUANCE_CAPABILITY_ID =
   "bke.identity.recent-auth-challenge-issuance.v1" as const;
 
-export interface IdentityRecentAuthChallengeIssueInput {
-  readonly userId: string;
-}
+export type IdentityRecentAuthChallengeIssueInput =
+  | { readonly userId: string; readonly sessionToken?: never }
+  | { readonly userId?: never; readonly sessionToken: string };
 
 export interface IdentityRecentAuthChallengeDelivery {
   readonly recipientEmail: string;
@@ -31,11 +31,10 @@ export type IdentityRecentAuthChallengeIssueResult =
       readonly code:
         | "INVALID_INPUT"
         | "MATERIAL_PROVIDER_UNAVAILABLE"
+        | "SESSION_PROVIDER_UNAVAILABLE"
         | "PERSISTENCE_UNAVAILABLE";
     };
 
 export interface IdentityRecentAuthChallengeIssuanceCapability {
-  issue(
-    input: IdentityRecentAuthChallengeIssueInput,
-  ): Promise<IdentityRecentAuthChallengeIssueResult>;
+  issue(input: IdentityRecentAuthChallengeIssueInput): Promise<IdentityRecentAuthChallengeIssueResult>;
 }

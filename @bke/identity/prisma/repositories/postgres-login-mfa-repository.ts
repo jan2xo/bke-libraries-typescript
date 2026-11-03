@@ -27,6 +27,7 @@ export function createPostgresIdentityLoginMfaRepository(
              c."id",
              c."userId",
              c."purpose",
+             c."primaryAuthenticationMethod",
              c."codeHash",
              c."expiresAt",
              c."consumedAt",
