@@ -263,6 +263,34 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
               )
               AND (
                 (
+                  $4::"SessionAuthenticationMethod" IN (
+                    'GOOGLE_OIDC'::"SessionAuthenticationMethod",
+                    'GOOGLE_OIDC_EMAIL_OTP'::"SessionAuthenticationMethod",
+                    'GOOGLE_OIDC_RECOVERY'::"SessionAuthenticationMethod"
+                  )
+                  AND s."authenticationMethod" IN (
+                    'GOOGLE_OIDC'::"SessionAuthenticationMethod",
+                    'GOOGLE_OIDC_EMAIL_OTP'::"SessionAuthenticationMethod",
+                    'GOOGLE_OIDC_RECOVERY'::"SessionAuthenticationMethod"
+                  )
+                )
+                OR (
+                  $4::"SessionAuthenticationMethod" IN (
+                    'PASSWORD'::"SessionAuthenticationMethod",
+                    'PASSWORD_TOTP'::"SessionAuthenticationMethod",
+                    'PASSWORD_EMAIL_OTP'::"SessionAuthenticationMethod",
+                    'PASSWORD_RECOVERY'::"SessionAuthenticationMethod"
+                  )
+                  AND s."authenticationMethod" IN (
+                    'PASSWORD'::"SessionAuthenticationMethod",
+                    'PASSWORD_TOTP'::"SessionAuthenticationMethod",
+                    'PASSWORD_EMAIL_OTP'::"SessionAuthenticationMethod",
+                    'PASSWORD_RECOVERY'::"SessionAuthenticationMethod"
+                  )
+                )
+              )
+              AND (
+                (
                   s."mfaVerifiedAt" IS NOT NULL
                   AND EXISTS (
                     SELECT 1 FROM "AdministratorMfaMethod" m
@@ -287,8 +315,9 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
                        AND customer."suspendedAt" IS NULL
                   )
                   AND NOT EXISTS (
-                    SELECT 1 FROM "AdministratorMfaMethod" enrolled
-                     WHERE enrolled."userId" = s."userId"
+                    SELECT 1 FROM "AdministratorMfaMethod" enabled
+                     WHERE enabled."userId" = s."userId"
+                       AND enabled."enabledAt" IS NOT NULL
                   )
                 )
               )

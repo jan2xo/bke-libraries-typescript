@@ -221,4 +221,4 @@ jobs:
             "artifacts/$IDENTITY_ARTIFACT.sha256" \
             --target "$GITHUB_SHA" \
             --title "@bke/identity v${version}" \
-            --notes "Certified BKE Identity package artifact with optional customer MFA, mandatory administrator MFA, generic MFA challenge/recovery semantics, MFA-aware password changes, and magic-link MFA bypass prevention."
+            --notes "Certified BKE Identity package artifact with stable Google subject binding, honest Google session methods, session-bound BKE factor step-up and enrollment recovery, host-owned Google OIDC verification, and preserved password support for existing consumers."

@@ -3,9 +3,15 @@ import argon2 from "argon2";
 import { Client } from "pg";
 import type { IdentitySessionValidationCapability } from "../contracts/session-validation.contract";
 import { createIdentityRecentAuthCompletionCapability } from "../logic/recent-auth-completion";
+import { createIdentityMfaEnrollmentStartCapability } from "../logic/mfa-enrollment-start";
+import { createIdentityMfaEnrollmentCompletionCapability } from "../logic/mfa-enrollment-completion";
 import { createArgon2PasswordVerifier } from "../providers/argon2-password-verifier";
 import { createHmacEmailMfaProofProvider } from "../providers/hmac-email-mfa-proof-provider";
+import { createHmacEmailMfaChallengeMaterialProvider } from "../providers/hmac-email-mfa-challenge-material-provider";
+import { createHmacMfaRecoveryCodeProvider } from "../providers/hmac-mfa-recovery-code-provider";
 import { createPostgresIdentityRecentAuthCompletionRepository } from "../prisma/repositories/postgres-recent-auth-completion-repository";
+import { createPostgresIdentityMfaEnrollmentStartRepository } from "../prisma/repositories/postgres-mfa-enrollment-start-repository";
+import { createPostgresIdentityMfaEnrollmentCompletionRepository } from "../prisma/repositories/postgres-mfa-enrollment-completion-repository";
 
 const connectionString = process.env.DATABASE_URL?.trim();
 if (!connectionString) throw new Error("DATABASE_URL is required for Identity recent-auth completion certification.");
@@ -65,7 +71,7 @@ async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; session
   );
 }
 
-function validationFor(input: { userId: string; sessionId: string; role: "CUSTOMER" | "ADMIN"; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: "PASSWORD" | "PASSWORD_EMAIL_OTP" | "GOOGLE_OIDC"; }): IdentitySessionValidationCapability {
+function validationFor(input: { userId: string; sessionId: string; role: "CUSTOMER" | "ADMIN"; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: "PASSWORD" | "PASSWORD_EMAIL_OTP" | "GOOGLE_OIDC"; recentAuthenticatedAt?: Date | null; }): IdentitySessionValidationCapability {
   const mfaEnabled = input.assuranceLevel === "MFA_VERIFIED";
   return {
     async validate() {
@@ -78,7 +84,7 @@ function validationFor(input: { userId: string; sessionId: string; role: "CUSTOM
             expiresAt: new Date(now.getTime() + 30 * 60_000),
             lastAuthenticatedAt: new Date(now.getTime() - 60_000),
             mfaVerifiedAt: mfaEnabled ? new Date(now.getTime() - 30_000) : null,
-            recentAuthenticatedAt: null,
+            recentAuthenticatedAt: input.recentAuthenticatedAt ?? null,
             lastSeenAt: new Date(now.getTime() - 60_000),
             absoluteExpiresAt: new Date(now.getTime() + 2 * 60 * 60_000),
             authenticationMethod: input.authenticationMethod ?? (mfaEnabled ? "PASSWORD_EMAIL_OTP" : "PASSWORD"),
@@ -171,6 +177,7 @@ try {
       role: "CUSTOMER",
       assuranceLevel: "MFA_VERIFIED",
       authenticationMethod: "GOOGLE_OIDC",
+      recentAuthenticatedAt: staleRecentAuth,
     }),
     passwordVerifier,
     proofProvider,
@@ -258,6 +265,20 @@ try {
     authenticationMethod: "GOOGLE_OIDC",
     hasPassword: false,
   });
+  const enrollmentMaterial = createHmacEmailMfaChallengeMaterialProvider(
+    sessionSecret,
+    mfaEncryptionKey,
+  );
+  const enrollmentStart = createIdentityMfaEnrollmentStartCapability(
+    createPostgresIdentityMfaEnrollmentStartRepository(connectionString),
+    enrollmentMaterial,
+    () => now,
+  );
+  const pendingEnrollment = await enrollmentStart.start({ userId: googleAdminId });
+  if (pendingEnrollment.status !== "STARTED") {
+    throw new Error(`Google admin enrollment could not be started: ${JSON.stringify(pendingEnrollment)}`);
+  }
+  const staleRecentAuth = new Date(now.getTime() - 16 * 60_000);
   await createChallenge({
     id: "recent-google-bootstrap-admin-challenge",
     userId: googleAdminId,
@@ -274,6 +295,7 @@ try {
       role: "ADMIN",
       assuranceLevel: "BASIC",
       authenticationMethod: "GOOGLE_OIDC",
+      recentAuthenticatedAt: staleRecentAuth,
     }),
     passwordVerifier,
     proofProvider,
@@ -299,6 +321,22 @@ try {
   if (googleAdminEnrollment.rowCount !== 0) {
     throw new Error("Google ADMIN app-factor bootstrap silently enrolled MFA.");
   }
+  const enrollmentResume = createIdentityMfaEnrollmentCompletionCapability(
+    createPostgresIdentityMfaEnrollmentCompletionRepository(connectionString),
+    proofProvider,
+    createHmacMfaRecoveryCodeProvider(sessionSecret, mfaEncryptionKey),
+    () => now,
+  );
+  const resumedEnrollment = await enrollmentResume.complete({
+    userId: googleAdminId,
+    challengeToken: pendingEnrollment.challengeToken,
+    code: pendingEnrollment.delivery.code,
+  });
+  if (resumedEnrollment.status !== "COMPLETED" ||
+      googleAdminResult.session.recentAuthenticatedAt?.getTime() !== now.getTime()) {
+    throw new Error("Pending Google admin MFA enrollment did not resume after a fresh app-factor step-up.");
+  }
+
 
   const changedEnrollmentUserId = "recent-google-enrollment-race-admin";
   const changedEnrollmentSessionId = "recent-google-enrollment-race-session";
