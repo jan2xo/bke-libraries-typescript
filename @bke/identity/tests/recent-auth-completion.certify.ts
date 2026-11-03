@@ -30,7 +30,7 @@ await client.connect();
 const mfaKey = createHash("sha256").update(mfaEncryptionKey).digest();
 const hashEmailCode = (code: string) => createHmac("sha256", mfaKey).update(`admin-email-otp-code:${code.trim().replace(/\s/g, "")}`).digest("hex");
 
-async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; sessionId: string; tokenHash: string; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: "PASSWORD" | "PASSWORD_EMAIL_OTP" | "GOOGLE_OIDC"; hasPassword?: boolean; }) {
+async function seedUser(input: { id: string; role: "CUSTOMER" | "ADMIN"; sessionId: string; tokenHash: string; assuranceLevel: "BASIC" | "MFA_VERIFIED"; authenticationMethod?: "PASSWORD" | "PASSWORD_EMAIL_OTP" | "GOOGLE_OIDC" | "MFA_ENROLLMENT"; hasPassword?: boolean; }) {
   const mfaEnabled = input.assuranceLevel === "MFA_VERIFIED";
   await client.query(
     `INSERT INTO "User" ("id", "email", "name", "emailVerified", "role", "createdAt", "updatedAt", "lifecycleState")
@@ -177,7 +177,6 @@ try {
       role: "CUSTOMER",
       assuranceLevel: "MFA_VERIFIED",
       authenticationMethod: "GOOGLE_OIDC",
-      recentAuthenticatedAt: staleRecentAuth,
     }),
     passwordVerifier,
     proofProvider,
@@ -314,12 +313,22 @@ try {
   ) {
     throw new Error("Google ADMIN app-factor bootstrap did not record recent authentication without asserting MFA.");
   }
-  const googleAdminEnrollment = await client.query(
-    `SELECT 1 FROM "AdministratorMfaMethod" WHERE "userId" = $1`,
+  const googleAdminEnrollment = await client.query<{
+    enabledAt: Date | null;
+    verifiedAt: Date | null;
+    pendingExpiresAt: Date | null;
+  }>(
+    `SELECT "enabledAt", "verifiedAt", "pendingExpiresAt"
+       FROM "AdministratorMfaMethod" WHERE "userId" = $1`,
     [googleAdminId],
   );
-  if (googleAdminEnrollment.rowCount !== 0) {
-    throw new Error("Google ADMIN app-factor bootstrap silently enrolled MFA.");
+  if (
+    googleAdminEnrollment.rowCount !== 1 ||
+    googleAdminEnrollment.rows[0]?.enabledAt !== null ||
+    googleAdminEnrollment.rows[0]?.verifiedAt !== null ||
+    googleAdminEnrollment.rows[0]?.pendingExpiresAt?.getTime() !== pendingEnrollment.expiresAt.getTime()
+  ) {
+    throw new Error("Google ADMIN factor step-up changed pending MFA enrollment state.");
   }
   const enrollmentResume = createIdentityMfaEnrollmentCompletionCapability(
     createPostgresIdentityMfaEnrollmentCompletionRepository(connectionString),
@@ -337,6 +346,48 @@ try {
     throw new Error("Pending Google admin MFA enrollment did not resume after a fresh app-factor step-up.");
   }
 
+
+  const legacyEnrollmentUserId = "recent-password-emergency-admin";
+  const legacyEnrollmentSessionId = "recent-password-emergency-session";
+  await seedUser({
+    id: legacyEnrollmentUserId,
+    role: "ADMIN",
+    sessionId: legacyEnrollmentSessionId,
+    tokenHash: "recent-password-emergency-token",
+    assuranceLevel: "MFA_VERIFIED",
+    authenticationMethod: "MFA_ENROLLMENT",
+  });
+  await createChallenge({
+    id: "recent-password-emergency-challenge",
+    userId: legacyEnrollmentUserId,
+    token: "recent-password-emergency-challenge-token",
+    code: "123456",
+  });
+  const legacyEnrollmentCapability = createIdentityRecentAuthCompletionCapability(
+    repository,
+    validationFor({
+      userId: legacyEnrollmentUserId,
+      sessionId: legacyEnrollmentSessionId,
+      role: "ADMIN",
+      assuranceLevel: "MFA_VERIFIED",
+      authenticationMethod: "MFA_ENROLLMENT",
+    }),
+    passwordVerifier,
+    proofProvider,
+    () => now,
+  );
+  const legacyEnrollmentStepup = await legacyEnrollmentCapability.complete({
+    sessionToken: "recent-password-emergency-session-token",
+    password,
+    challengeToken: "recent-password-emergency-challenge-token",
+    code: "123456",
+  });
+  if (
+    legacyEnrollmentStepup.status !== "COMPLETED" ||
+    legacyEnrollmentStepup.verificationMethod !== "PASSWORD_EMAIL_OTP"
+  ) {
+    throw new Error("Legacy password MFA_ENROLLMENT session lost its existing password recent-auth path.");
+  }
 
   const changedEnrollmentUserId = "recent-google-enrollment-race-admin";
   const changedEnrollmentSessionId = "recent-google-enrollment-race-session";

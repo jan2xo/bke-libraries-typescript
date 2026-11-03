@@ -285,7 +285,9 @@ export function createPostgresIdentityRecentAuthCompletionRepository(
                     'PASSWORD'::"SessionAuthenticationMethod",
                     'PASSWORD_TOTP'::"SessionAuthenticationMethod",
                     'PASSWORD_EMAIL_OTP'::"SessionAuthenticationMethod",
-                    'PASSWORD_RECOVERY'::"SessionAuthenticationMethod"
+                    'PASSWORD_RECOVERY'::"SessionAuthenticationMethod",
+                    'MFA_ENROLLMENT'::"SessionAuthenticationMethod",
+                    'MAGIC_LINK'::"SessionAuthenticationMethod"
                   )
                 )
               )
