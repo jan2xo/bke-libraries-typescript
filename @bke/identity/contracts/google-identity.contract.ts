@@ -7,7 +7,7 @@ export interface IdentityGooglePrincipalBindingCapability {
 }
 export type IdentityGoogleSubjectBindResult=
  |{readonly status:"BOUND"|"ALREADY_BOUND";readonly userId:string}
- |{readonly status:"REJECTED";readonly code:"PRINCIPAL_NOT_FOUND"|"ACCOUNT_NOT_ACTIVE"|"EMAIL_NOT_VERIFIED"|"SUBJECT_ALREADY_BOUND"|"USER_ALREADY_BOUND"}
+ |{readonly status:"REJECTED";readonly code:"PRINCIPAL_NOT_FOUND"|"ACCOUNT_NOT_ACTIVE"|"SUBJECT_ALREADY_BOUND"|"USER_ALREADY_BOUND"}
  |{readonly status:"FAILED";readonly code:"INVALID_INPUT"|"PERSISTENCE_UNAVAILABLE"};
 export type IdentityGooglePrincipalLookupResult=
  |{readonly status:"FOUND";readonly principal:IdentityPrincipal}

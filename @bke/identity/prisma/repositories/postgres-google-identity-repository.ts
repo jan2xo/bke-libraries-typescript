@@ -10,10 +10,9 @@ export function createPostgresIdentityGoogleIdentityRepository(connectionString:
   async bindSubject(userId,subject){
    const c=new Client({connectionString:cs});await c.connect();
    try{await c.query("BEGIN");
-    const q=await c.query<{emailVerified:Date|null;suspendedAt:Date|null;lifecycleState:IdentityLifecycleState}>(`SELECT "emailVerified","suspendedAt","lifecycleState" FROM "User" WHERE "id"=$1 FOR UPDATE`,[userId]);
+    const q=await c.query<{suspendedAt:Date|null;lifecycleState:IdentityLifecycleState}>(`SELECT "suspendedAt","lifecycleState" FROM "User" WHERE "id"=$1 FOR UPDATE`,[userId]);
     const u=q.rows[0];if(!u){await c.query("ROLLBACK");return{status:"PRINCIPAL_NOT_FOUND" as const}}
     if(u.suspendedAt||u.lifecycleState!=="ACTIVE"){await c.query("ROLLBACK");return{status:"ACCOUNT_NOT_ACTIVE" as const}}
-    if(!u.emailVerified){await c.query("ROLLBACK");return{status:"EMAIL_NOT_VERIFIED" as const}}
     const ins=await c.query(`INSERT INTO "GoogleIdentity"("userId","subject","updatedAt") VALUES($1,$2,NOW()) ON CONFLICT DO NOTHING`,[userId,subject]);
     if((ins.rowCount??0)===1){await c.query("COMMIT");return{status:"BOUND" as const}}
     const prior=await c.query<{userId:string;subject:string}>(`SELECT "userId","subject" FROM "GoogleIdentity" WHERE "userId"=$1 OR "subject"=$2 FOR UPDATE`,[userId,subject]);

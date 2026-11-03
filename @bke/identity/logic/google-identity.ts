@@ -1,6 +1,6 @@
 import type {IdentityGooglePrincipalBindingCapability,IdentityGooglePrincipalLookupResult,IdentityGoogleSubjectBindResult} from "../contracts/google-identity.contract";
 import type {IdentityGoogleIdentityRepository} from "./google-identity-repository";
-function validSubject(s:string){return s.length>0&&s.length<=255&&s===s.trim()&&!/[\u0000-\u001f\u007f]/.test(s)}
+function validSubject(s:string){return /^[\x21-\x7e]{1,255}$/.test(s)}
 export function createIdentityGooglePrincipalBindingCapability(repository:IdentityGoogleIdentityRepository):IdentityGooglePrincipalBindingCapability{
  return Object.freeze({
   async bindToUser(input):Promise<IdentityGoogleSubjectBindResult>{
