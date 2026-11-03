@@ -12,6 +12,7 @@ function repository(overrides: Partial<IdentityLoginMfaRepository> = {}): Identi
       id: "challenge-1",
       userId: "admin-1",
       purpose: "LOGIN" as const,
+      primaryAuthenticationMethod: "PASSWORD" as const,
       codeHash: "code-hash",
       expiresAt: new Date(now.getTime() + 60_000),
       consumedAt: null,
@@ -49,7 +50,34 @@ describe("Identity login MFA challenge reissue", () => {
     const capability = createIdentityLoginMfaChallengeReissueCapability(repository(), proof, issue, () => now);
     const result = await capability.reissue({ challengeToken: "old-token" });
     expect(result.status).toBe("ISSUED");
-    expect(issue.issue).toHaveBeenCalledWith({ userId: "admin-1" });
+    expect(issue.issue).toHaveBeenCalledWith({
+      userId: "admin-1",
+      primaryAuthenticationMethod: "PASSWORD",
+    });
+  });
+
+  it("preserves the Google primary method when reissuing", async () => {
+    const issue = issuance();
+    const repo = repository({
+      findChallengeByTokenHash: vi.fn(async () => ({
+        id: "challenge-google",
+        userId: "customer-1",
+        purpose: "LOGIN" as const,
+        primaryAuthenticationMethod: "GOOGLE_OIDC" as const,
+        codeHash: "code-hash",
+        expiresAt: new Date(now.getTime() + 60_000),
+        consumedAt: null,
+        attemptCount: 0,
+      })),
+    });
+
+    await createIdentityLoginMfaChallengeReissueCapability(repo, proof, issue, () => now)
+      .reissue({ challengeToken: "google-token" });
+
+    expect(issue.issue).toHaveBeenCalledWith({
+      userId: "customer-1",
+      primaryAuthenticationMethod: "GOOGLE_OIDC",
+    });
   });
 
   it.each([
@@ -61,6 +89,7 @@ describe("Identity login MFA challenge reissue", () => {
     const repo = repository({
       findChallengeByTokenHash: vi.fn(async () => ({
         id: "challenge-1", userId: "admin-1", purpose: "LOGIN" as const,
+        primaryAuthenticationMethod: "PASSWORD" as const,
         codeHash: "code-hash", expiresAt: new Date(now.getTime() + 60_000),
         consumedAt: null, attemptCount: 0, ...patch,
       })),

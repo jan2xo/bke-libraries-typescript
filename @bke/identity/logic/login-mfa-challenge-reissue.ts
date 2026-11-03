@@ -48,7 +48,10 @@ export function createIdentityLoginMfaChallengeReissueCapability(
         return { status: "REJECTED", code: "INVALID_MFA_CHALLENGE" };
       }
 
-      const issued = await issuance.issue({ userId: pending.userId });
+      const issued = await issuance.issue({
+        userId: pending.userId,
+        primaryAuthenticationMethod: pending.primaryAuthenticationMethod,
+      });
       if (issued.status === "ISSUED") {
         return issued;
       }

@@ -9,7 +9,8 @@ if (!connectionString) {
 const expectedTables = [
   "AdministratorMfaMethod",
   "AdministratorRecoveryCode",
-  "EmergencyMfaEnrollmentAuthorization",\n  "GoogleIdentity",
+  "EmergencyMfaEnrollmentAuthorization",
+  "GoogleIdentity",
   "MfaChallenge",
   "PasswordCredential",
   "PasswordResetToken",
@@ -98,7 +99,10 @@ try {
     ledger.rows.length !== 2 ||
     ledger.rows[0]?.migrationName !== "0001_identity_baseline" ||
     !ledger.rows[0]?.finishedAt ||
-    ledger.rows[0]?.rolledBackAt !== null ||\n    ledger.rows[1]?.migrationName !== "0002_google_identity" ||\n    !ledger.rows[1]?.finishedAt ||\n    ledger.rows[1]?.rolledBackAt !== null
+    ledger.rows[0]?.rolledBackAt !== null ||
+    ledger.rows[1]?.migrationName !== "0002_google_identity" ||
+    !ledger.rows[1]?.finishedAt ||
+    ledger.rows[1]?.rolledBackAt !== null
   ) {
     throw new Error(`Unexpected Identity Prisma migration ledger: ${JSON.stringify(ledger.rows)}`);
   }
