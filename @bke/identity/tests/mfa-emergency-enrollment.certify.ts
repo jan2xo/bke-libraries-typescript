@@ -20,7 +20,7 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is required for emergency MFA enrollment certification.");
 }
 
-const now = new Date("2026-09-01T10:30:00.000Z");
+const now = new Date();
 const issuedAt = new Date(now.getTime() - 5 * 60_000);
 const userId = "mfa-emergency-enrollment-admin";
 const email = "mfa-emergency-enrollment-admin@example.com";
