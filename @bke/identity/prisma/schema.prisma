@@ -17,6 +17,11 @@ enum IdentityLifecycleState {
   PURGE_ELIGIBLE
 }
 
+enum MfaChallengeAuthenticationMethod {
+  PASSWORD
+  GOOGLE_OIDC
+}
+
 enum MfaChallengePurpose {
   LOGIN
   ENROLLMENT
@@ -141,6 +146,7 @@ model MfaChallenge {
   id           String              @id
   userId       String
   purpose      MfaChallengePurpose @default(LOGIN)
+  primaryAuthenticationMethod MfaChallengeAuthenticationMethod @default(PASSWORD)
   tokenHash    String              @unique
   codeHash     String?
   expiresAt    DateTime

@@ -215,4 +215,17 @@ describe("Identity session issuance capability", () => {
       persistenceFailure.issue({ userId: "user-1", authenticationMethod: "PASSWORD" }),
     ).resolves.toEqual({ status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" });
   });
+
+  it("issues Google OIDC sessions with basic assurance and no automatic MFA or recent-auth proof", async () => {
+    const sessions = createIdentitySessionIssuanceCapability(repository(), tokenProvider(), () => now);
+    const result = await sessions.issue({ userId: "user-1", authenticationMethod: "GOOGLE_OIDC" });
+    expect(result.status).toBe("ISSUED");
+    if (result.status === "ISSUED") {
+      expect(result.session.authenticationMethod).toBe("GOOGLE_OIDC");
+      expect(result.session.mfaVerifiedAt).toBeNull();
+      expect(result.session.recentAuthenticatedAt).toBeNull();
+      expect(result.session.assuranceLevel).toBe("BASIC");
+    }
+  });
+
 });

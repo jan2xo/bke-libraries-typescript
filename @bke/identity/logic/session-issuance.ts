@@ -22,6 +22,7 @@ function assuranceFor(
 ): SessionAssurance {
   switch (method) {
     case "MAGIC_LINK":
+    case "GOOGLE_OIDC":
       return {
         mfaVerifiedAt: null,
         recentAuthenticatedAt: null,
@@ -37,6 +38,8 @@ function assuranceFor(
     case "PASSWORD_TOTP":
     case "PASSWORD_EMAIL_OTP":
     case "PASSWORD_RECOVERY":
+    case "GOOGLE_OIDC_EMAIL_OTP":
+    case "GOOGLE_OIDC_RECOVERY":
       return {
         mfaVerifiedAt: now,
         recentAuthenticatedAt: now,

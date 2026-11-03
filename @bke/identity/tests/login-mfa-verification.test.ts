@@ -15,6 +15,7 @@ function challenge(
     id: "challenge-1",
     userId: "admin-1",
     purpose: "LOGIN",
+    primaryAuthenticationMethod: "PASSWORD",
     codeHash: "email-code-hash",
     expiresAt: new Date("2026-08-31T03:10:00.000Z"),
     consumedAt: null,
@@ -87,6 +88,14 @@ describe("Identity login MFA verification", () => {
       "recovery-1",
       now,
     );
+  });
+
+  it("keeps Google OIDC primary method through app MFA verification", async () => {
+    const repo = repository({ findChallengeByTokenHash: vi.fn(async () => challenge({ primaryAuthenticationMethod: "GOOGLE_OIDC" })) });
+    const capability = createIdentityLoginMfaVerificationCapability(repo, proofProvider(), () => now);
+    await expect(capability.verify({ challengeToken: "challenge-token", code: "123456" })).resolves.toEqual({
+      status: "VERIFIED", userId: "admin-1", authenticationMethod: "GOOGLE_OIDC_EMAIL_OTP",
+    });
   });
 
   it("increments the challenge attempt when neither proof is valid", async () => {

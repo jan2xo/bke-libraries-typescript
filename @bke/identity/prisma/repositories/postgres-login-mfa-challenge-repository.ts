@@ -63,14 +63,16 @@ export function createPostgresIdentityLoginMfaChallengeRepository(
              "purpose",
              "tokenHash",
              "codeHash",
-             "expiresAt"
-           ) VALUES ($1, $2, 'LOGIN'::"MfaChallengePurpose", $3, $4, $5)`,
+             "expiresAt",
+             "primaryAuthenticationMethod"
+           ) VALUES ($1, $2, 'LOGIN'::"MfaChallengePurpose", $3, $4, $5, $6::"MfaChallengeAuthenticationMethod")`,
           [
             input.challengeId,
             input.userId,
             input.tokenHash,
             input.codeHash,
             input.expiresAt,
+            input.primaryAuthenticationMethod,
           ],
         );
 

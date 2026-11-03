@@ -18,6 +18,8 @@ export function createIdentityLoginMfaChallengeIssuanceCapability(
       input: IdentityLoginMfaChallengeIssueInput,
     ): Promise<IdentityLoginMfaChallengeIssueResult> {
       const userId = input.userId.trim();
+      const primaryAuthenticationMethod = input.primaryAuthenticationMethod ?? "PASSWORD";
+      if (primaryAuthenticationMethod !== "PASSWORD" && primaryAuthenticationMethod !== "GOOGLE_OIDC") return { status: "FAILED", code: "INVALID_INPUT" };
       if (!userId) {
         return { status: "FAILED", code: "INVALID_INPUT" };
       }
@@ -35,6 +37,7 @@ export function createIdentityLoginMfaChallengeIssuanceCapability(
         const persisted = await repository.replacePendingLoginChallenge({
           challengeId: material.challengeId,
           userId,
+          primaryAuthenticationMethod,
           tokenHash: material.tokenHash,
           codeHash: material.codeHash,
           expiresAt,
