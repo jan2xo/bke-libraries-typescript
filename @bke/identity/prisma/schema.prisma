@@ -28,6 +28,9 @@ enum SessionAuthenticationMethod {
   PASSWORD_TOTP
   PASSWORD_EMAIL_OTP
   PASSWORD_RECOVERY
+  GOOGLE_OIDC
+  GOOGLE_OIDC_EMAIL_OTP
+  GOOGLE_OIDC_RECOVERY
   MAGIC_LINK
   MFA_ENROLLMENT
 }
@@ -55,6 +58,7 @@ model User {
   legalHoldReason             String?
   emailHash                   String?
   credential                  PasswordCredential?
+  googleIdentity              GoogleIdentity?
   sessions                    Session[]
   administratorMfa            AdministratorMfaMethod?
   recoveryCodes               AdministratorRecoveryCode[]
@@ -64,6 +68,14 @@ model User {
   @@index([lifecycleState])
   @@index([retentionExpiresAt])
   @@index([legalHoldAt])
+}
+
+model GoogleIdentity {
+  userId     String   @id
+  subject    String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PasswordCredential {
