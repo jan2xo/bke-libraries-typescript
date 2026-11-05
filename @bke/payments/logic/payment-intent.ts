@@ -48,7 +48,7 @@ export function createPaymentsPaymentIntentCapability(
   const leaseMilliseconds = options.leaseMilliseconds ?? LEASE_MS;
   if (!providerName || !Number.isSafeInteger(leaseMilliseconds) || leaseMilliseconds < 1000) throw new Error("PAYMENTS_PAYMENT_INTENT_CONFIGURATION_INVALID");
   return Object.freeze({
-    async create(input) {
+    async create(input: PaymentsCreatePaymentIntentInput): ReturnType<PaymentsPaymentIntentCapability["create"]> {
       if (!valid(input)) return { status: "FAILED", code: "INVALID_INPUT" };
       const value = normalized(input);
       const fingerprint = hash(JSON.stringify(value));
@@ -137,7 +137,7 @@ export function createPaymentsPaymentIntentCapability(
         return { status: "FAILED", code: "PROVIDER_UNAVAILABLE" };
       }
     },
-    async createPaymentMethod(input) {
+    async createPaymentMethod(input: Parameters<PaymentsPaymentIntentCapability["createPaymentMethod"]>[0]): ReturnType<PaymentsPaymentIntentCapability["createPaymentMethod"]> {
       if (!input?.attemptId?.trim() || !input.type?.trim()) return { status: "REJECTED", code: "INVALID_INPUT" };
       let record;
       try { record = await repository.findById(input.attemptId.trim()); }
@@ -157,7 +157,7 @@ export function createPaymentsPaymentIntentCapability(
         return { status: "FAILED", code: error instanceof PaymentsPaymentIntentProviderError ? error.code : "PROVIDER_UNAVAILABLE" };
       }
     },
-    async attachPaymentMethod(input) {
+    async attachPaymentMethod(input: Parameters<PaymentsPaymentIntentCapability["attachPaymentMethod"]>[0]): ReturnType<PaymentsPaymentIntentCapability["attachPaymentMethod"]> {
       if (!input?.attemptId?.trim() || !input.paymentMethodId?.trim() || !input.clientKey?.trim()) return { status: "REJECTED", code: "INVALID_INPUT" };
       let record;
       try { record = await repository.findById(input.attemptId.trim()); }

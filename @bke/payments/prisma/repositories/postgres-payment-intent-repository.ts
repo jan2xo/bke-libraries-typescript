@@ -21,13 +21,13 @@ export function createPostgresPaymentsPaymentIntentRepository(connectionString: 
     try { return await fn(client); } finally { await client.end(); }
   }
   return Object.freeze({
-    async findById(id) {
+    async findById(id: string) {
       return use(async (c) => { const q = await c.query<Row>('SELECT * FROM "PaymentIntentAttempt" WHERE "id"=$1', [id]); return q.rows[0] ? record(q.rows[0]) : null; });
     },
-    async findByProviderIntent(provider, paymentIntentId) {
+    async findByProviderIntent(provider: string, paymentIntentId: string) {
       return use(async (c) => { const q = await c.query<Row>('SELECT * FROM "PaymentIntentAttempt" WHERE "provider"=$1 AND "paymentIntentId"=$2', [provider, paymentIntentId]); return q.rows[0] ? record(q.rows[0]) : null; });
     },
-    async claim(input: PaymentsPaymentIntentAttemptClaim) {
+    async claim(input: PaymentsPaymentIntentAttemptClaim): Promise<{ readonly created: boolean; readonly record: PaymentsPaymentIntentAttemptRecord }> {
       return use(async (c) => {
         const inserted = await c.query<Row>(
           'INSERT INTO "PaymentIntentAttempt" ("id","sourceReference","commercialReference","provider","requestFingerprint","amountMinor","currency","paymentMethodAllowed","livemode","idempotencyKey","idempotencyExpiresAt","status") VALUES ($1,$2,$3,$4,$5,$6,$7,$8::text[],$9,$10,$11,\'CREATING\') ON CONFLICT ("sourceReference") DO NOTHING RETURNING *',
@@ -38,7 +38,7 @@ export function createPostgresPaymentsPaymentIntentRepository(connectionString: 
         return { created: false, record: record(existing.rows[0]!) };
       });
     },
-    async beginCreate(id, now, leaseMs): Promise<PaymentsPaymentIntentCreateLease> {
+    async beginCreate(id: string, now: Date, leaseMs: number): Promise<PaymentsPaymentIntentCreateLease> {
       return use(async (c) => {
         const updated = await c.query<Row>(
           'UPDATE "PaymentIntentAttempt" SET "createDispatchedAt"=COALESCE("createDispatchedAt",$2),"createLeaseUntil"=$2+($3 * INTERVAL \'1 millisecond\'),"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=$1 AND "paymentIntentId" IS NULL AND "status" IN (\'CREATING\',\'UNKNOWN\') AND ("createLeaseUntil" IS NULL OR "createLeaseUntil"<=$2) AND "idempotencyExpiresAt">$2 RETURNING *',
@@ -52,13 +52,13 @@ export function createPostgresPaymentsPaymentIntentRepository(connectionString: 
         return { status: "BUSY", record: current };
       });
     },
-    async markUnknown(id) {
+    async markUnknown(id: string): Promise<void> {
       await use(async (c) => { await c.query('UPDATE "PaymentIntentAttempt" SET "status"=\'UNKNOWN\',"createLeaseUntil"=NULL,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=$1 AND "paymentIntentId" IS NULL', [id]); });
     },
-    async markFailed(id, failureCode) {
+    async markFailed(id: string, failureCode: string): Promise<void> {
       await use(async (c) => { await c.query('UPDATE "PaymentIntentAttempt" SET "status"=\'FAILED\',"failureCode"=$2,"createLeaseUntil"=NULL,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=$1 AND "paymentIntentId" IS NULL', [id, failureCode.slice(0,100)]); });
     },
-    async bindPaymentIntent(id, paymentIntentId, status: PaymentsPaymentIntentStatus) {
+    async bindPaymentIntent(id: string, paymentIntentId: string, status: PaymentsPaymentIntentStatus): Promise<PaymentsPaymentIntentAttemptRecord> {
       const state: PaymentsPaymentIntentAttemptStatus = status === "awaiting_payment_method" ? "AWAITING_PAYMENT_METHOD" :
         status === "awaiting_next_action" ? "AWAITING_NEXT_ACTION" : status === "processing" ? "PROCESSING" :
         status === "succeeded" ? "SUCCEEDED" : "CANCELLED";

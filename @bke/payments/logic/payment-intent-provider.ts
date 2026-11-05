@@ -24,7 +24,7 @@ export interface PaymentsPaymentIntentProvider {
   attachPaymentMethod(input: { readonly paymentIntentId: string; readonly paymentMethodId: string; readonly clientKey: string }): Promise<PaymentsPaymentIntentContinuation>;
 }
 export class PaymentsPaymentIntentProviderError extends Error {
-  constructor(readonly code: "PROVIDER_UNAVAILABLE" | "PROVIDER_REJECTED", message = code) {
+  constructor(readonly code: "PROVIDER_UNAVAILABLE" | "PROVIDER_REJECTED", message: string = code) {
     super(message);
     this.name = "PaymentsPaymentIntentProviderError";
   }
