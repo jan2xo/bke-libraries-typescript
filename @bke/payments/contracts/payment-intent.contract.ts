@@ -5,6 +5,7 @@ export interface PaymentsCreatePaymentIntentInput {
   readonly commercialReference: string;
   readonly amountMinor: number;
   readonly currency: string;
+  readonly livemode: boolean;
   readonly paymentMethodAllowed: readonly string[];
 }
 export interface PaymentsPaymentIntentSnapshot {
@@ -30,7 +31,7 @@ export interface PaymentsPaymentIntentCapability {
   create(input: PaymentsCreatePaymentIntentInput): Promise<
     | { readonly status: "READY"; readonly disposition: "CREATED" | "EXISTING"; readonly value: PaymentsPaymentIntentSnapshot }
     | { readonly status: "REJECTED"; readonly code: "SOURCE_CONFLICT" }
-    | { readonly status: "FAILED"; readonly code: "INVALID_INPUT" | "PERSISTENCE_UNAVAILABLE" | "PROVIDER_UNAVAILABLE" | "PROVIDER_REJECTED" | "REQUEST_IN_PROGRESS" | "RECOVERY_REQUIRED" | "PAYMENT_INTENT_MISMATCH" }
+    | { readonly status: "FAILED"; readonly code: "INVALID_INPUT" | "MODE_MISMATCH" | "CREATION_DISABLED" | "PERSISTENCE_UNAVAILABLE" | "PROVIDER_UNAVAILABLE" | "PROVIDER_REJECTED" | "REQUEST_IN_PROGRESS" | "RECOVERY_REQUIRED" | "PAYMENT_INTENT_MISMATCH" }
   >;
   createPaymentMethod(input: { readonly attemptId: string; readonly type: string; readonly expirySeconds?: number }): Promise<
     | { readonly status: "CREATED"; readonly value: { readonly paymentMethodId: string; readonly type: string } }

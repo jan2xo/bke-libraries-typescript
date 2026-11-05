@@ -42,4 +42,5 @@ export interface PaymentsPaymentIntentAttemptRepository {
   markUnknown(id: string): Promise<void>;
   markFailed(id: string, failureCode: string): Promise<void>;
   bindPaymentIntent(id: string, paymentIntentId: string, status: PaymentsPaymentIntentStatus): Promise<PaymentsPaymentIntentAttemptRecord>;
+  updateStatus(id: string, status: PaymentsPaymentIntentStatus): Promise<PaymentsPaymentIntentAttemptRecord>;
 }

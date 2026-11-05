@@ -164,12 +164,8 @@ function normalizeEvent(event: PayMongoEvent): PaymentsVerifiedProviderEvent {
       : {}),
     ...(isRefund ? { externalRefundId: resource.id } : {}),
     ...(refundStatus ? { refundStatus } : {}),
-    ...(typeof attrs.reference_number === "string" || typeof paymentAttrs.external_reference_number === "string"
-      ? {
-          reference:
-            (attrs.reference_number as string | undefined) ??
-            (paymentAttrs.external_reference_number as string),
-        }
+    ...(typeof attrs.reference_number === "string" || typeof paymentAttrs.external_reference_number === "string" || typeof paymentAttrs.description === "string"
+      ? { reference: (attrs.reference_number as string | undefined) ?? (paymentAttrs.external_reference_number as string | undefined) ?? (paymentAttrs.description as string) }
       : {}),
     ...(typeof paymentAttrs.amount === "number" ? { amountMinor: paymentAttrs.amount } : {}),
     ...(typeof paymentAttrs.currency === "string" ? { currency: paymentAttrs.currency } : {}),

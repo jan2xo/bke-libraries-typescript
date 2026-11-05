@@ -296,4 +296,33 @@ describe("PayMongo Payments adapter", () => {
       }),
     ).rejects.toThrow("PAYMENT_REFUND_NOT_ALLOWED");
   });
+  it("verifies a direct payment.paid event and preserves both actual payment and Payment Intent IDs", async () => {
+    const secret = "whsec_payment_intent";
+    const raw = eventBody({
+      type: "payment.paid",
+      resource: {
+        id: "pay_pi_123",
+        type: "payment",
+        attributes: {
+          amount: 300000,
+          currency: "PHP",
+          payment_intent_id: "pi_bke_123",
+          description: "ORDER-2026-001",
+          status: "paid",
+        },
+      },
+    });
+    const adapter = createPayMongoPaymentsAdapter({
+      secretKey: "sk_test_payment_intent", webhookSecret: secret, livemode: false,
+      successUrl: () => "https://example.test/success", cancelUrl: () => "https://example.test/cancel",
+      now: () => NOW,
+    });
+    await expect(adapter.verifyAndParse(new TextEncoder().encode(raw), {
+      "paymongo-signature": signature(raw, secret, false),
+    })).resolves.toMatchObject({
+      type: "payment.paid", externalPaymentId: "pay_pi_123", paymentIntentId: "pi_bke_123",
+      reference: "ORDER-2026-001", amountMinor: 300000, currency: "PHP", livemode: false,
+    });
+  });
+
 });

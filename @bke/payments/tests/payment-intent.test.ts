@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createPaymentsPaymentIntentCapability } from "../logic/payment-intent";
-import type { PaymentsPaymentIntentAttemptClaim, PaymentsPaymentIntentAttemptRecord, PaymentsPaymentIntentAttemptRepository } from "../logic/payment-intent-repository";
+import type { PaymentsPaymentIntentAttemptClaim, PaymentsPaymentIntentAttemptRecord, PaymentsPaymentIntentAttemptRepository, PaymentsPaymentIntentAttemptStatus } from "../logic/payment-intent-repository";
 import type { PaymentsPaymentIntentProvider } from "../logic/payment-intent-provider";
 function repository(): PaymentsPaymentIntentAttemptRepository {
   const rows = new Map<string, PaymentsPaymentIntentAttemptRecord>(), source = new Map<string,string>(), intent = new Map<string,string>();
@@ -21,6 +21,7 @@ function repository(): PaymentsPaymentIntentAttemptRepository {
     },
     async markUnknown(id) {const r=rows.get(id)!;rows.set(id,{...r,status:"UNKNOWN",createLeaseUntil:null});},
     async markFailed(id,code) {const r=rows.get(id)!;rows.set(id,{...r,status:"FAILED",failureCode:code,createLeaseUntil:null});},
+    async updateStatus(id,status) { const r=rows.get(id)!; const state: PaymentsPaymentIntentAttemptStatus=status==="awaiting_payment_method"?"AWAITING_PAYMENT_METHOD":status==="awaiting_next_action"?"AWAITING_NEXT_ACTION":status==="processing"?"PROCESSING":status==="succeeded"?"SUCCEEDED":"CANCELLED"; const next: PaymentsPaymentIntentAttemptRecord={...r,status:state}; rows.set(id,next); return next; },
     async bindPaymentIntent(id,paymentIntentId,status) {
       const r=rows.get(id)!;if(r.paymentIntentId && r.paymentIntentId!==paymentIntentId)throw new Error("PI_CONFLICT");
       const state: PaymentsPaymentIntentAttemptStatus = status==="awaiting_payment_method"?"AWAITING_PAYMENT_METHOD":status==="awaiting_next_action"?"AWAITING_NEXT_ACTION":status==="processing"?"PROCESSING":status==="succeeded"?"SUCCEEDED":"CANCELLED";
@@ -28,7 +29,7 @@ function repository(): PaymentsPaymentIntentAttemptRepository {
     },
   };
 }
-const input={sourceReference:"source-test-1",commercialReference:"order-test-1",amountMinor:12500,currency:"PHP",paymentMethodAllowed:["qrph"]};
+const input={sourceReference:"source-test-1",commercialReference:"order-test-1",amountMinor:12500,currency:"PHP",livemode:false,paymentMethodAllowed:["qrph"]};
 function provider(overrides: Partial<PaymentsPaymentIntentProvider> = {}): PaymentsPaymentIntentProvider {
   return {
     name:"paymongo",livemode:false,

@@ -76,6 +76,7 @@ export function createPaymentsPaymentIntentCapability(
         try {
           const intent = await provider.retrievePaymentIntent(record.paymentIntentId);
           if (!matches(record, intent)) return { status: "FAILED", code: "PAYMENT_INTENT_MISMATCH" };
+          record = await repository.updateStatus(record.id, intent.status);
           const view = snapshot(record, intent);
           return view ? { status: "READY", disposition: "EXISTING", value: view } : { status: "FAILED", code: "PROVIDER_UNAVAILABLE" };
         } catch {
@@ -95,6 +96,7 @@ export function createPaymentsPaymentIntentCapability(
         try {
           const intent = await provider.retrievePaymentIntent(record.paymentIntentId);
           if (!matches(record, intent)) return { status: "FAILED", code: "PAYMENT_INTENT_MISMATCH" };
+          record = await repository.updateStatus(record.id, intent.status);
           const view = snapshot(record, intent);
           return view ? { status: "READY", disposition: "EXISTING", value: view } : { status: "FAILED", code: "PROVIDER_UNAVAILABLE" };
         } catch {
@@ -146,6 +148,14 @@ export function createPaymentsPaymentIntentCapability(
       if (!record?.paymentIntentId || record.status === "FAILED" || record.status === "CANCELLED" || !record.paymentMethodAllowed.includes(type)) {
         return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
       }
+      try {
+        const current = await provider.retrievePaymentIntent(record.paymentIntentId);
+        if (!matches(record, current)) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
+        record = await repository.updateStatus(record.id, current.status);
+        if (current.status !== "awaiting_payment_method") return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
+      } catch {
+        return { status: "FAILED", code: "PROVIDER_UNAVAILABLE" };
+      }
       if (input.expirySeconds !== undefined && (!Number.isSafeInteger(input.expirySeconds) || input.expirySeconds < 60 || input.expirySeconds > 9000)) {
         return { status: "REJECTED", code: "INVALID_INPUT" };
       }
@@ -164,8 +174,12 @@ export function createPaymentsPaymentIntentCapability(
       catch { return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" }; }
       if (!record?.paymentIntentId || record.status === "FAILED" || record.status === "CANCELLED") return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
       try {
+        const current = await provider.retrievePaymentIntent(record.paymentIntentId);
+        if (!matches(record, current) || current.status !== "awaiting_payment_method") return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
+        record = await repository.updateStatus(record.id, current.status);
         const result = await provider.attachPaymentMethod({ paymentIntentId: record.paymentIntentId, paymentMethodId: input.paymentMethodId.trim(), clientKey: input.clientKey.trim() });
         if (result.paymentIntentId !== record.paymentIntentId) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
+        await repository.updateStatus(record.id, result.status);
         return { status: "ATTACHED", value: result };
       } catch (error) {
         return { status: "FAILED", code: error instanceof PaymentsPaymentIntentProviderError ? error.code : "PROVIDER_UNAVAILABLE" };

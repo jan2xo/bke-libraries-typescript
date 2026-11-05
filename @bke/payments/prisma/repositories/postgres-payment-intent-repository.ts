@@ -69,6 +69,18 @@ export function createPostgresPaymentsPaymentIntentRepository(connectionString: 
         if (q.rowCount !== 1) throw new Error("Payment Intent identity binding conflict.");
         return record(q.rows[0]!);
       });
+    },    async updateStatus(id: string, status: PaymentsPaymentIntentStatus): Promise<PaymentsPaymentIntentAttemptRecord> {
+      const state: PaymentsPaymentIntentAttemptStatus = status === "awaiting_payment_method" ? "AWAITING_PAYMENT_METHOD" :
+        status === "awaiting_next_action" ? "AWAITING_NEXT_ACTION" : status === "processing" ? "PROCESSING" :
+        status === "succeeded" ? "SUCCEEDED" : "CANCELLED";
+      return use(async (c) => {
+        const q = await c.query<Row>(
+          'UPDATE "PaymentIntentAttempt" SET "status"=$2,"updatedAt"=CURRENT_TIMESTAMP WHERE "id"=$1 AND "paymentIntentId" IS NOT NULL RETURNING *',
+          [id,state]);
+        if (q.rowCount !== 1) throw new Error("Payment Intent attempt state update conflict.");
+        return record(q.rows[0]!);
+      });
     },
+
   });
 }

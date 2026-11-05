@@ -12,7 +12,7 @@ export interface PayMongoPaymentIntentAdapterConfiguration {
   readonly apiBaseUrl?: string;
   readonly request?: typeof fetch;
 }
-const basic = (key: string) => "Basic " + Buffer.from(key + ":").toString("base64");
+const basic = (key: string) => "Basic " + btoa(key + ":");
 function status(value: unknown): PaymentsPaymentIntentStatus {
   if (value === "awaiting_payment_method" || value === "awaiting_next_action" || value === "processing" || value === "succeeded" || value === "cancelled") return value;
   throw new PaymentsPaymentIntentProviderError("PROVIDER_REJECTED", "PAYMENT_INTENT_STATUS_INVALID");
