@@ -14,6 +14,9 @@ export interface PaymentsProviderPaymentIntent {
   readonly amountMinor: number;
   readonly currency: string;
   readonly livemode: boolean;
+  readonly qrImageUrl?: string;
+  readonly redirectUrl?: string;
+  readonly expiresAt?: Date;
 }
 export interface PaymentsPaymentIntentProvider {
   readonly name: string;

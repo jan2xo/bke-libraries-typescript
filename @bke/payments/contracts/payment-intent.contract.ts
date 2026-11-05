@@ -14,6 +14,9 @@ export interface PaymentsPaymentIntentSnapshot {
   readonly provider: string;
   readonly paymentIntentId: string;
   readonly clientKey: string;
+  readonly qrImageUrl?: string;
+  readonly redirectUrl?: string;
+  readonly expiresAt?: Date;
   readonly status: PaymentsPaymentIntentStatus;
   readonly amountMinor: number;
   readonly currency: string;
