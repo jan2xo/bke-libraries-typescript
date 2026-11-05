@@ -59,7 +59,7 @@ export function createPayMongoPaymentIntentAdapter(config: PayMongoPaymentIntent
       return parsed;
     },
     async retrievePaymentIntent(id: string) {
-      if (!/^pi_[A-Za-z0-9]+$/.test(id)) throw new PaymentsPaymentIntentProviderError("PROVIDER_REJECTED", "PAYMENT_INTENT_ID_INVALID");
+      if (!/^pi_[A-Za-z0-9_-]+$/.test(id)) throw new PaymentsPaymentIntentProviderError("PROVIDER_REJECTED", "PAYMENT_INTENT_ID_INVALID");
       const parsed = parse(await call("/payment_intents/" + encodeURIComponent(id), { method: "GET", headers: { Authorization: basic(sk) } }));
       if (parsed.paymentIntentId !== id || parsed.livemode !== config.livemode) throw new PaymentsPaymentIntentProviderError("PROVIDER_REJECTED", "PAYMENT_INTENT_RESPONSE_MISMATCH");
       return parsed;
@@ -73,7 +73,7 @@ export function createPayMongoPaymentIntentAdapter(config: PayMongoPaymentIntent
       return { paymentMethodId: id, type: input.type };
     },
     async attachPaymentMethod(input) {
-      if (!/^pi_[A-Za-z0-9]+$/.test(input.paymentIntentId) || !input.paymentMethodId.trim() || !input.clientKey.trim()) throw new PaymentsPaymentIntentProviderError("PROVIDER_REJECTED", "PAYMENT_INTENT_CONTINUATION_INVALID");
+      if (!/^pi_[A-Za-z0-9_-]+$/.test(input.paymentIntentId) || !input.paymentMethodId.trim() || !input.clientKey.trim()) throw new PaymentsPaymentIntentProviderError("PROVIDER_REJECTED", "PAYMENT_INTENT_CONTINUATION_INVALID");
       const body = await call("/payment_intents/" + encodeURIComponent(input.paymentIntentId) + "/attach", { method: "POST",
         headers: { Authorization: basic(pk), "Content-Type": "application/json" },
         body: JSON.stringify({ data: { attributes: { payment_method: input.paymentMethodId, client_key: input.clientKey } } }) });
