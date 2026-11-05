@@ -23,8 +23,8 @@ function repository(): PaymentsPaymentIntentAttemptRepository {
     async markFailed(id,code) {const r=rows.get(id)!;rows.set(id,{...r,status:"FAILED",failureCode:code,createLeaseUntil:null});},
     async bindPaymentIntent(id,paymentIntentId,status) {
       const r=rows.get(id)!;if(r.paymentIntentId && r.paymentIntentId!==paymentIntentId)throw new Error("PI_CONFLICT");
-      const state=status==="awaiting_payment_method"?"AWAITING_PAYMENT_METHOD":status==="awaiting_next_action"?"AWAITING_NEXT_ACTION":status==="processing"?"PROCESSING":status==="succeeded"?"SUCCEEDED":"CANCELLED";
-      const next={...r,paymentIntentId,status:state,createLeaseUntil:null};rows.set(id,next);intent.set(r.provider+"|"+paymentIntentId,id);return next;
+      const state: PaymentsPaymentIntentAttemptStatus = status==="awaiting_payment_method"?"AWAITING_PAYMENT_METHOD":status==="awaiting_next_action"?"AWAITING_NEXT_ACTION":status==="processing"?"PROCESSING":status==="succeeded"?"SUCCEEDED":"CANCELLED";
+      const next: PaymentsPaymentIntentAttemptRecord={...r,paymentIntentId,status:state,createLeaseUntil:null};rows.set(id,next);intent.set(r.provider+"|"+paymentIntentId,id);return next;
     },
   };
 }
