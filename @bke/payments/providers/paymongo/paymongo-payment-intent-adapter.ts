@@ -24,8 +24,21 @@ function parse(body: ResponseBody): PaymentsProviderPaymentIntent {
   if (!id.startsWith("pi_") || !Number.isSafeInteger(a.amount) || typeof a.currency !== "string" || typeof a.livemode !== "boolean") {
     throw new PaymentsPaymentIntentProviderError("PROVIDER_REJECTED", "PAYMENT_INTENT_RESPONSE_INVALID");
   }
-  return Object.freeze({ paymentIntentId: id, ...(typeof a.client_key === "string" && a.client_key ? { clientKey: a.client_key } : {}),
-    status: status(a.status), amountMinor: a.amount as number, currency: a.currency.toUpperCase(), livemode: a.livemode });
+  const next = obj(a.next_action);
+  const code = obj(next.code);
+  const redirect = obj(next.redirect);
+  const expiry = a.expires_at ?? next.expires_at;
+  return Object.freeze({
+    paymentIntentId: id,
+    ...(typeof a.client_key === "string" && a.client_key ? { clientKey: a.client_key } : {}),
+    status: status(a.status),
+    amountMinor: a.amount as number,
+    currency: a.currency.toUpperCase(),
+    livemode: a.livemode,
+    ...(typeof code.image_url === "string" ? { qrImageUrl: code.image_url } : {}),
+    ...(typeof redirect.url === "string" ? { redirectUrl: redirect.url } : {}),
+    ...(typeof expiry === "number" && Number.isFinite(expiry) ? { expiresAt: new Date(expiry * 1000) } : {}),
+  });
 }
 export function createPayMongoPaymentIntentAdapter(config: PayMongoPaymentIntentAdapterConfiguration): PaymentsPaymentIntentProvider {
   const sk = config.secretKey.trim(), pk = config.publicKey.trim();
