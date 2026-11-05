@@ -42,6 +42,9 @@ function normalizeVerifiedEvent(event: PaymentsVerifiedProviderEvent): PaymentsV
     "payment.failed",
     "payment.refunded",
     "payment.refund.updated",
+    "payment_intent.succeeded",
+    "payment_intent.awaiting_payment_method",
+    "qrph.expired",
     "unknown",
   ]);
   if (!allowedTypes.has(event.type)) return null;
@@ -57,6 +60,7 @@ function normalizeVerifiedEvent(event: PaymentsVerifiedProviderEvent): PaymentsV
     type: event.type,
     ...(normalizeText(event.externalPaymentId, 300) ? { externalPaymentId: normalizeText(event.externalPaymentId, 300) } : {}),
     ...(normalizeText(event.externalCheckoutId, 300) ? { externalCheckoutId: normalizeText(event.externalCheckoutId, 300) } : {}),
+    ...(normalizeText(event.paymentIntentId, 300) ? { paymentIntentId: normalizeText(event.paymentIntentId, 300) } : {}),
     ...(normalizeText(event.reference, 300) ? { reference: normalizeText(event.reference, 300) } : {}),
     ...(normalizeText(event.externalRefundId, 300) ? { externalRefundId: normalizeText(event.externalRefundId, 300) } : {}),
     ...(event.refundStatus ? { refundStatus: event.refundStatus } : {}),
@@ -76,6 +80,7 @@ function snapshot(record: Awaited<ReturnType<PaymentsProviderEventRepository["cl
     type: record.type,
     ...(record.externalPaymentId ? { externalPaymentId: record.externalPaymentId } : {}),
     ...(record.externalCheckoutId ? { externalCheckoutId: record.externalCheckoutId } : {}),
+    ...(record.paymentIntentId ? { paymentIntentId: record.paymentIntentId } : {}),
     ...(record.reference ? { reference: record.reference } : {}),
     ...(record.externalRefundId ? { externalRefundId: record.externalRefundId } : {}),
     ...(record.refundStatus ? { refundStatus: record.refundStatus } : {}),
@@ -125,6 +130,7 @@ export function createPaymentsProviderEventIngestionCapability(
           type: normalized.type,
           externalPaymentId: normalized.externalPaymentId ?? null,
           externalCheckoutId: normalized.externalCheckoutId ?? null,
+          paymentIntentId: normalized.paymentIntentId ?? null,
           reference: normalized.reference ?? null,
           externalRefundId: normalized.externalRefundId ?? null,
           refundStatus: normalized.refundStatus ?? null,

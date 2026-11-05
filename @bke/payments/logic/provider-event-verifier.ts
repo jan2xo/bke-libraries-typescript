@@ -9,6 +9,7 @@ export interface PaymentsVerifiedProviderEvent {
   readonly type: PaymentsProviderEventType;
   readonly externalPaymentId?: string;
   readonly externalCheckoutId?: string;
+  readonly paymentIntentId?: string;
   readonly reference?: string;
   readonly externalRefundId?: string;
   readonly refundStatus?: PaymentsRefundStatus;

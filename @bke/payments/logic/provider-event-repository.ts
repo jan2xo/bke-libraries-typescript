@@ -13,6 +13,7 @@ export interface PaymentsProviderEventRecord {
   readonly type: PaymentsProviderEventType;
   readonly externalPaymentId: string | null;
   readonly externalCheckoutId: string | null;
+  readonly paymentIntentId: string | null;
   readonly reference: string | null;
   readonly externalRefundId: string | null;
   readonly refundStatus: PaymentsRefundStatus | null;
@@ -33,6 +34,7 @@ export interface PaymentsProviderEventClaim {
   readonly type: PaymentsProviderEventType;
   readonly externalPaymentId: string | null;
   readonly externalCheckoutId: string | null;
+  readonly paymentIntentId: string | null;
   readonly reference: string | null;
   readonly externalRefundId: string | null;
   readonly refundStatus: PaymentsRefundStatus | null;

@@ -3,6 +3,7 @@ import { PAYMENTS_CHECKOUT_ATTEMPT_LOOKUP_CAPABILITY_ID } from "./contracts/chec
 import { PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID } from "./contracts/commercial-event-match.contract";
 import type { PaymentsModuleManifest } from "./contracts/module.contract";
 import { PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID } from "./contracts/provider-event-ingestion.contract";
+import { PAYMENTS_PAYMENT_INTENT_CAPABILITY_ID } from "./contracts/payment-intent.contract";
 import { PAYMENTS_RECONCILIATION_CAPABILITY_ID } from "./contracts/reconciliation.contract";
 import { PAYMENTS_REFUND_INITIATION_CAPABILITY_ID } from "./contracts/refund-initiation.contract";
 import { PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID } from "./contracts/settlement-fact.contract";
@@ -13,6 +14,7 @@ export const paymentsModuleManifest = Object.freeze({
   provides: [
     PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID,
     PAYMENTS_CHECKOUT_ATTEMPT_LOOKUP_CAPABILITY_ID,
+    PAYMENTS_PAYMENT_INTENT_CAPABILITY_ID,
     PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID,
     PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID,
     PAYMENTS_REFUND_INITIATION_CAPABILITY_ID,

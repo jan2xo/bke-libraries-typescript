@@ -76,6 +76,8 @@ jobs:
         run: npm run test --workspace=@bke/payments
       - name: Certify Payments checkout PostgreSQL behavior
         run: npx tsx @bke/payments/tests/checkout-attempt.postgres.certify.ts
+      - name: Certify Payments Payment Intent PostgreSQL concurrency
+        run: npx tsx @bke/payments/tests/payment-intent.postgres.certify.ts
       - name: Certify Payments provider-event PostgreSQL behavior
         run: npx tsx @bke/payments/tests/provider-event-ingestion.postgres.certify.ts
       - name: Certify Payments settlement PostgreSQL behavior

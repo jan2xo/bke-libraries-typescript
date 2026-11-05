@@ -22,6 +22,43 @@ enum PaymentReconciliationState {
   ACKNOWLEDGED
 }
 
+enum PaymentIntentAttemptStatus {
+  CREATING
+  UNKNOWN
+  AWAITING_PAYMENT_METHOD
+  AWAITING_NEXT_ACTION
+  PROCESSING
+  SUCCEEDED
+  CANCELLED
+  FAILED
+}
+
+model PaymentIntentAttempt {
+  id                    String                     @id
+  sourceReference       String                     @unique
+  commercialReference   String
+  provider              String
+  requestFingerprint    String
+  amountMinor           Int
+  currency              String
+  paymentMethodAllowed  String[]
+  livemode              Boolean
+  idempotencyKey        String
+  idempotencyExpiresAt  DateTime
+  createDispatchedAt    DateTime?
+  createLeaseUntil      DateTime?
+  paymentIntentId       String?
+  status                PaymentIntentAttemptStatus @default(CREATING)
+  failureCode           String?
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  @@unique([provider, paymentIntentId])
+  @@unique([provider, idempotencyKey])
+  @@index([provider, status])
+  @@index([createdAt])
+}
+
 model PaymentCheckoutAttempt {
   id                  String                        @id
   sourceReference     String                        @unique
@@ -54,6 +91,7 @@ model PaymentProviderEvent {
   type               String
   externalPaymentId  String?
   externalCheckoutId String?
+  paymentIntentId    String?
   reference          String?
   externalRefundId   String?
   refundStatus       String?
@@ -78,7 +116,8 @@ model PaymentSettlementFact {
   provider              String
   eventId               String
   externalPaymentId     String
-  externalCheckoutId    String
+  externalCheckoutId    String?
+  paymentIntentId       String?
   commercialReference   String
   amountMinor           Int
   currency              String
@@ -87,6 +126,7 @@ model PaymentSettlementFact {
   createdAt             DateTime @default(now())
 
   @@unique([provider, externalPaymentId])
+  @@unique([provider, paymentIntentId])
   @@index([checkoutAttemptId])
   @@index([commercialReference])
   @@index([settledAt])

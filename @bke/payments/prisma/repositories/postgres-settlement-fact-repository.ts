@@ -14,7 +14,8 @@ interface SettlementRow {
   provider: string;
   eventId: string;
   externalPaymentId: string;
-  externalCheckoutId: string;
+  externalCheckoutId: string | null;
+  paymentIntentId: string | null;
   commercialReference: string;
   amountMinor: number;
   currency: string;
@@ -31,7 +32,8 @@ function toSettlement(row: SettlementRow): PaymentsSettlementFactSnapshot {
     provider: row.provider,
     eventId: row.eventId,
     externalPaymentId: row.externalPaymentId,
-    externalCheckoutId: row.externalCheckoutId,
+    ...(row.externalCheckoutId ? { externalCheckoutId: row.externalCheckoutId } : {}),
+    ...(row.paymentIntentId ? { paymentIntentId: row.paymentIntentId } : {}),
     commercialReference: row.commercialReference,
     amountMinor: Number(row.amountMinor),
     currency: row.currency,
@@ -75,6 +77,7 @@ export function createPostgresPaymentsSettlementFactRepository(
           type: row.type,
           externalPaymentId: row.externalPaymentId,
           externalCheckoutId: row.externalCheckoutId,
+          paymentIntentId: row.paymentIntentId ?? null,
           reference: row.reference,
           externalRefundId: row.externalRefundId,
           refundStatus: row.refundStatus,
@@ -106,18 +109,27 @@ export function createPostgresPaymentsSettlementFactRepository(
       });
     },
 
+    async findPaymentIntentAttempt(provider: string, paymentIntentId: string) {
+      return withClient(async (client) => {
+        const result = await client.query('SELECT * FROM "PaymentIntentAttempt" WHERE "provider" = $1 AND "paymentIntentId" = $2', [provider, paymentIntentId]);
+        if (result.rowCount === 0) return null;
+        const row = result.rows[0] as any;
+        return Object.freeze({ ...row, amountMinor: Number(row.amountMinor), paymentMethodAllowed: Object.freeze([...(row.paymentMethodAllowed ?? [])]), idempotencyExpiresAt: new Date(row.idempotencyExpiresAt), createDispatchedAt: row.createDispatchedAt ? new Date(row.createDispatchedAt) : null, createLeaseUntil: row.createLeaseUntil ? new Date(row.createLeaseUntil) : null, createdAt: new Date(row.createdAt), updatedAt: new Date(row.updatedAt) });
+      });
+    },
+
     async claim(input: PaymentsSettlementFactClaim) {
       return withClient(async (client) => {
         const inserted = await client.query<SettlementRow>(
           `INSERT INTO "PaymentSettlementFact" (
              "id", "providerEventRecordId", "checkoutAttemptId", "provider", "eventId",
-             "externalPaymentId", "externalCheckoutId", "commercialReference", "amountMinor",
+             "externalPaymentId", "externalCheckoutId", "paymentIntentId", "commercialReference", "amountMinor",
              "currency", "livemode", "settledAt"
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            ON CONFLICT DO NOTHING
            RETURNING *`,
           [input.id, input.providerEventRecordId, input.checkoutAttemptId, input.provider, input.eventId,
-           input.externalPaymentId, input.externalCheckoutId, input.commercialReference, input.amountMinor,
+           input.externalPaymentId, input.externalCheckoutId, input.paymentIntentId, input.commercialReference, input.amountMinor,
            input.currency, input.livemode, input.settledAt],
         );
         if (inserted.rowCount === 1) return { created: true, record: toSettlement(inserted.rows[0]!) };

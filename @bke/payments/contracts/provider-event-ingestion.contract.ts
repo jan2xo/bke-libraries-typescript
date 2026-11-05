@@ -6,6 +6,9 @@ export type PaymentsProviderEventType =
   | "payment.failed"
   | "payment.refunded"
   | "payment.refund.updated"
+  | "payment_intent.succeeded"
+  | "payment_intent.awaiting_payment_method"
+  | "qrph.expired"
   | "unknown";
 
 export type PaymentsRefundStatus = "pending" | "succeeded" | "failed";
@@ -23,6 +26,7 @@ export interface PaymentsVerifiedProviderEventSnapshot {
   readonly type: PaymentsProviderEventType;
   readonly externalPaymentId?: string;
   readonly externalCheckoutId?: string;
+  readonly paymentIntentId?: string;
   readonly reference?: string;
   readonly externalRefundId?: string;
   readonly refundStatus?: PaymentsRefundStatus;
