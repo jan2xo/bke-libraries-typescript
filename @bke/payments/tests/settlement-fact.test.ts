@@ -94,7 +94,8 @@ describe("Payments settlement fact", () => {
           provider: "fakepay", requestFingerprint: "rf", amountMinor: 1000, currency: "PHP",
           paymentMethodAllowed: ["qrph"], livemode: false, idempotencyKey: "idem-pi-1",
           idempotencyExpiresAt: new Date("2026-09-03T00:00:00Z"), createDispatchedAt: new Date(),
-          createLeaseUntil: null, paymentIntentId: "pi_1", status: "AWAITING_PAYMENT_METHOD",
+          createLeaseUntil: null, createLeaseToken: null, statusObservedAt: new Date(),
+          paymentIntentId: "pi_1", status: "AWAITING_PAYMENT_METHOD",
           failureCode: null, createdAt: new Date(), updatedAt: new Date(),
         };
       },
