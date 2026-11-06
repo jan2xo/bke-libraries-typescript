@@ -84,7 +84,7 @@ function snapshot(
   record: PaymentsPaymentIntentAttemptRecord,
   intent: Awaited<ReturnType<PaymentsPaymentIntentProvider["retrievePaymentIntent"]>>,
 ): PaymentsPaymentIntentSnapshot | null {
-  if (!record.paymentIntentId || !intent.clientKey) return null;
+  if (!record.paymentIntentId || !intent.clientKey || record.status.toLowerCase() !== intent.status) return null;
   return Object.freeze({
     attemptId: record.id,
     sourceReference: record.sourceReference,
@@ -169,9 +169,10 @@ export function createPaymentsPaymentIntentCapability(
       // Existing provider resources remain queryable when new Payment Intent creation is disabled.
       if (record.paymentIntentId) {
         try {
+          const observedAt = now();
           const intent = await provider.retrievePaymentIntent(record.paymentIntentId);
           if (!matches(record, intent)) return { status: "FAILED", code: "PAYMENT_INTENT_MISMATCH" };
-          record = await repository.updateStatus(record.id, intent.status);
+          record = await repository.updateStatus(record.id, intent.status, observedAt);
           const view = snapshot(record, intent);
           return view
             ? { status: "READY", disposition: "EXISTING", value: view }
@@ -194,9 +195,10 @@ export function createPaymentsPaymentIntentCapability(
       if (lease.status === "EXPIRED") return { status: "FAILED", code: "RECOVERY_REQUIRED" };
       if (lease.status === "ALREADY_BOUND" && record.paymentIntentId) {
         try {
+          const observedAt = now();
           const intent = await provider.retrievePaymentIntent(record.paymentIntentId);
           if (!matches(record, intent)) return { status: "FAILED", code: "PAYMENT_INTENT_MISMATCH" };
-          record = await repository.updateStatus(record.id, intent.status);
+          record = await repository.updateStatus(record.id, intent.status, observedAt);
           const view = snapshot(record, intent);
           return view
             ? { status: "READY", disposition: "EXISTING", value: view }
@@ -206,7 +208,10 @@ export function createPaymentsPaymentIntentCapability(
         }
       }
 
+      const leaseToken = record.createLeaseToken;
+      if (!leaseToken) return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
       try {
+        const observedAt = now();
         const intent = await provider.createPaymentIntent({
           amountMinor: record.amountMinor,
           currency: record.currency,
@@ -222,10 +227,10 @@ export function createPaymentsPaymentIntentCapability(
           intent.currency.toUpperCase() !== record.currency.toUpperCase() ||
           intent.livemode !== record.livemode
         ) {
-          await repository.markUnknown(record.id);
+          if (!await repository.markUnknown(record.id, leaseToken)) return { status: "FAILED", code: "REQUEST_IN_PROGRESS" };
           return { status: "FAILED", code: "PAYMENT_INTENT_MISMATCH" };
         }
-        record = await repository.bindPaymentIntent(record.id, intent.paymentIntentId, intent.status);
+        record = await repository.bindPaymentIntent(record.id, intent.paymentIntentId, intent.status, leaseToken, observedAt);
         const view = snapshot(record, intent);
         return view
           ? { status: "READY", disposition: claim.created ? "CREATED" : "EXISTING", value: view }
@@ -233,10 +238,10 @@ export function createPaymentsPaymentIntentCapability(
       } catch (error) {
         try {
           if (error instanceof PaymentsPaymentIntentProviderError && error.code === "PROVIDER_REJECTED") {
-            await repository.markFailed(record.id, "PROVIDER_REJECTED");
+            if (!await repository.markFailed(record.id, "PROVIDER_REJECTED", leaseToken)) return { status: "FAILED", code: "REQUEST_IN_PROGRESS" };
             return { status: "FAILED", code: "PROVIDER_REJECTED" };
           }
-          await repository.markUnknown(record.id);
+          if (!await repository.markUnknown(record.id, leaseToken)) return { status: "FAILED", code: "REQUEST_IN_PROGRESS" };
         } catch {
           return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
         }
@@ -262,18 +267,19 @@ export function createPaymentsPaymentIntentCapability(
       if (
         !record?.paymentIntentId ||
         record.status === "FAILED" ||
-        record.status === "CANCELLED" ||
+        record.status === "CANCELLED" || record.status === "SUCCEEDED" ||
         !record.paymentMethodAllowed.includes(type)
       ) {
         return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
       }
       const paymentIntentId = record.paymentIntentId;
       try {
+        const observedAt = now();
         const current = await provider.retrievePaymentIntent(paymentIntentId);
         if (!matches(record, current)) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
-        record = await repository.updateStatus(record.id, current.status);
+        record = await repository.updateStatus(record.id, current.status, observedAt);
         // QR Ph expiry returns this same Payment Intent to awaiting_payment_method.
-        if (current.status !== "awaiting_payment_method") return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
+        if (record.status !== "AWAITING_PAYMENT_METHOD" || current.status !== "awaiting_payment_method") return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
         const created = await provider.createPaymentMethod({
           type,
           ...(input.expirySeconds === undefined ? {} : { expirySeconds: input.expirySeconds }),
@@ -299,28 +305,31 @@ export function createPaymentsPaymentIntentCapability(
       } catch {
         return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
       }
-      if (!record?.paymentIntentId || record.status === "FAILED" || record.status === "CANCELLED") {
+      if (!record?.paymentIntentId || record.status === "FAILED" || record.status === "CANCELLED" || record.status === "SUCCEEDED") {
         return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
       }
       const paymentIntentId = record.paymentIntentId;
       try {
+        const observedAt = now();
         const current = await provider.retrievePaymentIntent(paymentIntentId);
         if (!matches(record, current)) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
-        record = await repository.updateStatus(record.id, current.status);
+        record = await repository.updateStatus(record.id, current.status, observedAt);
         // Recover a lost attach response by returning the provider's already-created next action.
-        if (current.status === "awaiting_next_action" && (current.qrImageUrl || current.redirectUrl)) {
+        if (record.status === "AWAITING_NEXT_ACTION" && current.status === "awaiting_next_action" && (current.qrImageUrl || current.redirectUrl)) {
           return { status: "ATTACHED", value: continuation(current) };
         }
-        if (current.status !== "awaiting_payment_method") {
+        if (record.status !== "AWAITING_PAYMENT_METHOD" || current.status !== "awaiting_payment_method") {
           return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
         }
+        const attachedObservedAt = now();
         const attached = await provider.attachPaymentMethod({
           paymentIntentId,
           paymentMethodId: input.paymentMethodId.trim(),
           clientKey: input.clientKey.trim(),
         });
         if (attached.paymentIntentId !== paymentIntentId) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
-        await repository.updateStatus(record.id, attached.status);
+        record = await repository.updateStatus(record.id, attached.status, attachedObservedAt);
+        if (record.status.toLowerCase() !== attached.status) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
         return { status: "ATTACHED", value: attached };
       } catch (error) {
         return { status: "FAILED", code: providerFailure(error) };
