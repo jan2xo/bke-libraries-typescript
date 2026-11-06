@@ -117,6 +117,13 @@ export function createPaymentsPaymentIntentCapability(
 ): PaymentsPaymentIntentCapability {
   const providerName = provider.name.trim().toLowerCase();
   const now = options.now ?? (() => new Date());
+  let lastObservation = 0;
+  const observationAt = (record: PaymentsPaymentIntentAttemptRecord): Date => {
+    // Millisecond clock ties must never make sequential provider observations unordered.
+    const value = Math.max(now().getTime(), (record.statusObservedAt?.getTime() ?? -1) + 1, lastObservation + 1);
+    lastObservation = value;
+    return new Date(value);
+  };
   const leaseMilliseconds = options.leaseMilliseconds ?? CREATE_LEASE_MS;
   const creationEnabled = options.creationEnabled ?? true;
   if (!providerName || !Number.isSafeInteger(leaseMilliseconds) || leaseMilliseconds < 1000) {
@@ -169,7 +176,7 @@ export function createPaymentsPaymentIntentCapability(
       // Existing provider resources remain queryable when new Payment Intent creation is disabled.
       if (record.paymentIntentId) {
         try {
-          const observedAt = now();
+          const observedAt = observationAt(record);
           const intent = await provider.retrievePaymentIntent(record.paymentIntentId);
           if (!matches(record, intent)) return { status: "FAILED", code: "PAYMENT_INTENT_MISMATCH" };
           record = await repository.updateStatus(record.id, intent.status, observedAt);
@@ -195,7 +202,7 @@ export function createPaymentsPaymentIntentCapability(
       if (lease.status === "EXPIRED") return { status: "FAILED", code: "RECOVERY_REQUIRED" };
       if (lease.status === "ALREADY_BOUND" && record.paymentIntentId) {
         try {
-          const observedAt = now();
+          const observedAt = observationAt(record);
           const intent = await provider.retrievePaymentIntent(record.paymentIntentId);
           if (!matches(record, intent)) return { status: "FAILED", code: "PAYMENT_INTENT_MISMATCH" };
           record = await repository.updateStatus(record.id, intent.status, observedAt);
@@ -211,7 +218,7 @@ export function createPaymentsPaymentIntentCapability(
       const leaseToken = record.createLeaseToken;
       if (!leaseToken) return { status: "FAILED", code: "PERSISTENCE_UNAVAILABLE" };
       try {
-        const observedAt = now();
+        const observedAt = observationAt(record);
         const intent = await provider.createPaymentIntent({
           amountMinor: record.amountMinor,
           currency: record.currency,
@@ -274,7 +281,7 @@ export function createPaymentsPaymentIntentCapability(
       }
       const paymentIntentId = record.paymentIntentId;
       try {
-        const observedAt = now();
+        const observedAt = observationAt(record);
         const current = await provider.retrievePaymentIntent(paymentIntentId);
         if (!matches(record, current)) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
         record = await repository.updateStatus(record.id, current.status, observedAt);
@@ -310,7 +317,7 @@ export function createPaymentsPaymentIntentCapability(
       }
       const paymentIntentId = record.paymentIntentId;
       try {
-        const observedAt = now();
+        const observedAt = observationAt(record);
         const current = await provider.retrievePaymentIntent(paymentIntentId);
         if (!matches(record, current)) return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
         record = await repository.updateStatus(record.id, current.status, observedAt);
@@ -321,7 +328,7 @@ export function createPaymentsPaymentIntentCapability(
         if (record.status !== "AWAITING_PAYMENT_METHOD" || current.status !== "awaiting_payment_method") {
           return { status: "REJECTED", code: "PAYMENT_INTENT_MISMATCH" };
         }
-        const attachedObservedAt = now();
+        const attachedObservedAt = observationAt(record);
         const attached = await provider.attachPaymentMethod({
           paymentIntentId,
           paymentMethodId: input.paymentMethodId.trim(),

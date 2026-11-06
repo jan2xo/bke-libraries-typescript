@@ -3,29 +3,69 @@ import { createPaymentsPaymentIntentCapability } from "../logic/payment-intent";
 import type { PaymentsPaymentIntentAttemptClaim, PaymentsPaymentIntentAttemptRecord, PaymentsPaymentIntentAttemptRepository, PaymentsPaymentIntentAttemptStatus } from "../logic/payment-intent-repository";
 import type { PaymentsPaymentIntentProvider } from "../logic/payment-intent-provider";
 function repository(): PaymentsPaymentIntentAttemptRepository {
-  const rows = new Map<string, PaymentsPaymentIntentAttemptRecord>(), source = new Map<string,string>(), intent = new Map<string,string>();
+  const rows = new Map<string, PaymentsPaymentIntentAttemptRecord>();
+  const source = new Map<string, string>();
+  const intent = new Map<string, string>();
+  const stateOf = (status: Parameters<PaymentsPaymentIntentAttemptRepository["updateStatus"]>[1]): PaymentsPaymentIntentAttemptStatus =>
+    status === "awaiting_payment_method" ? "AWAITING_PAYMENT_METHOD" :
+    status === "awaiting_next_action" ? "AWAITING_NEXT_ACTION" :
+    status === "processing" ? "PROCESSING" : status === "succeeded" ? "SUCCEEDED" : "CANCELLED";
   return {
     async findById(id) { return rows.get(id) ?? null; },
-    async findByProviderIntent(provider,id) { const key=intent.get(provider+"|"+id); return key ? rows.get(key) ?? null : null; },
+    async findByProviderIntent(provider, id) { const key = intent.get(provider + "|" + id); return key ? rows.get(key) ?? null : null; },
     async claim(input: PaymentsPaymentIntentAttemptClaim) {
-      const old=source.get(input.sourceReference); if(old) return {created:false,record:rows.get(old)!};
-      const row: PaymentsPaymentIntentAttemptRecord={...input,paymentMethodAllowed:[...input.paymentMethodAllowed],createDispatchedAt:null,createLeaseUntil:null,paymentIntentId:null,status:"CREATING",failureCode:null,createdAt:new Date(),updatedAt:new Date()};
-      rows.set(row.id,row);source.set(row.sourceReference,row.id);return {created:true,record:row};
+      const old = source.get(input.sourceReference);
+      if (old) return { created: false, record: rows.get(old)! };
+      const row: PaymentsPaymentIntentAttemptRecord = {
+        ...input, paymentMethodAllowed: [...input.paymentMethodAllowed], createDispatchedAt: null,
+        createLeaseUntil: null, createLeaseToken: null, statusObservedAt: null, paymentIntentId: null,
+        status: "CREATING", failureCode: null, createdAt: new Date(), updatedAt: new Date(),
+      };
+      rows.set(row.id, row); source.set(row.sourceReference, row.id);
+      return { created: true, record: row };
     },
-    async beginCreate(id,now,ms) {
-      const row=rows.get(id)!;
-      if(row.paymentIntentId)return {status:"ALREADY_BOUND",record:row};
-      if(row.idempotencyExpiresAt<=now)return {status:"EXPIRED",record:row};
-      if(row.createLeaseUntil && row.createLeaseUntil>now)return {status:"BUSY",record:row};
-      const next={...row,createDispatchedAt:row.createDispatchedAt??now,createLeaseUntil:new Date(now.getTime()+ms)};rows.set(id,next);return {status:"ACQUIRED",record:next};
+    async beginCreate(id, now, ms) {
+      const row = rows.get(id)!;
+      if (row.paymentIntentId) return { status: "ALREADY_BOUND", record: row };
+      if (row.idempotencyExpiresAt <= now) return { status: "EXPIRED", record: row };
+      if (row.createLeaseUntil && row.createLeaseUntil > now) return { status: "BUSY", record: row };
+      const next = { ...row, createDispatchedAt: row.createDispatchedAt ?? now,
+        createLeaseUntil: new Date(now.getTime() + ms), createLeaseToken: crypto.randomUUID() };
+      rows.set(id, next);
+      return { status: "ACQUIRED", record: next };
     },
-    async markUnknown(id) {const r=rows.get(id)!;rows.set(id,{...r,status:"UNKNOWN",createLeaseUntil:null});},
-    async markFailed(id,code) {const r=rows.get(id)!;rows.set(id,{...r,status:"FAILED",failureCode:code,createLeaseUntil:null});},
-    async updateStatus(id,status) { const r=rows.get(id)!; const state: PaymentsPaymentIntentAttemptStatus=status==="awaiting_payment_method"?"AWAITING_PAYMENT_METHOD":status==="awaiting_next_action"?"AWAITING_NEXT_ACTION":status==="processing"?"PROCESSING":status==="succeeded"?"SUCCEEDED":"CANCELLED"; const next: PaymentsPaymentIntentAttemptRecord={...r,status:state}; rows.set(id,next); return next; },
-    async bindPaymentIntent(id,paymentIntentId,status) {
-      const r=rows.get(id)!;if(r.paymentIntentId && r.paymentIntentId!==paymentIntentId)throw new Error("PI_CONFLICT");
-      const state: PaymentsPaymentIntentAttemptStatus = status==="awaiting_payment_method"?"AWAITING_PAYMENT_METHOD":status==="awaiting_next_action"?"AWAITING_NEXT_ACTION":status==="processing"?"PROCESSING":status==="succeeded"?"SUCCEEDED":"CANCELLED";
-      const next: PaymentsPaymentIntentAttemptRecord={...r,paymentIntentId,status:state,createLeaseUntil:null};rows.set(id,next);intent.set(r.provider+"|"+paymentIntentId,id);return next;
+    async markUnknown(id, leaseToken) {
+      const row = rows.get(id)!;
+      if (row.createLeaseToken !== leaseToken || row.paymentIntentId) return false;
+      rows.set(id, { ...row, status: "UNKNOWN", createLeaseUntil: null, createLeaseToken: null });
+      return true;
+    },
+    async markFailed(id, code, leaseToken) {
+      const row = rows.get(id)!;
+      if (row.createLeaseToken !== leaseToken || row.paymentIntentId) return false;
+      rows.set(id, { ...row, status: "FAILED", failureCode: code, createLeaseUntil: null, createLeaseToken: null });
+      return true;
+    },
+    async updateStatus(id, status, observedAt) {
+      const row = rows.get(id)!;
+      if (!row.paymentIntentId) throw new Error("Intent not bound");
+      const state = stateOf(status);
+      if ((row.statusObservedAt && row.statusObservedAt >= observedAt) ||
+          ((row.status === "SUCCEEDED" || row.status === "CANCELLED") && row.status !== state)) return row;
+      const next: PaymentsPaymentIntentAttemptRecord = { ...row, status: state, statusObservedAt: observedAt };
+      rows.set(id, next);
+      return next;
+    },
+    async bindPaymentIntent(id, paymentIntentId, status, leaseToken, observedAt) {
+      const row = rows.get(id)!;
+      if (row.paymentIntentId === paymentIntentId) return row;
+      if (row.paymentIntentId || row.createLeaseToken !== leaseToken) throw new Error("PI_CONFLICT_OR_STALE_LEASE");
+      const next: PaymentsPaymentIntentAttemptRecord = {
+        ...row, paymentIntentId, status: stateOf(status), statusObservedAt: observedAt,
+        createLeaseUntil: null, createLeaseToken: null,
+      };
+      rows.set(id, next); intent.set(row.provider + "|" + paymentIntentId, id);
+      return next;
     },
   };
 }
