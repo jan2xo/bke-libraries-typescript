@@ -7,6 +7,7 @@ const sourceExtensions = new Set([".ts", ".tsx", ".js", ".mjs"]);
 const allowedRuntimeImports = new Set(["pg", "prisma/config", "vitest"]);
 const allowedModels = new Set([
   "PaymentCheckoutAttempt",
+  "PaymentIntentAttempt",
   "PaymentProviderEvent",
   "PaymentSettlementFact",
   "PaymentRefundOperation",
@@ -88,6 +89,8 @@ const requiredPaths = [
   "migrations/0004_payments_refund_operation_baseline/migration.sql",
   "migrations/0005_payments_reconciliation_baseline/migration.sql",
   "migrations/0006_payments_cancelled_checkout_attempt/migration.sql",
+  "migrations/0007_payments_payment_intent/migration.sql",
+  "migrations/0008_payments_payment_intent_fencing/migration.sql",
   "prisma/repositories",
   "contracts",
   "logic",
@@ -182,5 +185,5 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `Payments extraction boundary GREEN: ${packageSources.length} package-owned source files; five private models; six migrations; PayMongo adapter included; host module.ts and module-composition.test.ts excluded`,
+  `Payments extraction boundary GREEN: ${packageSources.length} package-owned source files; six private models; eight migrations; PayMongo adapter included; host module.ts and module-composition.test.ts excluded`,
 );

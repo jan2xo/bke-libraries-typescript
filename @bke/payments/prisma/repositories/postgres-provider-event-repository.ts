@@ -19,6 +19,7 @@ interface ProviderEventRow {
   type: PaymentsProviderEventType;
   externalPaymentId: string | null;
   externalCheckoutId: string | null;
+  paymentIntentId: string | null;
   reference: string | null;
   externalRefundId: string | null;
   refundStatus: PaymentsRefundStatus | null;
@@ -52,9 +53,9 @@ export function createPostgresPaymentsProviderEventRepository(
         const inserted = await client.query<ProviderEventRow>(
           `INSERT INTO "PaymentProviderEvent" (
              "id", "provider", "eventId", "payloadHash", "eventFingerprint", "rawType", "type",
-             "externalPaymentId", "externalCheckoutId", "reference", "externalRefundId", "refundStatus",
+             "externalPaymentId", "externalCheckoutId", "paymentIntentId", "reference", "externalRefundId", "refundStatus",
              "amountMinor", "currency", "livemode", "occurredAt"
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
            ON CONFLICT ("provider", "eventId") DO NOTHING
            RETURNING *`,
           [
@@ -67,6 +68,7 @@ export function createPostgresPaymentsProviderEventRepository(
             input.type,
             input.externalPaymentId,
             input.externalCheckoutId,
+            input.paymentIntentId,
             input.reference,
             input.externalRefundId,
             input.refundStatus,

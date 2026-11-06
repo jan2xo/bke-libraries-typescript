@@ -7,6 +7,7 @@ type SettlementOverrides = Partial<{
   type: string;
   livemode: boolean;
   checkout: string | null;
+  intent: string | null;
   reference: string | null;
   payment: string | null;
   amount: number | null;
@@ -25,6 +26,7 @@ function repo(overrides: SettlementOverrides = {}, store: FactStore = { fact: nu
     rawType: "payment.paid", type: (overrides.type ?? "payment.paid") as any,
     externalPaymentId: overrides.payment === undefined ? "pay_1" : overrides.payment,
     externalCheckoutId: overrides.checkout === undefined ? "co_1" : overrides.checkout,
+    paymentIntentId: overrides.intent === undefined ? null : overrides.intent,
     reference: overrides.reference === undefined ? "ORDER-1" : overrides.reference,
     externalRefundId: null, refundStatus: null,
     amountMinor: overrides.amount === undefined ? 1000 : overrides.amount,
@@ -79,6 +81,42 @@ describe("Payments settlement fact", () => {
       expectedLivemode: false,
     });
     expect(result.status).toBe("SETTLED");
+  });
+
+  it("settles a direct Payment Intent payment using the actual underlying payment identity", async () => {
+    const base = repo({ checkout: null, intent: "pi_1" });
+    const repository: PaymentsSettlementFactRepository = {
+      ...base,
+      async findPaymentIntentAttempt(provider, paymentIntentId) {
+        if (provider !== "fakepay" || paymentIntentId !== "pi_1") return null;
+        return {
+          id: "pi-attempt-1", sourceReference: "src-pi-1", commercialReference: "ORDER-1",
+          provider: "fakepay", requestFingerprint: "rf", amountMinor: 1000, currency: "PHP",
+          paymentMethodAllowed: ["qrph"], livemode: false, idempotencyKey: "idem-pi-1",
+          idempotencyExpiresAt: new Date("2026-09-03T00:00:00Z"), createDispatchedAt: new Date(),
+          createLeaseUntil: null, createLeaseToken: null, statusObservedAt: new Date(),
+          paymentIntentId: "pi_1", status: "AWAITING_PAYMENT_METHOD",
+          failureCode: null, createdAt: new Date(), updatedAt: new Date(),
+        };
+      },
+    };
+    const result = await createPaymentsSettlementFactCapability(repository).reconcile({
+      providerEventRecordId: "event-row", expectedLivemode: false,
+    });
+    expect(result.status).toBe("SETTLED");
+    if (result.status === "SETTLED") {
+      expect(result.value.paymentIntentId).toBe("pi_1");
+      expect(result.value.externalPaymentId).toBe("pay_1");
+      expect(result.value.externalCheckoutId).toBeNull();
+      expect(result.value.checkoutAttemptId).toBe("pi-attempt-1");
+    }
+  });
+
+  it("does not treat payment_intent.succeeded alone as settlement proof", async () => {
+    const result = await createPaymentsSettlementFactCapability(repo({
+      type: "payment_intent.succeeded", checkout: null, intent: "pi_1",
+    })).reconcile({ providerEventRecordId: "event-row", expectedLivemode: false });
+    expect(result).toEqual({ status: "REJECTED", code: "UNSUPPORTED_EVENT" });
   });
 
   it.each(["CREATING", "FAILED"] as const)("rejects non-settleable checkout attempt state %s", async (attemptStatus) => {

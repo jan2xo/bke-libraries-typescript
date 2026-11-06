@@ -1,5 +1,6 @@
 import type { PaymentsSettlementFactSnapshot } from "../contracts/settlement-fact.contract";
 import type { PaymentsCheckoutAttemptRecord } from "./checkout-attempt-repository";
+import type { PaymentsPaymentIntentAttemptRecord } from "./payment-intent-repository";
 import type { PaymentsProviderEventRecord } from "./provider-event-repository";
 
 export interface PaymentsSettlementFactClaim {
@@ -9,7 +10,8 @@ export interface PaymentsSettlementFactClaim {
   readonly provider: string;
   readonly eventId: string;
   readonly externalPaymentId: string;
-  readonly externalCheckoutId: string;
+  readonly externalCheckoutId: string | null;
+  readonly paymentIntentId: string | null;
   readonly commercialReference: string;
   readonly amountMinor: number;
   readonly currency: string;
@@ -20,6 +22,7 @@ export interface PaymentsSettlementFactClaim {
 export interface PaymentsSettlementFactRepository {
   findProviderEventById(id: string): Promise<PaymentsProviderEventRecord | null>;
   findCheckoutAttempt(provider: string, externalCheckoutId: string): Promise<PaymentsCheckoutAttemptRecord | null>;
+  findPaymentIntentAttempt?(provider: string, paymentIntentId: string): Promise<PaymentsPaymentIntentAttemptRecord | null>;
   claim(input: PaymentsSettlementFactClaim): Promise<{
     readonly created: boolean;
     readonly record: PaymentsSettlementFactSnapshot;

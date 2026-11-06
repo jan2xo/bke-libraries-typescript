@@ -115,7 +115,13 @@ function normalizeEvent(event: PayMongoEvent): PaymentsVerifiedProviderEvent {
           ? "payment.refunded"
           : rawType === "payment.refund.updated"
             ? "payment.refund.updated"
-            : "unknown";
+            : rawType === "payment_intent.succeeded"
+              ? "payment_intent.succeeded"
+              : rawType === "payment_intent.awaiting_payment_method"
+                ? "payment_intent.awaiting_payment_method"
+                : rawType === "qrph.expired"
+                  ? "qrph.expired"
+                  : "unknown";
 
   const payments = Array.isArray(attrs.payments) ? (attrs.payments as PayMongoResource[]) : [];
   const nestedPayment = payments[0];
@@ -131,10 +137,16 @@ function normalizeEvent(event: PayMongoEvent): PaymentsVerifiedProviderEvent {
           ? "pending"
           : undefined;
 
+  const paymentIntentId = resource.type === "payment_intent" ? resource.id
+    : typeof attrs.payment_intent_id === "string" ? attrs.payment_intent_id as string
+    : typeof paymentAttrs.payment_intent_id === "string" ? paymentAttrs.payment_intent_id as string
+    : undefined;
+
   return Object.freeze({
     eventId: event.data.id,
     rawType,
     type,
+    ...(paymentIntentId ? { paymentIntentId } : {}),
     ...(nestedPayment?.id || resource.type === "payment" || typeof attrs.payment_id === "string"
       ? {
           externalPaymentId:
@@ -152,12 +164,8 @@ function normalizeEvent(event: PayMongoEvent): PaymentsVerifiedProviderEvent {
       : {}),
     ...(isRefund ? { externalRefundId: resource.id } : {}),
     ...(refundStatus ? { refundStatus } : {}),
-    ...(typeof attrs.reference_number === "string" || typeof paymentAttrs.external_reference_number === "string"
-      ? {
-          reference:
-            (attrs.reference_number as string | undefined) ??
-            (paymentAttrs.external_reference_number as string),
-        }
+    ...(typeof attrs.reference_number === "string" || typeof paymentAttrs.external_reference_number === "string" || typeof paymentAttrs.description === "string"
+      ? { reference: (attrs.reference_number as string | undefined) ?? (paymentAttrs.external_reference_number as string | undefined) ?? (paymentAttrs.description as string) }
       : {}),
     ...(typeof paymentAttrs.amount === "number" ? { amountMinor: paymentAttrs.amount } : {}),
     ...(typeof paymentAttrs.currency === "string" ? { currency: paymentAttrs.currency } : {}),

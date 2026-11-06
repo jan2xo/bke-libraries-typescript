@@ -32,6 +32,7 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://bke:bke@localhost:5432/bke_payments_library
+      BKE_PAYMENTS_DISPOSABLE_DB_CERTIFICATION: payments-library-ci-postgres17-only
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -76,6 +77,8 @@ jobs:
         run: npm run test --workspace=@bke/payments
       - name: Certify Payments checkout PostgreSQL behavior
         run: npx tsx @bke/payments/tests/checkout-attempt.postgres.certify.ts
+      - name: Certify Payments Payment Intent PostgreSQL concurrency
+        run: npx tsx @bke/payments/tests/payment-intent.postgres.certify.ts
       - name: Certify Payments provider-event PostgreSQL behavior
         run: npx tsx @bke/payments/tests/provider-event-ingestion.postgres.certify.ts
       - name: Certify Payments settlement PostgreSQL behavior

@@ -13,7 +13,8 @@ export interface PaymentsSettlementFactSnapshot {
   readonly provider: string;
   readonly eventId: string;
   readonly externalPaymentId: string;
-  readonly externalCheckoutId: string;
+  readonly externalCheckoutId?: string;
+  readonly paymentIntentId?: string;
   readonly commercialReference: string;
   readonly amountMinor: number;
   readonly currency: string;
@@ -35,6 +36,7 @@ export type PaymentsReconcileSettlementResult =
         | "UNSUPPORTED_EVENT"
         | "MODE_MISMATCH"
         | "CHECKOUT_MISMATCH"
+        | "PAYMENT_INTENT_MISMATCH"
         | "REFERENCE_MISMATCH"
         | "AMOUNT_MISMATCH"
         | "CURRENCY_MISMATCH"

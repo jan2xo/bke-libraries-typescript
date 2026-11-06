@@ -55,6 +55,7 @@ jobs:
             package/package.json \
             package/module.manifest.ts \
             package/contracts/checkout-attempt.contract.ts \
+            package/contracts/payment-intent.contract.ts \
             package/contracts/checkout-attempt-lookup.contract.ts \
             package/contracts/commercial-event-match.contract.ts \
             package/contracts/provider-event-ingestion.contract.ts \
@@ -62,6 +63,7 @@ jobs:
             package/contracts/refund-initiation.contract.ts \
             package/contracts/reconciliation.contract.ts \
             package/logic/checkout-attempt.ts \
+            package/logic/payment-intent.ts \
             package/logic/checkout-attempt-lookup.ts \
             package/logic/commercial-event-match.ts \
             package/logic/provider-event-ingestion.ts \
@@ -72,8 +74,10 @@ jobs:
             package/logic/reconciliation-repository.ts \
             package/logic/payment-errors.ts \
             package/providers/paymongo/paymongo-adapter.ts \
+            package/providers/paymongo/paymongo-payment-intent-adapter.ts \
             package/prisma/schema.prisma \
             package/prisma/repositories/postgres-checkout-attempt-repository.ts \
+            package/prisma/repositories/postgres-payment-intent-repository.ts \
             package/prisma/repositories/postgres-provider-event-repository.ts \
             package/prisma/repositories/postgres-settlement-fact-repository.ts \
             package/prisma/repositories/postgres-refund-repository.ts \
@@ -83,7 +87,9 @@ jobs:
             package/migrations/0003_payments_settlement_fact_baseline/migration.sql \
             package/migrations/0004_payments_refund_operation_baseline/migration.sql \
             package/migrations/0005_payments_reconciliation_baseline/migration.sql \
-            package/migrations/0006_payments_cancelled_checkout_attempt/migration.sql; do
+            package/migrations/0006_payments_cancelled_checkout_attempt/migration.sql \
+            package/migrations/0007_payments_payment_intent/migration.sql \
+            package/migrations/0008_payments_payment_intent_fencing/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
@@ -126,6 +132,7 @@ jobs:
           JSON
           cat > .package-smoke/smoke.ts <<'TS'
           import { PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID } from "@bke/payments/contracts/checkout-attempt.contract";
+          import { PAYMENTS_PAYMENT_INTENT_CAPABILITY_ID } from "@bke/payments/contracts/payment-intent.contract";
           import { PAYMENTS_CHECKOUT_ATTEMPT_LOOKUP_CAPABILITY_ID } from "@bke/payments/contracts/checkout-attempt-lookup.contract";
           import { PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID } from "@bke/payments/contracts/commercial-event-match.contract";
           import { PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID } from "@bke/payments/contracts/provider-event-ingestion.contract";
@@ -133,6 +140,7 @@ jobs:
           import { PAYMENTS_REFUND_INITIATION_CAPABILITY_ID } from "@bke/payments/contracts/refund-initiation.contract";
           import { PAYMENTS_RECONCILIATION_CAPABILITY_ID, type PaymentsReconciliationCapability } from "@bke/payments/contracts/reconciliation.contract";
           import { createPaymentsCheckoutAttemptCapability } from "@bke/payments/logic/checkout-attempt";
+          import { createPaymentsPaymentIntentCapability } from "@bke/payments/logic/payment-intent";
           import { createPaymentsCheckoutAttemptLookupCapability } from "@bke/payments/logic/checkout-attempt-lookup";
           import { createPaymentsCommercialEventMatchCapability } from "@bke/payments/logic/commercial-event-match";
           import { createPaymentsProviderEventIngestionCapability } from "@bke/payments/logic/provider-event-ingestion";
@@ -141,11 +149,13 @@ jobs:
           import { createPaymentsReconciliationCapability } from "@bke/payments/logic/reconciliation";
           import { PaymentLifecycleError, paymentErrorCodes, safePaymentError } from "@bke/payments/logic/payment-errors";
           import { createPayMongoPaymentsAdapter } from "@bke/payments/providers/paymongo/paymongo-adapter";
+          import { createPayMongoPaymentIntentAdapter } from "@bke/payments/providers/paymongo/paymongo-payment-intent-adapter";
           import { createPostgresPaymentsCheckoutAttemptRepository } from "@bke/payments/prisma/repositories/postgres-checkout-attempt-repository";
+          import { createPostgresPaymentsPaymentIntentRepository } from "@bke/payments/prisma/repositories/postgres-payment-intent-repository";
           import { createPostgresPaymentsReconciliationRepository } from "@bke/payments/prisma/repositories/postgres-reconciliation-repository";
           import { paymentsModuleManifest } from "@bke/payments/module.manifest";
-          const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_CHECKOUT_ATTEMPT_LOOKUP_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID, PAYMENTS_RECONCILIATION_CAPABILITY_ID, PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID];
-          if (ids.length !== 7 || paymentsModuleManifest.moduleId !== "payments" || !paymentsModuleManifest.provides.includes(PAYMENTS_CHECKOUT_ATTEMPT_LOOKUP_CAPABILITY_ID) || !paymentsModuleManifest.provides.includes(PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID)) throw new Error("Unexpected Payments package identity.");
+          const ids = [PAYMENTS_CHECKOUT_ATTEMPT_CAPABILITY_ID, PAYMENTS_PAYMENT_INTENT_CAPABILITY_ID, PAYMENTS_CHECKOUT_ATTEMPT_LOOKUP_CAPABILITY_ID, PAYMENTS_PROVIDER_EVENT_INGESTION_CAPABILITY_ID, PAYMENTS_SETTLEMENT_FACT_CAPABILITY_ID, PAYMENTS_REFUND_INITIATION_CAPABILITY_ID, PAYMENTS_RECONCILIATION_CAPABILITY_ID, PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID];
+          if (ids.length !== 8 || paymentsModuleManifest.moduleId !== "payments" || !paymentsModuleManifest.provides.includes(PAYMENTS_CHECKOUT_ATTEMPT_LOOKUP_CAPABILITY_ID) || !paymentsModuleManifest.provides.includes(PAYMENTS_COMMERCIAL_EVENT_MATCH_CAPABILITY_ID)) throw new Error("Unexpected Payments package identity.");
           const commercial = createPaymentsCommercialEventMatchCapability();
           if (commercial.validateMode({ eventLivemode: true, expectedLivemode: false }).status !== "REJECTED") throw new Error("Packed Payments mode policy drifted.");
           const read: PaymentsReconciliationCapability["listRecent"] | undefined = undefined;
@@ -154,7 +164,7 @@ jobs:
           const lifecycleError = new PaymentLifecycleError("PAYMENT_PROCESSING_RETRYABLE", true);
           if (safePaymentError(lifecycleError) !== "PAYMENT_PROCESSING_RETRYABLE" || !lifecycleError.retryable) throw new Error("Packed Payments lifecycle error behavior drifted.");
           if (safePaymentError(new Error("opaque")) !== "PAYMENT_PROCESSING_FAILED") throw new Error("Packed Payments safe error fallback drifted.");
-          for (const value of [createPaymentsCheckoutAttemptCapability, createPaymentsCheckoutAttemptLookupCapability, createPaymentsCommercialEventMatchCapability, createPaymentsProviderEventIngestionCapability, createPaymentsSettlementFactCapability, createPaymentsRefundInitiationCapability, createPaymentsReconciliationCapability, createPayMongoPaymentsAdapter, createPostgresPaymentsCheckoutAttemptRepository, createPostgresPaymentsReconciliationRepository]) {
+          for (const value of [createPaymentsCheckoutAttemptCapability, createPaymentsPaymentIntentCapability, createPaymentsCheckoutAttemptLookupCapability, createPaymentsCommercialEventMatchCapability, createPaymentsProviderEventIngestionCapability, createPaymentsSettlementFactCapability, createPaymentsRefundInitiationCapability, createPaymentsReconciliationCapability, createPayMongoPaymentsAdapter, createPayMongoPaymentIntentAdapter, createPostgresPaymentsPaymentIntentRepository, createPostgresPaymentsCheckoutAttemptRepository, createPostgresPaymentsReconciliationRepository]) {
             if (typeof value !== "function") throw new Error("Packed Payments consumer exports are incomplete.");
           }
           console.log("Packed @bke/payments consumer smoke GREEN");
