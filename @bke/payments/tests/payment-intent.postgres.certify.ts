@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { createPostgresPaymentsPaymentIntentRepository } from "../prisma/repositories/postgres-payment-intent-repository";
-const url=process.env.DATABASE_URL?.trim();if(!url)throw new Error("DATABASE_URL is required");
+import { assertDisposablePaymentsPostgres } from "./payment-intent.postgres.guard";
+const url=assertDisposablePaymentsPostgres(process.env.DATABASE_URL, {
+  authorization: process.env.BKE_PAYMENTS_DISPOSABLE_DB_CERTIFICATION,
+  githubActions: process.env.GITHUB_ACTIONS,
+});
 const repo=createPostgresPaymentsPaymentIntentRepository(url), suffix=randomUUID(), now=new Date(), id=randomUUID();
 const claim={id,sourceReference:"pi-cert-"+suffix,commercialReference:"order-"+suffix,provider:"paymongo",requestFingerprint:"a".repeat(64),amountMinor:5000,currency:"PHP",paymentMethodAllowed:["qrph"],livemode:false,idempotencyKey:"bke_pi_"+ "b".repeat(64),idempotencyExpiresAt:new Date(now.getTime()+86400000)};
 const db=new Client({connectionString:url});await db.connect();
