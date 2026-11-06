@@ -47,6 +47,8 @@ model PaymentIntentAttempt {
   idempotencyExpiresAt  DateTime
   createDispatchedAt    DateTime?
   createLeaseUntil      DateTime?
+  createLeaseToken      String?
+  statusObservedAt      DateTime?
   paymentIntentId       String?
   status                PaymentIntentAttemptStatus @default(CREATING)
   failureCode           String?

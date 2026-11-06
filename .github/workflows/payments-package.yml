@@ -88,7 +88,8 @@ jobs:
             package/migrations/0004_payments_refund_operation_baseline/migration.sql \
             package/migrations/0005_payments_reconciliation_baseline/migration.sql \
             package/migrations/0006_payments_cancelled_checkout_attempt/migration.sql \
-            package/migrations/0007_payments_payment_intent/migration.sql; do
+            package/migrations/0007_payments_payment_intent/migration.sql \
+            package/migrations/0008_payments_payment_intent_fencing/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then

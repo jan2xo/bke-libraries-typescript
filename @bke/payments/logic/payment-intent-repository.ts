@@ -14,6 +14,8 @@ export interface PaymentsPaymentIntentAttemptRecord {
   readonly idempotencyExpiresAt: Date;
   readonly createDispatchedAt: Date | null;
   readonly createLeaseUntil: Date | null;
+  readonly createLeaseToken: string | null;
+  readonly statusObservedAt: Date | null;
   readonly paymentIntentId: string | null;
   readonly status: PaymentsPaymentIntentAttemptStatus;
   readonly failureCode: string | null;
@@ -39,8 +41,8 @@ export interface PaymentsPaymentIntentAttemptRepository {
   findByProviderIntent(provider: string, paymentIntentId: string): Promise<PaymentsPaymentIntentAttemptRecord | null>;
   claim(input: PaymentsPaymentIntentAttemptClaim): Promise<{ readonly created: boolean; readonly record: PaymentsPaymentIntentAttemptRecord }>;
   beginCreate(id: string, now: Date, leaseMilliseconds: number): Promise<PaymentsPaymentIntentCreateLease>;
-  markUnknown(id: string): Promise<void>;
-  markFailed(id: string, failureCode: string): Promise<void>;
-  bindPaymentIntent(id: string, paymentIntentId: string, status: PaymentsPaymentIntentStatus): Promise<PaymentsPaymentIntentAttemptRecord>;
-  updateStatus(id: string, status: PaymentsPaymentIntentStatus): Promise<PaymentsPaymentIntentAttemptRecord>;
+  markUnknown(id: string, leaseToken: string): Promise<boolean>;
+  markFailed(id: string, failureCode: string, leaseToken: string): Promise<boolean>;
+  bindPaymentIntent(id: string, paymentIntentId: string, status: PaymentsPaymentIntentStatus, leaseToken: string, observedAt: Date): Promise<PaymentsPaymentIntentAttemptRecord>;
+  updateStatus(id: string, status: PaymentsPaymentIntentStatus, observedAt: Date): Promise<PaymentsPaymentIntentAttemptRecord>;
 }
