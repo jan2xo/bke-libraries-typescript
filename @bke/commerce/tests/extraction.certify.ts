@@ -49,7 +49,8 @@ const expectedModels = ["DiscountOffer", "Invoice", "InvoiceLine", "OfferRedempt
 if (JSON.stringify(models) !== JSON.stringify(expectedModels)) throw new Error(`Commerce schema contains foreign/unexpected models: ${JSON.stringify(models)}`);
 
 const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as { name?: string; version?: string; dependencies?: Record<string, string> };
-if (packageJson.name !== "@bke/commerce" || packageJson.version !== "0.15.0") throw new Error("Unexpected Commerce package identity.");
+if (packageJson.name !== "@bke/commerce" || packageJson.version !== "0.16.0") throw new Error("Unexpected Commerce package identity.");
+if (!manifest.includes("COMMERCE_PAYMENT_INTENT_CHECKOUT_CAPABILITY_ID")) throw new Error("Commerce manifest is missing Payment Intent checkout.");
 for (const dependency of Object.keys(packageJson.dependencies ?? {})) {
   if (dependency.startsWith("@bke/")) throw new Error(`Commerce package must not depend directly on sibling BKE library: ${dependency}`);
 }

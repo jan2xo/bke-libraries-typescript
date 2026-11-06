@@ -1,6 +1,7 @@
 import type { CommerceModuleManifest } from "./contracts/module.contract";
 import { COMMERCE_CHECKOUT_OFFER_PRICING_CAPABILITY_ID } from "./contracts/checkout-offer-pricing.contract";
 import { COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID } from "./contracts/checkout-orchestration.contract";
+import { COMMERCE_PAYMENT_INTENT_CHECKOUT_CAPABILITY_ID } from "./contracts/payment-intent-checkout.contract";
 import { COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID } from "./contracts/edition-plan-management.contract";
 import { COMMERCE_OFFER_REDEMPTION_CAPABILITY_ID } from "./contracts/offer-redemption.contract";
 import { COMMERCE_ORDER_INVOICE_CREATION_CAPABILITY_ID } from "./contracts/order-invoice-creation.contract";
@@ -27,6 +28,7 @@ export const commerceModuleManifest = Object.freeze({
     COMMERCE_ORDER_SOURCE_LOOKUP_CAPABILITY_ID,
     COMMERCE_CHECKOUT_OFFER_PRICING_CAPABILITY_ID,
     COMMERCE_CHECKOUT_ORCHESTRATION_CAPABILITY_ID,
+    COMMERCE_PAYMENT_INTENT_CHECKOUT_CAPABILITY_ID,
     COMMERCE_SETTLEMENT_REACTION_CAPABILITY_ID,
     COMMERCE_SETTLEMENT_FULFILLMENT_CAPABILITY_ID,
     COMMERCE_ZERO_PAYMENT_FULFILLMENT_CAPABILITY_ID,
