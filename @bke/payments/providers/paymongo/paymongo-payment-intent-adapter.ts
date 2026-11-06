@@ -1,7 +1,7 @@
 import type { PaymentsPaymentIntentStatus, PaymentsPaymentIntentContinuation } from "../../contracts/payment-intent.contract";
 import type { PaymentsPaymentIntentProvider, PaymentsProviderCreatePaymentIntentInput, PaymentsProviderPaymentIntent } from "../../logic/payment-intent-provider";
 import { PaymentsPaymentIntentProviderError } from "../../logic/payment-intent-provider";
-const BASE = "https://orders-api.paymongo.com/v1";
+const BASE = "https://api.paymongo.com/v1";
 type Obj = Record<string, unknown>;
 type ResponseBody = { data?: { id?: string; attributes?: Obj } };
 export interface PayMongoPaymentIntentAdapterConfiguration {
