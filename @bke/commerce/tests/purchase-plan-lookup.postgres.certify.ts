@@ -59,6 +59,7 @@ try {
     currency: "PHP",
     amountMinor: null,
     annualDiscountBps: 1000,
+    semiAnnualDiscountBps: null,
     renewalBehavior: "CUSTOMER_AUTHORIZED",
     active: true,
     monthlySource: {
@@ -66,6 +67,7 @@ try {
       active: true,
       type: "MONTHLY",
       editionId: "opaque-edition",
+      currency: "PHP",
     },
     legacyPriceId: "legacy-annual",
     legacyPrice: {
@@ -83,6 +85,20 @@ try {
   };
   if (JSON.stringify(result.plan) !== JSON.stringify(expected)) {
     throw new Error(`Unexpected PurchasePlan snapshot: ${JSON.stringify(result.plan)}`);
+  }
+
+  await client.query(
+    `INSERT INTO "PurchasePlan"
+       ("id", "editionId", "type", "currency", "amountMinor", "annualDiscountBps",
+        "semiAnnualDiscountBps", "renewalBehavior", "active", "monthlySourcePlanId")
+     VALUES
+       ('semi-plan', 'opaque-edition', 'SEMI_ANNUAL', 'PHP', NULL, NULL,
+        0, 'CUSTOMER_AUTHORIZED', TRUE, 'monthly-plan')`,
+  );
+  const semi = await capability.find({ planId: "semi-plan" });
+  if (semi.status !== "FOUND" || semi.plan.type !== "SEMI_ANNUAL" ||
+      semi.plan.semiAnnualDiscountBps !== 0 || semi.plan.monthlySource?.currency !== "PHP") {
+    throw new Error("Six-month purchase plan lookup drift: " + JSON.stringify(semi));
   }
 
   const missing = await capability.find({ planId: "missing-plan" });

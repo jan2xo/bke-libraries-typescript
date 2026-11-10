@@ -12,7 +12,7 @@ import type {
   CommerceCheckoutOfferPricingRequest,
 } from "../../logic/checkout-offer-pricing-repository";
 
-type PlanType = "PERPETUAL" | "MONTHLY" | "ANNUAL";
+type PlanType = "PERPETUAL" | "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL";
 type OfferStatus = "DRAFT" | "ACTIVE" | "DISABLED" | "REVOKED" | "EXPIRED";
 type RedemptionStatus = "RESERVED" | "APPLIED" | "RELEASED" | "REFUNDED";
 

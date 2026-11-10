@@ -3,7 +3,7 @@ export type CommerceOfferConfigurationType =
   | "CUSTOMER_ACCOUNT_OFFER"
   | "ADMINISTRATIVE_ADJUSTMENT";
 
-export type CommerceOfferConfigurationPlanType = "PERPETUAL" | "MONTHLY" | "ANNUAL";
+export type CommerceOfferConfigurationPlanType = "PERPETUAL" | "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL";
 
 export type CommerceOfferConfigurationFailureCode =
   | "INVALID_OFFER_DISCOUNT"

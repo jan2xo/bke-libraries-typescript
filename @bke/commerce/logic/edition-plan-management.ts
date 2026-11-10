@@ -9,6 +9,7 @@ import type {
 const MIN_AMOUNT_MINOR = 100;
 const MAX_AMOUNT_MINOR = 2_000_000_000;
 const MAX_ANNUAL_DISCOUNT_BPS = 1_000;
+const MAX_SEMI_ANNUAL_DISCOUNT_BPS = 1_000;
 
 export class CommerceEditionPlanValidationError extends Error {
   readonly code = "INVALID_EDITION_PLAN" as const;
@@ -65,6 +66,11 @@ export function validateCommerceEditionPlanSelection(input: CommerceEditionPlanS
 
   if (input.perpetual.enabled && input.perpetual.amountMinor === undefined) fail("PERPETUAL_PRICE_REQUIRED");
   if (input.monthly.enabled && input.monthly.amountMinor === undefined) fail("MONTHLY_PRICE_REQUIRED");
+  if (input.semiAnnual?.enabled && !input.monthly.enabled) fail("SEMI_ANNUAL_REQUIRES_MONTHLY");
+  if (input.semiAnnual?.enabled && input.semiAnnual.discountBps === undefined) fail("SEMI_ANNUAL_DISCOUNT_REQUIRED");
+  if (input.semiAnnual?.discountBps !== undefined) {
+    assertIntegerInRange(input.semiAnnual.discountBps, 0, MAX_SEMI_ANNUAL_DISCOUNT_BPS, "SEMI_ANNUAL_DISCOUNT");
+  }
   if (input.annual.enabled && !input.monthly.enabled) fail("ANNUAL_REQUIRES_MONTHLY");
   if (input.annual.enabled && input.annual.discountBps === undefined) fail("ANNUAL_DISCOUNT_REQUIRED");
   if (input.annual.discountBps !== undefined) {
@@ -128,6 +134,20 @@ export async function synchronizeCommerceEditionPlans(
     active: input.monthly.enabled,
   });
 
+  // Older administration clients omit semiAnnual; do not disable an existing
+  // six-month offer when they update the canonical monthly price.
+  const semiAnnual = input.semiAnnual === undefined ? undefined : await repository.upsertPurchasePlan({
+    editionId,
+    type: "SEMI_ANNUAL",
+    createAmountMinor: null,
+    updateAmountMinor: null,
+    annualDiscountBps: null,
+    semiAnnualDiscountBps: input.semiAnnual.discountBps ?? null,
+    monthlySourcePlanId: monthly.id,
+    renewalBehavior: "CUSTOMER_AUTHORIZED",
+    active: input.semiAnnual.enabled,
+  });
+
   const annual = await repository.upsertPurchasePlan({
     editionId,
     type: "ANNUAL",
@@ -139,7 +159,7 @@ export async function synchronizeCommerceEditionPlans(
     active: input.annual.enabled,
   });
 
-  return { perpetual, monthly, annual } as const;
+  return { perpetual, monthly, ...(semiAnnual ? { semiAnnual } : {}), annual } as const;
 }
 
 export async function createCommerceEdition(

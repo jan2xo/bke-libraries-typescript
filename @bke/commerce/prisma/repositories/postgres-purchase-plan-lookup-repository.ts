@@ -8,18 +8,20 @@ import type { CommercePurchasePlanLookupRepository } from "../../logic/purchase-
 interface PurchasePlanRow {
   id: string;
   editionId: string;
-  type: "PERPETUAL" | "MONTHLY" | "ANNUAL";
+  type: "PERPETUAL" | "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL";
   currency: string;
   amountMinor: number | null;
   annualDiscountBps: number | null;
+  semiAnnualDiscountBps: number | null;
   renewalBehavior: "NONE" | "CUSTOMER_AUTHORIZED";
   active: boolean;
   legacyPriceId: string | null;
   monthlySourceId: string | null;
   monthlySourceAmountMinor: number | null;
   monthlySourceActive: boolean | null;
-  monthlySourceType: "PERPETUAL" | "MONTHLY" | "ANNUAL" | null;
+  monthlySourceType: "PERPETUAL" | "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL" | null;
   monthlySourceEditionId: string | null;
+  monthlySourceCurrency: string | null;
   legacyProductId: string | null;
   legacyLicensePolicyId: string | null;
   legacyName: string | null;
@@ -67,6 +69,7 @@ function mapPlan(row: PurchasePlanRow): CommercePurchasePlanLookupSnapshot {
     currency: row.currency,
     amountMinor: row.amountMinor,
     annualDiscountBps: row.annualDiscountBps,
+    semiAnnualDiscountBps: row.semiAnnualDiscountBps,
     renewalBehavior: row.renewalBehavior,
     active: row.active,
     monthlySource:
@@ -80,6 +83,7 @@ function mapPlan(row: PurchasePlanRow): CommercePurchasePlanLookupSnapshot {
             active: row.monthlySourceActive,
             type: row.monthlySourceType,
             editionId: row.monthlySourceEditionId,
+            currency: row.monthlySourceCurrency ?? undefined,
           },
     legacyPriceId: row.legacyPriceId,
     legacyPrice: mapLegacyPrice(row),
@@ -101,12 +105,13 @@ export function createPostgresCommercePurchasePlanLookupRepository(
       try {
         const result = await client.query<PurchasePlanRow>(
           `SELECT p."id", p."editionId", p."type", p."currency", p."amountMinor",
-                  p."annualDiscountBps", p."renewalBehavior", p."active", p."legacyPriceId",
+                  p."annualDiscountBps", p."semiAnnualDiscountBps", p."renewalBehavior", p."active", p."legacyPriceId",
                   ms."id" AS "monthlySourceId",
                   ms."amountMinor" AS "monthlySourceAmountMinor",
                   ms."active" AS "monthlySourceActive",
                   ms."type" AS "monthlySourceType",
                   ms."editionId" AS "monthlySourceEditionId",
+                  ms."currency" AS "monthlySourceCurrency",
                   lp."productId" AS "legacyProductId",
                   lp."licensePolicyId" AS "legacyLicensePolicyId",
                   lp."name" AS "legacyName",

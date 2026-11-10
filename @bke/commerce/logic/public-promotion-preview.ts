@@ -16,7 +16,7 @@ function validInput(input: CommercePublicPromotionPreviewInput): boolean {
     validId(input.productId) &&
     validId(input.editionId) &&
     validId(input.purchasePlanId) &&
-    ["PERPETUAL", "MONTHLY", "ANNUAL"].includes(input.planType) &&
+    ["PERPETUAL", "MONTHLY", "SEMI_ANNUAL", "ANNUAL"].includes(input.planType) &&
     Number.isSafeInteger(input.baseMinor) &&
     input.baseMinor >= 1
   );
