@@ -5,6 +5,7 @@ datasource db {
 enum CommercePurchasePlanType {
   PERPETUAL
   MONTHLY
+  SEMI_ANNUAL
   ANNUAL
 }
 
@@ -94,6 +95,7 @@ model PurchasePlan {
   currency            String                   @default("PHP")
   amountMinor         Int?
   annualDiscountBps   Int?
+  semiAnnualDiscountBps Int?
   renewalBehavior     CommerceRenewalBehavior  @default(NONE)
   active              Boolean                  @default(true)
   monthlySourcePlanId String?
