@@ -88,12 +88,12 @@ try {
   }
 
   await client.query(
-    \`INSERT INTO "PurchasePlan"
+    `INSERT INTO "PurchasePlan"
        ("id", "editionId", "type", "currency", "amountMinor", "annualDiscountBps",
         "semiAnnualDiscountBps", "renewalBehavior", "active", "monthlySourcePlanId")
      VALUES
        ('semi-plan', 'opaque-edition', 'SEMI_ANNUAL', 'PHP', NULL, NULL,
-        0, 'CUSTOMER_AUTHORIZED', TRUE, 'monthly-plan')\`,
+        0, 'CUSTOMER_AUTHORIZED', TRUE, 'monthly-plan')`,
   );
   const semi = await capability.find({ planId: "semi-plan" });
   if (semi.status !== "FOUND" || semi.plan.type !== "SEMI_ANNUAL" ||
