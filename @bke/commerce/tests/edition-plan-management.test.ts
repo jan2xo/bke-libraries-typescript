@@ -213,4 +213,48 @@ describe("edition plan management", () => {
       "plan:ANNUAL",
     ]);
   });
+
+  it("requires explicit six-month discount and enabled monthly source, including valid zero", () => {
+    const plans = validInput.plans;
+    expect(() => validateCommerceEditionPlanSelection({ ...plans,
+      monthly: { enabled: false }, semiAnnual: { enabled: true, discountBps: 0 },
+    })).toThrow("INVALID_EDITION_PLAN:SEMI_ANNUAL_REQUIRES_MONTHLY");
+    expect(() => validateCommerceEditionPlanSelection({ ...plans,
+      semiAnnual: { enabled: true },
+    })).toThrow("INVALID_EDITION_PLAN:SEMI_ANNUAL_DISCOUNT_REQUIRED");
+    expect(() => validateCommerceEditionPlanSelection({ ...plans,
+      semiAnnual: { enabled: true, discountBps: 1_001 },
+    })).toThrow("INVALID_EDITION_PLAN:SEMI_ANNUAL_DISCOUNT");
+    expect(() => validateCommerceEditionPlanSelection({ ...plans,
+      semiAnnual: { enabled: true, discountBps: 0 },
+    })).not.toThrow();
+  });
+
+  it("creates and disables six-month plan using monthly ID without changing annual policy", async () => {
+    const upsertPurchasePlan = vi.fn<CommerceEditionPlanRepository["upsertPurchasePlan"]>(
+      async (input) => ({ id: input.type.toLowerCase() }),
+    );
+    const repository: CommerceEditionPlanRepository = { createEdition: vi.fn(), upsertPurchasePlan };
+    await synchronizeCommerceEditionPlans(repository, "edition-1", {
+      ...validInput.plans, semiAnnual: { enabled: true, discountBps: 0 },
+    });
+    const semi = upsertPurchasePlan.mock.calls.map(call => call[0]).find(input => input.type === "SEMI_ANNUAL");
+    expect(semi).toMatchObject({
+      editionId: "edition-1", createAmountMinor: null, updateAmountMinor: null,
+      annualDiscountBps: null, semiAnnualDiscountBps: 0,
+      monthlySourcePlanId: "monthly", renewalBehavior: "CUSTOMER_AUTHORIZED", active: true,
+    });
+    expect(upsertPurchasePlan).toHaveBeenCalledTimes(4);
+    upsertPurchasePlan.mockClear();
+    await synchronizeCommerceEditionPlans(repository, "edition-1", {
+      ...validInput.plans, semiAnnual: { enabled: false, discountBps: 0 },
+    });
+    expect(upsertPurchasePlan.mock.calls.map(call => call[0]).find(input => input.type === "SEMI_ANNUAL"))
+      .toMatchObject({ active: false, semiAnnualDiscountBps: 0 });
+    upsertPurchasePlan.mockClear();
+    await synchronizeCommerceEditionPlans(repository, "edition-1", validInput.plans);
+    expect(upsertPurchasePlan).toHaveBeenCalledTimes(3);
+  });
+
+
 });
