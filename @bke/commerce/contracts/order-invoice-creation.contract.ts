@@ -15,7 +15,7 @@ export interface CommerceOrderInvoiceLineInput {
   readonly editionId?: string | null;
   readonly purchasePlanId?: string | null;
   readonly planName?: string | null;
-  readonly planType?: "PERPETUAL" | "MONTHLY" | "ANNUAL" | null;
+  readonly planType?: "PERPETUAL" | "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL" | null;
   readonly intervalUnit?: "MONTH" | "YEAR" | null;
   readonly intervalCount?: number | null;
   readonly renewalBehavior?: "NONE" | "CUSTOMER_AUTHORIZED" | null;
