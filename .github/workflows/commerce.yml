@@ -1,13 +1,7 @@
 name: BKE Library - Commerce
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/commerce/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/commerce.yml"
+  # Heavy Commerce proof runs only against the explicit certification intent.
   workflow_dispatch:
 
 permissions:
