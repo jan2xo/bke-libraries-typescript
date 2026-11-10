@@ -9,6 +9,8 @@ import {
 
 export const ANNUAL_DISCOUNT_MIN_BPS = 0;
 export const ANNUAL_DISCOUNT_MAX_BPS = 1_000;
+export const SEMI_ANNUAL_DISCOUNT_MIN_BPS = 0;
+export const SEMI_ANNUAL_DISCOUNT_MAX_BPS = 1_000;
 
 function failure(code: CommercePurchasePlanPricingFailureCode): CommercePurchasePlanPricingResult {
   return { status: "FAILED", code };
@@ -33,7 +35,8 @@ function resolveAnnual(
     !monthlySource?.active ||
     monthlySource.amountMinor === null ||
     monthlySource.type !== "MONTHLY" ||
-    (plan.editionId && monthlySource.editionId !== plan.editionId)
+    (plan.editionId && monthlySource.editionId !== plan.editionId) ||
+    (monthlySource.currency !== undefined && monthlySource.currency !== plan.currency)
   ) {
     return failure("ANNUAL_MONTHLY_PLAN_REQUIRED");
   }
@@ -85,6 +88,47 @@ function resolveAnnual(
   return { status: "RESOLVED", pricingVersion: COMMERCE_PRICING_VERSION, pricing };
 }
 
+function resolveSemiAnnual(plan: CommercePurchasePlanSnapshot): CommercePurchasePlanPricingResult {
+  const source = plan.monthlySource;
+  if (!source?.active || source.type !== "MONTHLY" || source.amountMinor === null ||
+      (plan.editionId && source.editionId !== plan.editionId) ||
+      (source.currency !== undefined && source.currency !== plan.currency)) {
+    return failure("SEMI_ANNUAL_MONTHLY_PLAN_REQUIRED");
+  }
+  if (!validMinorUnits(source.amountMinor)) return failure("INVALID_MONTHLY_AMOUNT");
+  if (plan.semiAnnualDiscountBps === null || plan.semiAnnualDiscountBps === undefined) {
+    return failure("SEMI_ANNUAL_DISCOUNT_REQUIRED");
+  }
+  const discountBps = plan.semiAnnualDiscountBps;
+  if (!Number.isInteger(discountBps) ||
+      discountBps < SEMI_ANNUAL_DISCOUNT_MIN_BPS || discountBps > SEMI_ANNUAL_DISCOUNT_MAX_BPS) {
+    return failure("INVALID_SEMI_ANNUAL_DISCOUNT");
+  }
+  const grossSemiAnnualMinor = source.amountMinor * 6;
+  if (!Number.isSafeInteger(grossSemiAnnualMinor)) return failure("MONEY_OVERFLOW");
+  const amountMinor = roundRatioHalfUp(
+    BigInt(grossSemiAnnualMinor) * BigInt(10_000 - discountBps), 10_000n,
+  );
+  if (amountMinor === null || amountMinor > 2_147_483_647) return failure("MONEY_OVERFLOW");
+  const effectiveMonthlyMinor = roundRatioHalfUp(BigInt(amountMinor), 6n);
+  if (effectiveMonthlyMinor === null) return failure("MONEY_OVERFLOW");
+  const pricing: CommerceResolvedPurchasePlanPricing = {
+    amountMinor,
+    intervalUnit: "MONTH",
+    intervalCount: 6,
+    billingType: "SUBSCRIPTION",
+    monthlyAmountMinor: source.amountMinor,
+    discountBps,
+    grossAnnualMinor: null,
+    annualAmountMinor: null,
+    grossSemiAnnualMinor,
+    semiAnnualAmountMinor: amountMinor,
+    savingsMinor: grossSemiAnnualMinor - amountMinor,
+    effectiveMonthlyMinor,
+  };
+  return { status: "RESOLVED", pricingVersion: COMMERCE_PRICING_VERSION, pricing };
+}
+
 function resolveNonAnnual(
   plan: CommercePurchasePlanSnapshot,
 ): CommercePurchasePlanPricingResult {
@@ -115,7 +159,9 @@ function resolveNonAnnual(
 export function createCommercePurchasePlanPricingCapability(): CommercePurchasePlanPricingCapability {
   return Object.freeze({
     resolve(plan: CommercePurchasePlanSnapshot): CommercePurchasePlanPricingResult {
-      return plan.type === "ANNUAL" ? resolveAnnual(plan) : resolveNonAnnual(plan);
+      return plan.type === "ANNUAL" ? resolveAnnual(plan)
+        : plan.type === "SEMI_ANNUAL" ? resolveSemiAnnual(plan)
+        : resolveNonAnnual(plan);
     },
   });
 }
