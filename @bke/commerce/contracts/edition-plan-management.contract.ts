@@ -2,7 +2,7 @@ export const COMMERCE_EDITION_PLAN_MANAGEMENT_CAPABILITY_ID = "commerce.edition-
 
 export type CommerceUpdatePolicy = "LIFETIME" | "ACTIVE_TERM" | "MAJOR_VERSION";
 export type CommerceRenewalBehavior = "NONE" | "CUSTOMER_AUTHORIZED";
-export type CommercePurchasePlanKind = "PERPETUAL" | "MONTHLY" | "ANNUAL";
+export type CommercePurchasePlanKind = "PERPETUAL" | "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL";
 export type CommerceEditionPlanValidationReason =
   | "NAME"
   | "SLUG"
@@ -16,6 +16,9 @@ export type CommerceEditionPlanValidationReason =
   | "MONTHLY_AMOUNT"
   | "PERPETUAL_PRICE_REQUIRED"
   | "MONTHLY_PRICE_REQUIRED"
+  | "SEMI_ANNUAL_REQUIRES_MONTHLY"
+  | "SEMI_ANNUAL_DISCOUNT_REQUIRED"
+  | "SEMI_ANNUAL_DISCOUNT"
   | "ANNUAL_REQUIRES_MONTHLY"
   | "ANNUAL_DISCOUNT_REQUIRED"
   | "ANNUAL_DISCOUNT"
@@ -24,6 +27,8 @@ export type CommerceEditionPlanValidationReason =
 export type CommerceEditionPlanSelection = Readonly<{
   perpetual: Readonly<{ enabled: boolean; amountMinor?: number }>;
   monthly: Readonly<{ enabled: boolean; amountMinor?: number }>;
+  /** Omitted by legacy clients; only explicit input may change semi-annual state. */
+  semiAnnual?: Readonly<{ enabled: boolean; discountBps?: number }>;
   annual: Readonly<{ enabled: boolean; discountBps?: number }>;
 }>;
 
@@ -72,6 +77,7 @@ export type CommerceEditionPlanRepository = Readonly<{
     createAmountMinor: number | null;
     updateAmountMinor?: number | null;
     annualDiscountBps: number | null;
+    semiAnnualDiscountBps?: number | null;
     monthlySourcePlanId: string | null;
     renewalBehavior: CommerceRenewalBehavior;
     active: boolean;
