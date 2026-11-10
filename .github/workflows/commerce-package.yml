@@ -108,7 +108,9 @@ jobs:
             package/migrations/0004_commerce_subscription_baseline/migration.sql \
             package/migrations/0005_commerce_renewal_order_linkage/migration.sql \
             package/migrations/0006_commerce_claimable_fulfillment/migration.sql \
-            package/migrations/0007_commerce_order_source_reference/migration.sql; do
+            package/migrations/0007_commerce_order_source_reference/migration.sql \
+            package/migrations/0008_commerce_semi_annual_pricing/migration.sql \
+            package/migrations/0009_commerce_semi_annual_terms/migration.sql; do
             grep -Fx "$required" artifacts/package-contents.txt
           done
           if grep -E '^package/(tests|node_modules)/' artifacts/package-contents.txt; then
