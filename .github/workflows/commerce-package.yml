@@ -1,18 +1,7 @@
 name: BKE Library - Commerce Package
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/commerce/**"
-      - "package-lock.json"
-      - ".github/workflows/commerce-package.yml"
-  push:
-    branches: [main]
-    paths:
-      - "@bke/commerce/**"
-      - "package-lock.json"
-      - ".github/workflows/commerce-package.yml"
+  # Packaging and release are separate explicit actions; PR and push are not triggers.
   workflow_dispatch:
 
 permissions:
@@ -268,7 +257,7 @@ jobs:
             artifacts/package-contents.txt
           if-no-files-found: error
       - name: Create immutable Commerce release
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
