@@ -1,7 +1,7 @@
 export const COMMERCE_PUBLIC_PROMOTION_PREVIEW_CAPABILITY_ID =
   "bke.commerce.public-promotion-preview.v1" as const;
 
-export type CommercePublicPromotionPlanType = "PERPETUAL" | "MONTHLY" | "ANNUAL";
+export type CommercePublicPromotionPlanType = "PERPETUAL" | "MONTHLY" | "SEMI_ANNUAL" | "ANNUAL";
 
 export interface CommercePublicPromotionPreviewInput {
   readonly productId: string;
