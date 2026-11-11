@@ -4,6 +4,7 @@ import {
   sign,
   verify,
 } from "node:crypto";
+import { TextDecoder } from "node:util";
 import {
   ACCOUNT_PRODUCT_LEASE_ACTIONS,
   ACCOUNT_PRODUCT_LEASE_JWS_TYP,
@@ -69,6 +70,67 @@ function decode(part: string): Buffer | null {
   return b64url(bytes) === part ? bytes : null;
 }
 
+/**
+ * Parse signed JSON without ambiguous duplicate object members or lossy UTF-8.
+ * JSON.parse first enforces the complete JSON grammar; this bounded structural
+ * walk additionally rejects duplicate decoded property names at any depth.
+ * Escaped spellings of a key (e.g. "product\u0049d") count as the same key.
+ * The actual JWS signature is always checked over the original encoded bytes.
+ */
+function parseUnambiguousJson(bytes: Buffer): unknown {
+  const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const parsed: unknown = JSON.parse(source);
+  let cursor = 0;
+  const whitespace = () => {
+    while (cursor < source.length && " \t\r\n".includes(source[cursor])) cursor++;
+  };
+  const readString = (): string => {
+    const start = cursor++;
+    while (cursor < source.length) {
+      const character = source[cursor++];
+      if (character === "\\") { cursor++; continue; }
+      if (character === '"') break;
+    }
+    return JSON.parse(source.slice(start, cursor)) as string;
+  };
+  const walk = (depth: number): void => {
+    if (depth > 32) throw new Error("JSON_NESTING_TOO_DEEP");
+    whitespace();
+    if (source[cursor] === "{") {
+      cursor++;
+      whitespace();
+      const seen = new Set<string>();
+      if (source[cursor] === "}") { cursor++; return; }
+      while (cursor < source.length) {
+        whitespace();
+        const key = readString();
+        if (seen.has(key)) throw new Error("DUPLICATE_JSON_MEMBER");
+        seen.add(key);
+        whitespace();
+        cursor++; // Colon: syntax has already been validated by JSON.parse.
+        walk(depth + 1);
+        whitespace();
+        if (source[cursor++] === "}") return;
+      }
+    } else if (source[cursor] === "[") {
+      cursor++;
+      whitespace();
+      if (source[cursor] === "]") { cursor++; return; }
+      while (cursor < source.length) {
+        walk(depth + 1);
+        whitespace();
+        if (source[cursor++] === "]") return;
+      }
+    } else if (source[cursor] === '"') {
+      readString();
+    } else {
+      while (cursor < source.length && !",]} \t\r\n".includes(source[cursor])) cursor++;
+    }
+  };
+  walk(0);
+  return parsed;
+}
+
 /** Sign exact JWS Compact bytes, not re-serialized JSON. Host supplies the key. */
 export function issueAccountProductLeaseJws(
   claims: AccountProductLeaseClaims,
@@ -114,7 +176,7 @@ export function verifyAccountProductLeaseJws(
     return bad("MALFORMED_JWS");
 
   let header: unknown;
-  try { header = JSON.parse(protectedBytes.toString("utf8")); }
+  try { header = parseUnambiguousJson(protectedBytes); }
   catch { return bad("MALFORMED_JWS"); }
   if (!exactObject(header, HEADER_KEYS) || header.alg !== "EdDSA" ||
     header.typ !== ACCOUNT_PRODUCT_LEASE_JWS_TYP ||
@@ -135,7 +197,7 @@ export function verifyAccountProductLeaseJws(
   } catch { return bad("INVALID_SIGNATURE"); }
 
   let parsed: unknown;
-  try { parsed = JSON.parse(payloadBytes.toString("utf8")); }
+  try { parsed = parseUnambiguousJson(payloadBytes); }
   catch { return bad("INVALID_CLAIMS"); }
   if (!claimsValid(parsed)) return bad("INVALID_CLAIMS");
 

@@ -11,9 +11,11 @@ Define the portable, versioned JWS Compact (EdDSA/Ed25519) **product execution l
 **Inputs/outputs of this library wave:**
 - \`contracts/account-product-lease.contract.ts\`: strict versioned claim/type/serialization contract, \`refreshAfter\` advisory renewal hint, \`expiresAt\` single hard authorization deadline.
 - \`providers/ed25519-account-product-lease.ts\`: JWS compact issuer/verifier using node:crypto. EdDSA exact signing input \`base64url(header) + "." + base64url(payload)\`; verify bytes *before* interpreting untrusted claims; strict \`alg\`, \`kid\`, \`typ\`; keys supplied by trusted host mapping, never JWS \`jku\`/inline JWK. NO networking, persistence, Next.js, or database dependency.
-- \`tests/\` golden positive/negative vectors for a pinned synthetic public verification key, varied claims and tamper cases. Fixtures are **public test keys only**. Deterministic results for future C#, TS and authentic product verifiers.
+- \`tests/\` golden positive/negative vectors for a pinned synthetic public verification key, varied claims, signature tampering, duplicate JSON member names (including escaped names), and invalid UTF-8. Fixtures are **public test keys only**. Deterministic results for future C#, TS and authentic product verifiers.
 
 **Not part of this library wave:** DS route, ownership/query/seat/plan checks, DB schema, real lease issuance, TPM CNG key creation/attestation, Agent private-key proof-of-possession, Launcher UX, installed Render Dock binary, production keys/DNS/DB/release. Later DS implementation must import an **immutable released** @bke/licensing package and certify its own account-session/entitlement/signing behavior. Downstream consumers must pin the exact library/vector SHA or package artifact.
+
+**Interoperability:** Verifiers must reject duplicate JSON member names (after unescaping) and malformed UTF-8 in both JWS protected header and claims. Signed payload bytes remain the verification input; no decode-and-reserialize signature verification. Current test-only vectors: 12; stdout SHA-256 `ada774a487b351229cef5c4db73a985b53f479ad1ffb011e98e14d3663580ae9`.
 
 **Security:** Signature validity alone is not entitlement. The consuming host must supply expected issuer/audience/product/action/session/key thumbprint and current time; the product must additionally require an Agent nonce challenge proof of private-key possession before protected operation. The signed \`keyProtection\` flag is not TPM attestation. Client-side clock rollback mitigation remains a later Agent/product responsibility; the hard \`expiresAt\` remains the stop deadline.
 
@@ -23,4 +25,4 @@ Define the portable, versioned JWS Compact (EdDSA/Ed25519) **product execution l
 * No DS, Agent, Launcher or Render Dock CI merely because they later consume this contract; pin exact library SHA for all future consumers.
 * PR=ledger, no merge, no immutable package release/publication, no production actions without separate authorization.
 
-**Status:** implementation and exact-head verification pending.
+**Status:** draft library implementation; exact-head certification must be revalidated after the security-hardening update.
