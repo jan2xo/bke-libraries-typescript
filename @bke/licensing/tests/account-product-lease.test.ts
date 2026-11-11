@@ -13,7 +13,7 @@ import {
 } from "../providers/ed25519-account-product-lease";
 
 // Pin deterministic PUBLIC test vectors, not a source-only assertion.
-const VECTORS_SHA256 = "ada774a487b351229cef5c4db73a985b53f479ad1ffb011e98e14d3663580ae9";
+const VECTORS_SHA256 = "1e4fefe9df64dd2b0313a7b127c850417659a092647e515411a6595900802d80";
 const generator = fileURLToPath(new URL("./lease-vectors/generate.cjs", import.meta.url));
 const output = execFileSync(process.execPath, [generator], { encoding: "utf8" });
 const vectors = JSON.parse(output) as {
@@ -40,7 +40,7 @@ describe("account-product execution lease JWS (portable signing contract)", () =
       "valid", "expired", "wrong-product", "wrong-thumbprint",
       "unknown-kid", "retired-kid", "tampered-byte", "future-issued",
       "wrong-alg-header", "duplicate-header", "duplicate-payload",
-      "invalid-utf8-payload",
+      "invalid-utf8-payload", "bom-header", "bom-payload",
     ]);
   });
 

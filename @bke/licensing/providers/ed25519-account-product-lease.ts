@@ -78,7 +78,7 @@ function decode(part: string): Buffer | null {
  * The actual JWS signature is always checked over the original encoded bytes.
  */
 function parseUnambiguousJson(bytes: Buffer): unknown {
-  const source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  const source = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   const parsed: unknown = JSON.parse(source);
   let cursor = 0;
   const whitespace = () => {

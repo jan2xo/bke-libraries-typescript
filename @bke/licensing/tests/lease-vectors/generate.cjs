@@ -26,6 +26,8 @@ const vectors=[
  {name:'duplicate-header',jws:rawToken(duplicateHeader,JSON.stringify(base)),accept:false,reason:'MALFORMED_JWS'},
  {name:'duplicate-payload',jws:rawToken(JSON.stringify({alg:'EdDSA',kid:'test-ed25519-2026',typ:'bke.product-lease.v1+jws'}),duplicatePayload),accept:false,reason:'INVALID_CLAIMS'},
  {name:'invalid-utf8-payload',jws:rawToken(JSON.stringify({alg:'EdDSA',kid:'test-ed25519-2026',typ:'bke.product-lease.v1+jws'}),invalidUtf8Payload),accept:false,reason:'INVALID_CLAIMS'},
+ {name:'bom-header',jws:rawToken(Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from(JSON.stringify({alg:'EdDSA',kid:'test-ed25519-2026',typ:'bke.product-lease.v1+jws'}))]),JSON.stringify(base)),accept:false,reason:'MALFORMED_JWS'},
+ {name:'bom-payload',jws:rawToken(JSON.stringify({alg:'EdDSA',kid:'test-ed25519-2026',typ:'bke.product-lease.v1+jws'}),Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from(JSON.stringify(base))])),accept:false,reason:'INVALID_CLAIMS'},
 ];
 const out={schema:'bke.lease-vectors.v1',description:'SYNTHETIC PUBLIC TEST KEY ONLY. NO PRODUCTION KEY.',libraryContract:'bke.product-lease.v1',now:'2026-11-11T02:00:00.000Z',publicKeyPem,activeKid:'test-ed25519-2026',retiredKid:'test-retired-2025',expected:{issuer:base.issuer,audience:base.audience,accountId:base.accountId,userId:base.userId,productId:base.productId,agentSessionId:base.agentSessionId,agentKeyThumbprint:thumb,action:'OPEN'},vectors};
 console.log(JSON.stringify(out,null,2));
