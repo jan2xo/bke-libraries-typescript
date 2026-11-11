@@ -44,7 +44,7 @@ describe("account-product execution lease JWS (portable signing contract)", () =
   });
 
   for (const vector of vectors.vectors) {
-    it(\`golden: \${vector.name}\`, () => {
+    it("golden: " + vector.name, () => {
       const result = verifyAccountProductLeaseJws(vector.jws, trust, context);
       expect(result.ok).toBe(vector.accept);
       if (!result.ok) expect(result.reason).toBe(vector.reason);
