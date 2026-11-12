@@ -108,40 +108,48 @@ jobs:
                 context.ref !== "refs/heads/main" ||
                 context.sha !== process.env.GITHUB_VERIFIED_MAIN_SHA)
               throw Error("WRONG_RELEASE_AUTHORITY");
-            // An explicit owner run needs no issue token. A bot-dispatched
-            // release must independently verify the precise owner comment.
+            // New independent trust gate: reconstruct owner authorization
+            // from GitHub REST, never from a bot-provided assertion alone.
+            const { pathToFileURL } = require("node:url");
+            const path = require("node:path");
+            const { authorizeDelegatedLicensingPublication } = await import(
+              pathToFileURL(path.resolve(
+                "scripts/licensing/chatops-release-control.mjs")).href);
             const authorizationId = process.env.AUTHORIZATION_COMMENT_ID ?? "";
-            if (context.actor === "jan2xo") {
-              if (authorizationId) throw Error("OWNER_MUST_NOT_DELEGATE_WITH_UNVERIFIED_COMMENT");
-            } else {
-              if (!/^[1-9][0-9]*$/.test(authorizationId))
-                throw Error("MISSING_BOT_RELEASE_AUTHORIZATION");
-              const id = Number(authorizationId);
-              if (!Number.isSafeInteger(id)) throw Error("INVALID_BOT_COMMENT_ID");
+            let fetchedComment = null;
+            let fetchedIssue = null;
+            if (authorizationId) {
+              if (!/^[1-9][0-9]*$/.test(authorizationId) ||
+                  !Number.isSafeInteger(Number(authorizationId)))
+                throw Error("INVALID_BOT_AUTHORIZATION_COMMENT_ID");
               const { data: comment } = await github.rest.issues.getComment({
-                owner, repo, comment_id: id,
+                owner, repo, comment_id: Number(authorizationId),
               });
               const { data: issue } = await github.rest.issues.get({
                 owner, repo, issue_number: 100,
               });
-              const expectedBody =
-                "/bke publish licensing-v0.10.0 sha=" + context.sha +
-                " readiness=" + process.env.READINESS_RUN_ID +
-                " immutable=confirmed";
-              const createdMs = Date.parse(comment.created_at);
-              if (issue.id !== 6344112785 || issue.number !== 100 ||
-                  issue.state !== "open" || issue.pull_request ||
-                  comment.user?.id !== 163499503 ||
-                  comment.user?.login !== "jan2xo" ||
-                  comment.author_association !== "OWNER" ||
-                  comment.issue_url !== "https://api.github.com/repos/" + origin + "/issues/100" ||
-                  comment.body !== expectedBody ||
-                  comment.created_at !== comment.updated_at ||
-                  !Number.isFinite(createdMs) || createdMs > Date.now() ||
-                  Date.now() - createdMs > 10 * 60 * 1000)
-                throw Error("UNVERIFIABLE_OR_STALE_OWNER_RELEASE_COMMAND");
-              core.info("PASS: authentic owner comment #" + id + " authorizes this exact release run");
+              fetchedComment = {
+                id: comment.id, body: comment.body, user: comment.user,
+                authorAssociation: comment.author_association,
+                issueUrl: comment.issue_url,
+                createdAt: comment.created_at, updatedAt: comment.updated_at,
+              };
+              fetchedIssue = {
+                id: issue.id, number: issue.number, state: issue.state,
+                isPullRequest: !!issue.pull_request, ownerLogin: issue.user?.login,
+              };
             }
+            const ownerAuthorization = authorizeDelegatedLicensingPublication({
+              actor: context.actor,
+              authorizationCommentId: authorizationId,
+              comment: fetchedComment,
+              issue: fetchedIssue,
+              expectedMainSha: context.sha,
+              readinessRunId: Number(process.env.READINESS_RUN_ID),
+              nowMs: Date.now(),
+            });
+            core.info("PASS: " + ownerAuthorization.authorization +
+              " authorizes exact Licensing 0.10.0 release proof");
             const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: "main" });
             if (branch.commit.sha !== context.sha) throw Error("STALE_RELEASE_MAIN");
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: 94 });
