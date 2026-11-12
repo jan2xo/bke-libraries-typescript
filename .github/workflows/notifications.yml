@@ -1,13 +1,6 @@
 name: BKE Library - Notifications
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/notifications/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/notifications.yml"
   workflow_dispatch:
 
 permissions:

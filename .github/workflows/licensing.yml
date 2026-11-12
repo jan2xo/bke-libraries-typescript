@@ -1,13 +1,6 @@
 name: BKE Library - Licensing
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/licensing/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/licensing.yml"
   workflow_dispatch:
 
 permissions:

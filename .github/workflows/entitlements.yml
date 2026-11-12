@@ -1,13 +1,6 @@
 name: BKE Library - Entitlements
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/entitlements/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/entitlements.yml"
   workflow_dispatch:
 
 permissions:

@@ -1,13 +1,6 @@
 name: BKE Library - Legal
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/legal/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/legal.yml"
   workflow_dispatch:
 
 permissions:

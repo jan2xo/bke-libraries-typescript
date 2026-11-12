@@ -1,11 +1,6 @@
 name: Extract Identity Library
 
 on:
-  push:
-    branches:
-      - feat/identity-library-extraction
-    paths:
-      - .github/workflows/extract-identity.yml
   workflow_dispatch:
 
 permissions:

@@ -1,0 +1,94 @@
+name: BKE Library - Intentional CI Policy Guard
+
+# Cheap policy-only PR check; heavy modules run only by deliberate dispatch.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "docs/INTENTIONAL-LIBRARY-CI-MIGRATION.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Intentional CI policy guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify explicit module CI and absent automatic publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const fail = (reason) => { throw new Error("LIBRARY_CI_POLICY: " + reason); };
+          const directory = ".github/workflows";
+          const files = fs.readdirSync(directory).filter(f => f.endsWith(".yml"));
+          const cheap = new Set([
+            "library-intent-policy-guard.yml",
+            "licensing-policy-guard.yml",
+            "licensing-certify-router.yml",
+          ]);
+          const migrated = new Set([
+            "accounts-package.yml", "accounts.yml",
+            "catalog-package.yml", "catalog.yml",
+            "commerce-package.yml", "commerce.yml",
+            "entitlements-package.yml", "entitlements.yml",
+            "extract-identity.yml",
+            "identity-package.yml", "identity.yml",
+            "legal-package.yml", "legal.yml",
+            "licensing-commercial-context.yml",
+            "licensing-package.yml", "licensing.yml",
+            "notifications-package.yml", "notifications.yml",
+            "payments-package.yml", "payments.yml",
+            "privacy.yml",
+            "support-package.yml", "support.yml",
+            "trials.yml",
+          ]);
+          const publicationRemoved = new Set([
+            "accounts-package.yml", "catalog-package.yml",
+            "commerce-package.yml", "entitlements-package.yml",
+            "identity-package.yml", "legal-package.yml",
+            "notifications-package.yml", "payments-package.yml",
+            "privacy.yml", "support-package.yml", "trials.yml",
+          ]);
+          for (const filename of [...migrated, ...cheap, ...publicationRemoved]) {
+            if (!files.includes(filename)) fail("Missing expected workflow: " + filename);
+          }
+          let explicit = 0;
+          for (const filename of files) {
+            if (cheap.has(filename)) continue;
+            const source = fs.readFileSync(path.join(directory, filename), "utf8");
+            const marker = /^on:\s*$/m.exec(source);
+            if (!marker) fail(filename + " missing on: trigger section");
+            const afterOn = source.slice(marker.index + marker[0].length);
+            const next = /^(?:permissions|concurrency|jobs):/m.exec(afterOn);
+            if (!next) fail(filename + " missing top-level workflow boundary");
+            const triggerSection = afterOn.slice(0, next.index);
+            const triggers = [...triggerSection.matchAll(/^  ([a-z_]+):/gm)].map(m => m[1]);
+            if (!triggers.length || triggers.some(t => t !== "workflow_dispatch" && t !== "workflow_call")) {
+              fail(filename + " heavy workflow has an implicit trigger: " + triggers.join(","));
+            }
+            if (publicationRemoved.has(filename)) {
+              if (!/^permissions:\s*\n  contents:\s*read\s*$/m.test(source)) {
+                fail(filename + " package certification requires a read-only token");
+              }
+              if (/\bgh\s+release\b|\bnpm\s+publish\b|\bGH_TOKEN\b|\bcreateRelease\b|\bcreateRef\b|\bcontents:\s*write\b/i.test(source)) {
+                fail(filename + " package certification still contains publication authority");
+              }
+            }
+            explicit++;
+          }
+          if (explicit < migrated.size) fail("Expected active heavy module owners were excluded");
+          const router = fs.readFileSync(path.join(directory, "licensing-certify-router.yml"), "utf8");
+          if (!/issue_comment:/.test(router) || !/context\.payload\.comment\?\.user\?\.login !== context\.repo\.owner/.test(router)) {
+            fail("Owner-only explicit Licensing certification router was weakened");
+          }
+          console.log("PASS: " + explicit + " heavyweight library workflows are explicit-only; "
+            + publicationRemoved.size + " historical package release paths are read-only.");
+          NODE

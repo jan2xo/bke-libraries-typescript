@@ -1,11 +1,6 @@
 name: BKE Library - Licensing Commercial Context
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/licensing/**"
-      - ".github/workflows/licensing-commercial-context.yml"
   workflow_dispatch:
 
 permissions:
