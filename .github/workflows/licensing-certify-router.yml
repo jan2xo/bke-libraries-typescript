@@ -29,10 +29,10 @@ jobs:
           const fs = require('node:fs');
           const assert = require('node:assert/strict');
           const s = fs.readFileSync('.github/workflows/licensing-certify-router.yml','utf8');
-          assert.match(s,/github\.event\.name == 'issue_comment'/);
+          assert.match(s,/github\.event_name == 'issue_comment'/);
           assert.match(s,/context\.payload\.comment\?\.user\?\.login !== context\.repo\.owner/);
-          assert.match(s,/pr\.data\.head\.sha !== match\[1\]/);
-          assert.match(s,/pr\.data\.head\.repo\.full_name !== `\$\{owner\}\/\$\{repo\}`/);
+          assert.match(s,/pr\.head\.sha !== match\[1\]/);
+          assert.match(s,/pr\.head\.repo\.full_name !== `\$\{owner\}\/\$\{repo\}`/);
           assert.match(s,/github\.rest\.actions\.createWorkflowDispatch/);
           assert.match(s,/workflow_id: 'licensing-package\.yml'/);
           assert.doesNotMatch(s,/gh release create|createRelease|createRef|contents: write/);
