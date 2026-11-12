@@ -63,3 +63,48 @@ export function authorizeLicensingChatOpsCommand({ event, comment, issue, curren
     authorizationCommentId: comment.id,
   });
 }
+
+
+/**
+ * Independent second gate inside a bot-dispatched publishing workflow.
+ * Does not trust the upstream router, workflow input or bot identity alone.
+ * The authorizing GitHub comment is retrieved again from the REST API.
+ */
+export function authorizeDelegatedLicensingPublication({
+  actor, authorizationCommentId, comment, issue,
+  expectedMainSha, readinessRunId, nowMs,
+}) {
+  requireThat(typeof expectedMainSha === 'string' && SHA.test(expectedMainSha) &&
+    Number.isSafeInteger(readinessRunId) && readinessRunId > 0,
+  'DELEGATION_INPUT_INVALID');
+  if (actor === OWNER_LOGIN) {
+    requireThat(authorizationCommentId === '', 'DIRECT_OWNER_DELEGATION_NOT_ALLOWED');
+    return Object.freeze({ authorization: 'DIRECT_GITHUB_OWNER', expectedMainSha, readinessRunId });
+  }
+  requireThat(actor === 'github-actions[bot]' &&
+    typeof authorizationCommentId === 'string' &&
+    /^[1-9][0-9]{0,15}$/.test(authorizationCommentId) &&
+    Number.isSafeInteger(Number(authorizationCommentId)),
+  'BOT_DELEGATION_NOT_AUTHORIZED');
+  const id = Number(authorizationCommentId);
+  requireThat(comment && issue && comment.id === id &&
+    issue.number === CONTROL_ISSUE_NUMBER && issue.id === CONTROL_ISSUE_ID &&
+    issue.state === 'open' && !issue.isPullRequest && issue.ownerLogin === OWNER_LOGIN,
+  'DELEGATED_ISSUE_OR_COMMENT_INVALID');
+  requireThat(comment.user?.id === OWNER_ID && comment.user?.login === OWNER_LOGIN &&
+    comment.authorAssociation === 'OWNER' && comment.issueUrl === ISSUE_URL,
+  'DELEGATED_COMMENT_NOT_OWNER');
+  requireThat(comment.body === '/bke publish licensing-v0.10.0 sha=' +
+    expectedMainSha + ' readiness=' + readinessRunId + ' immutable=confirmed',
+  'DELEGATED_COMMAND_MISMATCH');
+  requireThat(comment.createdAt === comment.updatedAt && Number.isFinite(nowMs),
+  'DELEGATED_COMMENT_EDITED');
+  const created = Date.parse(comment.createdAt);
+  requireThat(Number.isFinite(created) && created <= nowMs &&
+    nowMs - created <= MAX_COMMAND_AGE_MS,
+  'DELEGATED_COMMAND_EXPIRED');
+  return Object.freeze({
+    authorization: 'VERIFIED_OWNER_COMMENT',
+    authorizationCommentId: id, expectedMainSha, readinessRunId,
+  });
+}
