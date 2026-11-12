@@ -108,7 +108,6 @@ jobs:
             "authorizeLicensingChatOpsCommand",
             "github.rest.actions.createWorkflowDispatch(",
             "licensing-release-readiness.yml",
-            "licensing-release-publication.yml",
             "READINESS_RUN_NOT_AUTHORIZED_FOR_EXACT_MAIN",
             "MISSING_OR_AMBIGUOUS_READINESS_ARTIFACT",
             "LICENSING_V010_RELEASE_COLLISION",
@@ -123,7 +122,9 @@ jobs:
           for (const token of routerRequirements) {
             if (!chatops.includes(token)) fail("Missing hardened ChatOps router rule: " + token);
           }
-          if (!chatopsParser.includes("const OWNER_ID = 163499503") ||
+          if (!chatopsParser.includes("targetWorkflow: 'licensing-release-publication.yml'") ||
+              !chatopsParser.includes("targetWorkflow: 'licensing-release-readiness.yml'") ||
+              !chatopsParser.includes("const OWNER_ID = 163499503") ||
               !chatopsParser.includes("const CONTROL_ISSUE_ID = 6344112785") ||
               !chatopsParser.includes("COMMENT_EXPIRED") ||
               !chatopsParser.includes("UNSUPPORTED_COMMAND") ||
