@@ -124,8 +124,47 @@ jobs:
           if (/\bfetch\s*\(|\bhttps\.request\s*\(|\bcreateRelease\s*\(|\bcreateRef\s*\(|\buploadReleaseAsset\s*\(|\bgh\s+release\b|\bnpm\s+publish\b|\bGH_TOKEN\b|\bcontents:\s*write\b/i.test(publication)) {
             fail("Source-only publication comparator must not gain network or release-write capability");
           }
-          if (files.includes("licensing-release-publication.yml")) {
-            fail("Privileged Licensing publication workflow is prohibited until separately authorized");
+          const publisher = fs.readFileSync(path.join(directory, "licensing-release-publication.yml"), "utf8");
+          if (!/^on:\s*\n  workflow_dispatch:\s*$/m.test(publisher.slice(0, publisher.indexOf("    inputs:")))) {
+            fail("Licensing 0.10.0 publication must be a manual workflow_dispatch only");
+          }
+          if (!/^permissions:\s*\n  contents:\s*write\s*\n  actions:\s*read\s*$/m.test(publisher)) {
+            fail("Only Licensing manual publisher may have scoped contents:write, actions:read");
+          }
+          const mandatory = [
+            "github.repository == 'jan2xo/bke-libraries-typescript'",
+            "github.actor == 'jan2xo'",
+            "github.ref == 'refs/heads/main'",
+            "confirm_release_tag:",
+            'test "$CONFIRM_RELEASE_TAG" = "$RELEASE_TAG"',
+            'test "$GITHUB_SHA" = "$EXPECTED_MAIN_SHA"',
+            "getWorkflowRun(", "listWorkflowRunArtifacts(",
+            "getReleaseByTag(", "getRef(",
+            "refs/pull/94/head",
+            "github.rest.repos.getBranch(",
+            "actions/download-artifact@v4",
+            "check-publication-plan.mjs",
+            "verified-readiness/licensing-release-readiness.json",
+            "verified-original/licensing-package-provenance.json",
+            "ORIGINAL_PACKAGE_SHA256",
+            "gh api -X POST",
+            "gh release create",
+            "gh release upload",
+            "gh release download",
+            "cmp ",
+            "gh release edit",
+            "--draft=false",
+            "POST_PUBLICATION_RELEASE_MISMATCH",
+          ];
+          for (const token of mandatory) {
+            if (!publisher.includes(token)) fail("Missing immutable release guard: " + token);
+          }
+          if (/^\s{2}(?:push|pull_request|schedule|issue_comment|release|workflow_run):/m.test(
+              publisher.slice(publisher.indexOf("on:"), publisher.indexOf("permissions:")))) {
+            fail("Manual Licensing release must never have an implicit trigger");
+          }
+          if (/\bnpm\s+publish\b|\bforce\s*:\s*true\b|\b--clobber\b|\bgh\s+release\s+delete\b|\bgh\s+api\s+-X\s+DELETE\b/i.test(publisher)) {
+            fail("Licensing release workflow contains forbidden publication override / npm mutation");
           }
           console.log("PASS: " + explicit + " heavyweight library workflows are explicit-only; "
             + publicationRemoved.size + " historical package release paths are read-only.");
