@@ -16,6 +16,10 @@ on:
         description: Exact HEAD of the original successful package run
         required: true
         type: string
+      certified_pr_number:
+        description: Original merged same-repository PR holding the certified source SHA
+        required: true
+        type: string
       tarball_sha256:
         description: Independently recorded SHA-256 of the certified tarball
         required: true
@@ -39,6 +43,7 @@ jobs:
       READINESS_EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
       READINESS_CERTIFIED_RUN_ID: ${{ inputs.certified_run_id }}
       READINESS_CERTIFIED_SOURCE_SHA: ${{ inputs.certified_source_sha }}
+      READINESS_CERTIFIED_PR_NUMBER: ${{ inputs.certified_pr_number }}
       READINESS_EXPECTED_TARBALL_SHA256: ${{ inputs.tarball_sha256 }}
       READINESS_VERSION: ${{ inputs.version }}
     steps:
@@ -46,7 +51,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Verify immutable current main and original source/package Git objects
         shell: bash
@@ -57,13 +62,20 @@ jobs:
           [[ "$READINESS_CERTIFIED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
           [[ "$READINESS_EXPECTED_TARBALL_SHA256" =~ ^[0-9a-f]{64}$ ]] || exit 1
           [[ "$READINESS_CERTIFIED_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ "$READINESS_CERTIFIED_PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || exit 1
           [[ "$READINESS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$GITHUB_SHA" = "$READINESS_EXPECTED_MAIN_SHA"
           remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
           test -n "$remote_main"
           test "$remote_main" = "$GITHUB_SHA"
-          git fetch --no-tags origin "$READINESS_CERTIFIED_SOURCE_SHA"
+          # The PR ref is immutable to an existing merged PR's last head,
+          # independently authenticated by the GitHub API in the next step.
+          git fetch --no-tags origin "refs/pull/${READINESS_CERTIFIED_PR_NUMBER}/head"
+          test "$(git rev-parse FETCH_HEAD)" = "$READINESS_CERTIFIED_SOURCE_SHA" || {
+            echo "::error::Certified source SHA is not the pinned PR head"
+            exit 1
+          }
           verified_tree="$(git rev-parse "$READINESS_CERTIFIED_SOURCE_SHA^{tree}")"
           certified_package_tree="$(git rev-parse "$READINESS_CERTIFIED_SOURCE_SHA:@bke/licensing")"
           current_package_tree="$(git rev-parse "HEAD:@bke/licensing")"
@@ -86,6 +98,7 @@ jobs:
         env:
           CERTIFIED_RUN_ID: ${{ inputs.certified_run_id }}
           CERTIFIED_SOURCE_SHA: ${{ inputs.certified_source_sha }}
+          CERTIFIED_PR_NUMBER: ${{ inputs.certified_pr_number }}
           READINESS_VERSION: ${{ inputs.version }}
         with:
           script: |
@@ -96,6 +109,17 @@ jobs:
               owner, repo, run_id: id,
             });
             const origin = owner + "/" + repo;
+            const prNumber = Number(process.env.CERTIFIED_PR_NUMBER);
+            if (!Number.isSafeInteger(prNumber) || prNumber <= 0)
+              throw Error("INVALID_CERTIFIED_PR_NUMBER");
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: prNumber,
+            });
+            if (!pr.merged || pr.base.ref !== "main" ||
+                pr.head.repo?.full_name !== origin ||
+                pr.head.sha !== process.env.CERTIFIED_SOURCE_SHA) {
+              throw Error("CERTIFIED_SOURCE_IS_NOT_MERGED_INTERNAL_PR_HEAD");
+            }
             if (run.repository?.full_name !== origin ||
                 run.head_sha !== process.env.CERTIFIED_SOURCE_SHA ||
                 run.event !== "workflow_dispatch" ||
