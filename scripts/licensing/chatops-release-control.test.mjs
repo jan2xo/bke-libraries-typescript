@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { authorizeLicensingChatOpsCommand } from './chatops-release-control.mjs';
+import { authorizeLicensingChatOpsCommand, authorizeDelegatedLicensingPublication } from './chatops-release-control.mjs';
 
 const main = 'c'.repeat(40);
 const nowMs = Date.parse('2026-11-12T06:25:00Z');
@@ -83,5 +83,67 @@ describe('owner-only licensing release ChatOps', () => {
   it('rejects overflow run identifiers', () => {
     reject(() => {}, 'RUN_ID_INVALID', '/bke publish licensing-v0.10.0 sha=' + main +
       ' readiness=9999999999999999 immutable=confirmed');
+  });
+});
+
+
+describe('independent owner authorization inside delegated publisher', () => {
+  function delegated() {
+    const p = fixture('/bke publish licensing-v0.10.0 sha=' + main +
+      ' readiness=43170000000 immutable=confirmed');
+    return {
+      actor: 'github-actions[bot]',
+      authorizationCommentId: '6816324960',
+      comment: p.comment,
+      issue: p.issue,
+      expectedMainSha: main,
+      readinessRunId: 43170000000,
+      nowMs,
+    };
+  }
+  function fail(mutate, code) {
+    const value = delegated();
+    mutate(value);
+    assert.throws(() => authorizeDelegatedLicensingPublication(value),
+      { message: 'LICENSING_CHATOPS_' + code });
+  }
+  it('allows direct owner invocation but forbids arbitrary comment delegation', () => {
+    assert.equal(authorizeDelegatedLicensingPublication({
+      ...delegated(), actor: 'jan2xo', authorizationCommentId: '',
+    }).authorization, 'DIRECT_GITHUB_OWNER');
+    fail(v => { v.actor = 'random-bot'; }, 'BOT_DELEGATION_NOT_AUTHORIZED');
+    fail(v => { v.authorizationCommentId = ''; }, 'BOT_DELEGATION_NOT_AUTHORIZED');
+    assert.throws(() => authorizeDelegatedLicensingPublication({
+      ...delegated(), actor: 'jan2xo',
+    }), { message: 'LICENSING_CHATOPS_DIRECT_OWNER_DELEGATION_NOT_ALLOWED' });
+  });
+  it('accepts a fresh exact owner comment but never labels it direct owner', () => {
+    const result = authorizeDelegatedLicensingPublication(delegated());
+    assert.deepEqual(result, {
+      authorization: 'VERIFIED_OWNER_COMMENT', authorizationCommentId: 6816324960,
+      expectedMainSha: main, readinessRunId: 43170000000,
+    });
+    assert.equal(Object.isFrozen(result), true);
+  });
+  it('rejects manipulated issue or comment identity', () => {
+    fail(v => { v.issue.id += 1; }, 'DELEGATED_ISSUE_OR_COMMENT_INVALID');
+    fail(v => { v.comment.id++; }, 'DELEGATED_ISSUE_OR_COMMENT_INVALID');
+    fail(v => { v.comment.user.id = 22; }, 'DELEGATED_COMMENT_NOT_OWNER');
+    fail(v => { v.comment.issueUrl = 'https://api.github.com/repos/fork/repo/issues/100'; },
+      'DELEGATED_COMMENT_NOT_OWNER');
+  });
+  it('rejects any changed release, SHA, run ID or confirmation', () => {
+    fail(v => { v.readinessRunId++; }, 'DELEGATED_COMMAND_MISMATCH');
+    fail(v => { v.expectedMainSha = 'f'.repeat(40); }, 'DELEGATED_COMMAND_MISMATCH');
+    fail(v => { v.comment.body += '\nextra'; }, 'DELEGATED_COMMAND_MISMATCH');
+    fail(v => { v.comment.body = v.comment.body.replace('immutable=confirmed', 'immutable=false'); },
+      'DELEGATED_COMMAND_MISMATCH');
+  });
+  it('rejects stale, edited, future and invalid timestamp proofs', () => {
+    fail(v => { v.comment.updatedAt = new Date(nowMs).toISOString(); }, 'DELEGATED_COMMENT_EDITED');
+    fail(v => { const t = new Date(nowMs - 601000).toISOString(); v.comment.createdAt = t; v.comment.updatedAt = t; },
+      'DELEGATED_COMMAND_EXPIRED');
+    fail(v => { const t = new Date(nowMs + 1000).toISOString(); v.comment.createdAt = t; v.comment.updatedAt = t; },
+      'DELEGATED_COMMAND_EXPIRED');
   });
 });
