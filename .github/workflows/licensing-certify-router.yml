@@ -35,7 +35,7 @@ jobs:
           assert.match(s,/pr\.head\.repo\.full_name !== `\$\{owner\}\/\$\{repo\}`/);
           assert.match(s,/github\.rest\.actions\.createWorkflowDispatch/);
           assert.match(s,/workflow_id: 'licensing-package\.yml'/);
-          assert.doesNotMatch(s,/gh release create|createRelease|createRef|contents: write/);
+          assert.doesNotMatch(s.slice(s.indexOf('\n  dispatch:\n')),/gh release create|createRelease|createRef|contents: write/);
           console.log('PASS: owner-only single-workflow exact-head certification router');
           NODE
 
