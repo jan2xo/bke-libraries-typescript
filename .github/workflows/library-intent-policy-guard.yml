@@ -181,7 +181,7 @@ jobs:
             "authorizeDelegatedLicensingPublication",
             "fetchedComment",
             "fetchedIssue",
-            "UNVERIFIABLE_OR_STALE_OWNER_RELEASE_COMMAND",
+            "ownerAuthorization.authorization",
             "github.ref == 'refs/heads/main'",
             "confirm_release_tag:",
             "confirm_immutable_releases:",
