@@ -1,0 +1,321 @@
+name: BKE Library - Licensing v0.10.0 Immutable GitHub Release (Owner Only)
+
+# Version-specific explicit GitHub release. Not npm, no production activation.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: Exact current main SHA; must have fresh read-only readiness proof
+        required: true
+        type: string
+      readiness_run_id:
+        description: New successful licensing-release-readiness workflow run on the same main SHA
+        required: true
+        type: string
+      confirm_release_tag:
+        description: Enter exactly licensing-v0.10.0 to authorize irreversible GitHub publication
+        required: true
+        type: string
+
+# This single manual publisher owns the only write-token release exception.
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: bke-licensing-v010-immutable-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'jan2xo/bke-libraries-typescript' && github.actor == 'jan2xo' && github.ref == 'refs/heads/main'
+    name: Verify archive identity, then publish exact immutable GitHub release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+      READINESS_RUN_ID: ${{ inputs.readiness_run_id }}
+      CONFIRM_RELEASE_TAG: ${{ inputs.confirm_release_tag }}
+      ORIGINAL_RUN_ID: "43153573142"
+      ORIGINAL_SOURCE_SHA: "d6b0159d9c22e0f9e468040777ea4591953c89f6"
+      ORIGINAL_PACKAGE_SHA256: "4d2f8e4295effcfd4aa3b6492944e8dbba3ec75e86c83727a30daa74e4f75d60"
+      RELEASE_TAG: "licensing-v0.10.0"
+      PACKAGE_VERSION: "0.10.0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require owner, manual main, exact SHA, original source tree and fixed package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "jan2xo/bke-libraries-typescript"
+          test "$GITHUB_ACTOR" = "jan2xo"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$CONFIRM_RELEASE_TAG" = "$RELEASE_TAG"
+          [[ "$EXPECTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$READINESS_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$EXPECTED_MAIN_SHA"
+          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test -n "$remote_main"
+          test "$remote_main" = "$EXPECTED_MAIN_SHA"
+          git fetch --no-tags origin "refs/pull/94/head"
+          test "$(git rev-parse FETCH_HEAD)" = "$ORIGINAL_SOURCE_SHA"
+          test "$(git rev-parse "$ORIGINAL_SOURCE_SHA:@bke/licensing")" = \
+               "$(git rev-parse "HEAD:@bke/licensing")"
+          test "$(node -p "require('./@bke/licensing/package.json').version")" = "$PACKAGE_VERSION"
+          test "$(node -p "require('./package-lock.json').packages['@bke/licensing'].version")" = "$PACKAGE_VERSION"
+
+      - name: Authenticate original source PR, both exact successful runs and nonexpired artifacts
+        uses: actions/github-script@v7
+        env:
+          GITHUB_VERIFIED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        with:
+          script: |
+            const fs = require("node:fs");
+            const { owner, repo } = context.repo;
+            const origin = owner + "/" + repo;
+            if (origin !== "jan2xo/bke-libraries-typescript" ||
+                context.actor !== "jan2xo" ||
+                context.eventName !== "workflow_dispatch" ||
+                context.ref !== "refs/heads/main" ||
+                context.sha !== process.env.GITHUB_VERIFIED_MAIN_SHA)
+              throw Error("WRONG_RELEASE_AUTHORITY");
+            const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: "main" });
+            if (branch.commit.sha !== context.sha) throw Error("STALE_RELEASE_MAIN");
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: 94 });
+            if (!pr.merged || pr.base.ref !== "main" ||
+                pr.head.repo?.full_name !== origin ||
+                pr.head.sha !== process.env.ORIGINAL_SOURCE_SHA)
+              throw Error("ORIGINAL_CERTIFIED_SOURCE_PR_INVALID");
+            const parseId = value => {
+              const n = Number(value);
+              if (!Number.isSafeInteger(n) || n <= 0) throw Error("INVALID_RUN_ID");
+              return n;
+            };
+            const producerId = parseId(process.env.ORIGINAL_RUN_ID);
+            const readinessId = parseId(process.env.READINESS_RUN_ID);
+            if (producerId === readinessId) throw Error("SAME_PRODUCER_AND_READINESS_RUN");
+            const getRun = async id => (await github.rest.actions.getWorkflowRun({ owner, repo, run_id: id })).data;
+            const producer = await getRun(producerId);
+            const readiness = await getRun(readinessId);
+            const verifiedRun = (r, sha, path) =>
+              r.repository?.full_name === origin &&
+              r.head_sha === sha &&
+              r.path === path &&
+              r.event === "workflow_dispatch" &&
+              r.status === "completed" && r.conclusion === "success";
+            if (!verifiedRun(producer, process.env.ORIGINAL_SOURCE_SHA,
+                  ".github/workflows/licensing-package.yml") ||
+                !verifiedRun(readiness, context.sha,
+                  ".github/workflows/licensing-release-readiness.yml"))
+              throw Error("UNTRUSTED_ARCHIVE_OR_STALE_READINESS");
+            const getArtifact = async (id, name) => {
+              const data = (await github.rest.actions.listWorkflowRunArtifacts({
+                owner, repo, run_id: id, per_page: 100,
+              })).data;
+              const matches = data.artifacts.filter(a =>
+                a.name === name && !a.expired && a.size_in_bytes > 0);
+              if (matches.length !== 1) throw Error("MISSING_OR_AMBIGUOUS_RELEASE_ARTIFACT");
+              return matches[0];
+            };
+            const originalArtifact = await getArtifact(producerId, "bke-licensing-certified-package");
+            const readinessArtifact = await getArtifact(readinessId, "bke-licensing-read-only-release-readiness");
+            const mustBeAbsent = async action => {
+              try { await action(); throw Error("IMMUTABLE_RELEASE_COLLISION"); }
+              catch (error) {
+                if (error.message === "IMMUTABLE_RELEASE_COLLISION" || error.status !== 404) throw error;
+              }
+            };
+            await mustBeAbsent(() => github.rest.git.getRef({ owner, repo, ref: "tags/licensing-v0.10.0" }));
+            await mustBeAbsent(() => github.rest.repos.getReleaseByTag({ owner, repo, tag: "licensing-v0.10.0" }));
+            fs.mkdirSync("release-proof", { recursive: true });
+            const modelRun = r => ({
+              id: r.id, repository: r.repository.full_name,
+              path: r.path, headSha: r.head_sha, event: r.event,
+              status: r.status, conclusion: r.conclusion,
+            });
+            const modelArtifact = (a, runId) => ({
+              id: a.id, name: a.name, runId, expired: a.expired, size: a.size_in_bytes,
+            });
+            fs.writeFileSync("release-proof/github.json", JSON.stringify({
+              repository: origin, mainSha: branch.commit.sha,
+              tagExists: false, releaseExists: false,
+              producerPr: { merged: pr.merged, baseRef: pr.base.ref,
+                headRepository: pr.head.repo.full_name, headSha: pr.head.sha },
+              producerRun: modelRun(producer),
+              readinessRun: modelRun(readiness),
+              originalArtifact: modelArtifact(originalArtifact, producerId),
+              readinessArtifact: modelArtifact(readinessArtifact, readinessId),
+            }, null, 2));
+            core.info("PASS: original and fresh exact-main readiness proof independently authenticated");
+
+      - name: Download immutable original certified archive, not a reconstructed package
+        uses: actions/download-artifact@v4
+        with:
+          name: bke-licensing-certified-package
+          run-id: 43153573142
+          github-token: ${{ github.token }}
+          path: verified-original
+
+      - name: Download fresh exact-main read-only release-readiness evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: bke-licensing-read-only-release-readiness
+          run-id: ${{ inputs.readiness_run_id }}
+          github-token: ${{ github.token }}
+          path: verified-readiness
+
+      - name: Compare exact original bytes, checksums, provenance and readiness evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/licensing/check-publication-plan.test.mjs
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import crypto from "node:crypto";
+          import { execFileSync } from "node:child_process";
+          import { verifyLicensingPublicationPlan } from "./scripts/licensing/check-publication-plan.mjs";
+          const name = "bke-licensing-0.10.0.tgz";
+          const archive = fs.readFileSync("verified-original/" + name);
+          const actualSha256 = crypto.createHash("sha256").update(archive).digest("hex");
+          const checksum = fs.readFileSync("verified-original/" + name + ".sha256", "utf8");
+          const packed = JSON.parse(execFileSync("tar",
+            ["-xOf", "verified-original/" + name, "package/package.json"], { encoding: "utf8" }));
+          const input = {
+            request: {
+              repository: "jan2xo/bke-libraries-typescript",
+              version: process.env.PACKAGE_VERSION,
+              expectedMainSha: process.env.EXPECTED_MAIN_SHA,
+              certifiedSourceSha: process.env.ORIGINAL_SOURCE_SHA,
+              expectedTarballSha256: process.env.ORIGINAL_PACKAGE_SHA256,
+              producerRunId: Number(process.env.ORIGINAL_RUN_ID),
+              readinessRunId: Number(process.env.READINESS_RUN_ID),
+            },
+            github: JSON.parse(fs.readFileSync("release-proof/github.json", "utf8")),
+            readinessEvidence: JSON.parse(fs.readFileSync(
+              "verified-readiness/licensing-release-readiness.json", "utf8")),
+            originalProvenance: JSON.parse(fs.readFileSync(
+              "verified-original/licensing-package-provenance.json", "utf8")),
+            tarball: {
+              filename: name, actualSha256,
+              checksumFileVerified:
+                checksum.trimEnd() === actualSha256 + "  artifacts/" + name,
+              packedName: packed.name, packedVersion: packed.version,
+            },
+          };
+          const plan = verifyLicensingPublicationPlan(input);
+          if (plan.state !== "PUBLICATION_NOT_AUTHORIZED" ||
+              plan.tag !== process.env.RELEASE_TAG ||
+              plan.targetSha !== process.env.GITHUB_SHA ||
+              plan.tarballSha256 !== process.env.ORIGINAL_PACKAGE_SHA256)
+            throw Error("UNEXPECTED_PUBLICATION_PLAN");
+          const currentTree = execFileSync("git",
+            ["rev-parse", "HEAD:@bke/licensing"], { encoding: "utf8" }).trim();
+          if (currentTree !== plan.packageTreeSha) throw Error("PACKAGE_TREE_CHANGED");
+          fs.writeFileSync("release-proof/verified-plan.json", JSON.stringify(plan, null, 2));
+          console.log("PASS: ready to stage original immutable tarball, no alternate build");
+          NODE
+
+      - name: Stage new immutable tag and draft release with original verified assets only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM_RELEASE_TAG" = "licensing-v0.10.0"
+          remote_main="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
+          test "$remote_main" = "$EXPECTED_MAIN_SHA"
+          # Only HTTP 404 is admissible. Existing refs/releases, 401/403 and network errors fail closed.
+          status() {
+            curl --silent --output /dev/null --write-out '%{http_code}' \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/$1"
+          }
+          test "$(status "git/ref/tags/$RELEASE_TAG")" = "404"
+          test "$(status "releases/tags/$RELEASE_TAG")" = "404"
+          # GitHub create-ref is atomic; never force, overwrite or delete an existing tag.
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$RELEASE_TAG" -f sha="$EXPECTED_MAIN_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$EXPECTED_MAIN_SHA"
+          cat > release-proof/NOTES.md <<'NOTES'
+          @bke/licensing 0.10.0 — exact archived JWS package from original certified GitHub Actions run #43153573142.
+          Original package SHA-256: 4d2f8e4295effcfd4aa3b6492944e8dbba3ec75e86c83727a30daa74e4f75d60.
+          Release-readiness evidence and original package provenance are attached as independent assets.
+          This is a GitHub software package release only; not npm publication, production JWS signing, or installed Agent/Launcher E2E certification.
+          NOTES
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --target "$EXPECTED_MAIN_SHA" \
+            --draft --title "@bke/licensing v0.10.0" \
+            --notes-file release-proof/NOTES.md
+          gh release upload "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            verified-original/bke-licensing-0.10.0.tgz \
+            verified-original/bke-licensing-0.10.0.tgz.sha256 \
+            verified-original/licensing-package-provenance.json \
+            verified-readiness/licensing-release-readiness.json
+
+      - name: Download actual GitHub draft assets and verify exact byte identity before publishing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-downloaded
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-downloaded
+          for name in \
+            bke-licensing-0.10.0.tgz \
+            bke-licensing-0.10.0.tgz.sha256 \
+            licensing-package-provenance.json; do
+            cmp "verified-original/$name" "release-downloaded/$name"
+          done
+          cmp verified-readiness/licensing-release-readiness.json \
+            release-downloaded/licensing-release-readiness.json
+          actual="$(sha256sum release-downloaded/bke-licensing-0.10.0.tgz | cut -d' ' -f1)"
+          test "$actual" = "$ORIGINAL_PACKAGE_SHA256"
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq '{id,tag_name,draft,assets:[.assets[]|{name,size}]}' \
+            > release-proof/draft.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const release = JSON.parse(fs.readFileSync("release-proof/draft.json", "utf8"));
+          const plan = JSON.parse(fs.readFileSync("release-proof/verified-plan.json", "utf8"));
+          if (!release.draft || release.tag_name !== plan.tag ||
+              release.assets.length !== 4 ||
+              release.assets.some(a => a.size <= 0) ||
+              release.assets.map(a => a.name).sort().join("|") !==
+                [...plan.requiredReleaseAssets].sort().join("|"))
+            throw Error("DRAFT_RELEASE_ASSETS_MISMATCH");
+          NODE
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$EXPECTED_MAIN_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')" = "$EXPECTED_MAIN_SHA"
+
+      - name: Publish verified draft and validate final GitHub release authority
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+            --jq '{id,tag_name,draft,published_at,assets:[.assets[]|{name,size}]}' \
+            > release-proof/published.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const published = JSON.parse(fs.readFileSync("release-proof/published.json", "utf8"));
+          const plan = JSON.parse(fs.readFileSync("release-proof/verified-plan.json", "utf8"));
+          if (published.draft || !published.published_at ||
+              published.tag_name !== plan.tag ||
+              published.assets.length !== 4 ||
+              published.assets.map(a => a.name).sort().join("|") !==
+                [...plan.requiredReleaseAssets].sort().join("|"))
+            throw Error("POST_PUBLICATION_RELEASE_MISMATCH");
+          NODE
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$EXPECTED_MAIN_SHA"
+          echo "PASS: immutable GitHub licensing-v0.10.0 release published and remotely verified"
