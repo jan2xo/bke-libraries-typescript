@@ -16,6 +16,10 @@ on:
         description: Enter exactly licensing-v0.10.0 to authorize irreversible GitHub publication
         required: true
         type: string
+      confirm_immutable_releases:
+        description: Owner confirms GitHub repository immutable releases are ENABLED before dispatch
+        required: true
+        type: string
 
 # This single manual publisher owns the only write-token release exception.
 permissions:
@@ -36,6 +40,7 @@ jobs:
       EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
       READINESS_RUN_ID: ${{ inputs.readiness_run_id }}
       CONFIRM_RELEASE_TAG: ${{ inputs.confirm_release_tag }}
+      CONFIRM_IMMUTABILITY: ${{ inputs.confirm_immutable_releases }}
       ORIGINAL_RUN_ID: "43153573142"
       ORIGINAL_SOURCE_SHA: "d6b0159d9c22e0f9e468040777ea4591953c89f6"
       ORIGINAL_PACKAGE_SHA256: "4d2f8e4295effcfd4aa3b6492944e8dbba3ec75e86c83727a30daa74e4f75d60"
@@ -57,6 +62,7 @@ jobs:
           test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
           test "$GITHUB_REF" = "refs/heads/main"
           test "$CONFIRM_RELEASE_TAG" = "$RELEASE_TAG"
+          test "$CONFIRM_IMMUTABILITY" = "GITHUB_IMMUTABLE_RELEASES_ENABLED"
           [[ "$EXPECTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$READINESS_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -229,6 +235,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$CONFIRM_RELEASE_TAG" = "licensing-v0.10.0"
+          test "$CONFIRM_IMMUTABILITY" = "GITHUB_IMMUTABLE_RELEASES_ENABLED"
           remote_main="$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')"
           test "$remote_main" = "$EXPECTED_MAIN_SHA"
           # Only HTTP 404 is admissible. Existing refs/releases, 401/403 and network errors fail closed.
@@ -304,13 +311,13 @@ jobs:
           set -euo pipefail
           gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
-            --jq '{id,tag_name,draft,published_at,assets:[.assets[]|{name,size}]}' \
+            --jq '{id,tag_name,draft,immutable,published_at,assets:[.assets[]|{name,size}]}' \
             > release-proof/published.json
           node --input-type=module <<'NODE'
           import fs from "node:fs";
           const published = JSON.parse(fs.readFileSync("release-proof/published.json", "utf8"));
           const plan = JSON.parse(fs.readFileSync("release-proof/verified-plan.json", "utf8"));
-          if (published.draft || !published.published_at ||
+          if (published.draft || published.immutable !== true || !published.published_at ||
               published.tag_name !== plan.tag ||
               published.assets.length !== 4 ||
               published.assets.map(a => a.name).sort().join("|") !==
