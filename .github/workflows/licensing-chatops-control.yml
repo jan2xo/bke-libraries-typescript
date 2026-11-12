@@ -1,0 +1,163 @@
+name: BKE Library - Owner ChatOps Licensing Release Control
+
+# Cheap owner-only issue comment router. Actual heavy owners remain workflow_dispatch.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bke-licensing-owner-chatops-issue-100
+  cancel-in-progress: false
+
+jobs:
+  owner-command:
+    if: >-
+      github.repository == 'jan2xo/bke-libraries-typescript' &&
+      github.event.issue.number == 100 &&
+      !github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/bke ')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Reauthenticate owner comment and dispatch only the named workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { pathToFileURL } = require("node:url");
+            const path = require("node:path");
+            const { authorizeLicensingChatOpsCommand } =
+              await import(pathToFileURL(path.resolve(
+                "scripts/licensing/chatops-release-control.mjs")).href);
+            const { owner, repo } = context.repo;
+            const origin = owner + "/" + repo;
+            if (origin !== "jan2xo/bke-libraries-typescript")
+              throw Error("REPOSITORY_NOT_ALLOWLISTED");
+            const eventComment = context.payload.comment;
+            const eventIssue = context.payload.issue;
+            if (!eventComment || !eventIssue || context.eventName !== "issue_comment" ||
+                context.payload.action !== "created" ||
+                eventIssue.number !== 100 || eventIssue.pull_request)
+              throw Error("NOT_OWNER_CONTROL_ISSUE_COMMENT");
+
+            // REST is authoritative for identity, author, current comment,
+            // issue state and exact main; webhook body alone is untrusted.
+            const { data: comment } = await github.rest.issues.getComment({
+              owner, repo, comment_id: eventComment.id
+            });
+            const { data: issue } = await github.rest.issues.get({
+              owner, repo, issue_number: 100
+            });
+            const { data: branch } = await github.rest.repos.getBranch({
+              owner, repo, branch: "main"
+            });
+            const cmd = authorizeLicensingChatOpsCommand({
+              event: {
+                eventName: context.eventName,
+                action: context.payload.action,
+                repository: origin,
+                senderId: context.payload.sender?.id,
+                senderLogin: context.payload.sender?.login,
+                issueNumber: eventIssue.number,
+                issueId: eventIssue.id,
+                commentId: eventComment.id,
+                commentBody: eventComment.body,
+              },
+              comment: {
+                id: comment.id,
+                body: comment.body,
+                issueUrl: comment.issue_url,
+                user: comment.user,
+                authorAssociation: comment.author_association,
+                createdAt: comment.created_at,
+                updatedAt: comment.updated_at,
+              },
+              issue: {
+                number: issue.number,
+                id: issue.id,
+                state: issue.state,
+                isPullRequest: !!issue.pull_request,
+                ownerLogin: issue.user?.login,
+              },
+              currentMainSha: branch.commit.sha,
+              nowMs: Date.now(),
+            });
+
+            if (cmd.intent === "READ_ONLY_READINESS") {
+              const inputs = {
+                expected_main_sha: cmd.expectedMainSha,
+                certified_run_id: "43153573142",
+                certified_source_sha: "d6b0159d9c22e0f9e468040777ea4591953c89f6",
+                certified_pr_number: "94",
+                tarball_sha256: "4d2f8e4295effcfd4aa3b6492944e8dbba3ec75e86c83727a30daa74e4f75d60",
+                version: "0.10.0",
+              };
+              await github.rest.actions.createWorkflowDispatch({
+                owner, repo, workflow_id: cmd.targetWorkflow, ref: "main", inputs,
+              });
+              core.summary.addRaw("PASS: owner comment #" + comment.id +
+                " dispatched READ-ONLY readiness at main " + cmd.expectedMainSha);
+            } else if (cmd.intent === "OWNER_AUTHORIZED_GITHUB_RELEASE") {
+              // Publication is distinct from certification. Never infer it
+              // from a previous comment or an old-main readiness result.
+              const readinessId = cmd.readinessRunId;
+              const { data: run } = await github.rest.actions.getWorkflowRun({
+                owner, repo, run_id: readinessId,
+              });
+              if (run.repository?.full_name !== origin ||
+                  run.path !== ".github/workflows/licensing-release-readiness.yml" ||
+                  run.event !== "workflow_dispatch" ||
+                  run.head_sha !== cmd.expectedMainSha ||
+                  run.status !== "completed" || run.conclusion !== "success")
+                throw Error("READINESS_RUN_NOT_AUTHORIZED_FOR_EXACT_MAIN");
+              const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner, repo, run_id: readinessId, per_page: 100,
+              });
+              const valid = artifacts.artifacts.filter(a =>
+                a.name === "bke-licensing-read-only-release-readiness" &&
+                !a.expired && a.size_in_bytes > 0);
+              if (valid.length !== 1) throw Error("MISSING_OR_AMBIGUOUS_READINESS_ARTIFACT");
+              const absent = async callback => {
+                try {
+                  await callback();
+                  throw Error("LICENSING_V010_RELEASE_COLLISION");
+                } catch (error) {
+                  if (error.message === "LICENSING_V010_RELEASE_COLLISION" ||
+                      error.status !== 404) throw error;
+                }
+              };
+              await absent(() => github.rest.git.getRef({
+                owner, repo, ref: "tags/licensing-v0.10.0",
+              }));
+              await absent(() => github.rest.repos.getReleaseByTag({
+                owner, repo, tag: "licensing-v0.10.0",
+              }));
+              await github.rest.actions.createWorkflowDispatch({
+                owner, repo,
+                workflow_id: cmd.targetWorkflow, ref: "main",
+                inputs: {
+                  expected_main_sha: cmd.expectedMainSha,
+                  readiness_run_id: String(readinessId),
+                  confirm_release_tag: cmd.releaseTag,
+                  confirm_immutable_releases: "GITHUB_IMMUTABLE_RELEASES_ENABLED",
+                  authorization_comment_id: String(cmd.authorizationCommentId),
+                },
+              });
+              core.summary.addRaw("PASS: authenticated owner comment #" + comment.id +
+                " dispatched owner-authorized GitHub release at main " +
+                cmd.expectedMainSha + " using readiness #" + readinessId);
+            } else {
+              throw Error("UNKNOWN_OWNER_COMMAND");
+            }
+            await core.summary.write();
