@@ -1,13 +1,6 @@
 name: BKE Library - Support
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/support/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/support.yml"
   workflow_dispatch:
 
 permissions:
