@@ -24,6 +24,7 @@ jobs:
           node --test scripts/licensing/check-release-readiness.test.mjs
           node --test scripts/licensing/check-publication-plan.test.mjs
           node --test scripts/licensing/chatops-release-control.test.mjs
+          node --test scripts/licensing/check-release-recovery.test.mjs
       - name: Verify explicit module CI and absent automatic publication
         shell: bash
         run: |
@@ -111,6 +112,8 @@ jobs:
             "READINESS_RUN_NOT_AUTHORIZED_FOR_EXACT_MAIN",
             "MISSING_OR_AMBIGUOUS_READINESS_ARTIFACT",
             "LICENSING_V010_RELEASE_COLLISION",
+            "OWNER_AUTHORIZED_DRAFT_RECOVERY",
+            "STAGED_DRAFT_ASSETS_NOT_SAFE_TO_RECOVER",
           ];
           if (!/^permissions:\s*\n  contents:\s*read\s*$/m.test(chatops) ||
               !/^    permissions:\s*\n      contents:\s*read\s*\n      issues:\s*read\s*\n      actions:\s*write\s*$/m.test(chatops) ||
@@ -122,7 +125,11 @@ jobs:
           for (const token of routerRequirements) {
             if (!chatops.includes(token)) fail("Missing hardened ChatOps router rule: " + token);
           }
-          if (!chatopsParser.includes("targetWorkflow: 'licensing-release-publication.yml'") ||
+          if (!chatopsParser.includes("targetWorkflow: 'licensing-release-recovery.yml'") ||
+              !chatopsParser.includes("authorizeDelegatedLicensingDraftRecovery") ||
+              !chatopsParser.includes("RECOVERY_COMMENT_NOT_OWNER") ||
+              !chatopsParser.includes("RECOVERY_COMMAND_EXPIRED") ||
+              !chatopsParser.includes("targetWorkflow: 'licensing-release-publication.yml'") ||
               !chatopsParser.includes("targetWorkflow: 'licensing-release-readiness.yml'") ||
               !chatopsParser.includes("const OWNER_ID = 163499503") ||
               !chatopsParser.includes("const CONTROL_ISSUE_ID = 6344112785") ||
@@ -165,6 +172,32 @@ jobs:
           }
           if (/\bfetch\s*\(|\bhttps\.request\s*\(|\bcreateRelease\s*\(|\bcreateRef\s*\(|\buploadReleaseAsset\s*\(|\bgh\s+release\b|\bnpm\s+publish\b|\bGH_TOKEN\b|\bcontents:\s*write\b/i.test(publication)) {
             fail("Source-only publication comparator must not gain network or release-write capability");
+          }
+          const recovery = fs.readFileSync(path.join(directory, "licensing-release-recovery.yml"), "utf8");
+          const recoveryVerifier = fs.readFileSync("scripts/licensing/check-release-recovery.mjs", "utf8");
+          const recoveryTests = fs.readFileSync("scripts/licensing/check-release-recovery.test.mjs", "utf8");
+          if (!/^on:\s*\n  workflow_dispatch:\s*$/m.test(
+              recovery.slice(0, recovery.indexOf("    inputs:"))) ||
+              !/^permissions:\s*\n  contents:\s*write\s*\n  actions:\s*read\s*\n  issues:\s*read\s*$/m.test(recovery)) {
+            fail("Draft incident recovery must be explicit-only, issue-read, actions-read and version-scoped contents-write");
+          }
+          if (!recovery.includes("github.actor == 'github-actions[bot]'") ||
+              !recovery.includes("authorizeDelegatedLicensingDraftRecovery") ||
+              !recovery.includes("verifyStagedLicensingDraftRecovery") ||
+              !recovery.includes("STAGED_RELEASE_ID") ||
+              !recovery.includes("442576730") ||
+              !recovery.includes("43169356241") ||
+              !recovery.includes("43168709538") ||
+              !recovery.includes("gh api -X PATCH") ||
+              !recovery.includes("-F draft=false") ||
+              !recovery.includes("pub.immutable !== true") ||
+              !recovery.includes("POST_RECOVERY_PUBLICATION_AUTHORITY_MISMATCH") ||
+              !recoveryVerifier.includes("EXISTING_DRAFT_VERIFIED_READY_TO_PUBLISH_ONCE") ||
+              !recoveryTests.includes("staged immutable v0.10.0 release recovery incident")) {
+            fail("Recovery workflow is missing the pinned owner, draft, original asset or post-publication proof");
+          }
+          if (/\bgh release create\b|\bgh release upload\b|\bgh api -X POST\b|\bcreateRef\b|\bcreateRelease\b|\b--clobber\b|\bnpm publish\b|\bgh release delete\b/i.test(recovery)) {
+            fail("Recovery must never create/replace a GitHub tag/draft/asset or publish npm");
           }
           const publisher = fs.readFileSync(path.join(directory, "licensing-release-publication.yml"), "utf8");
           if (!/^on:\s*\n  workflow_dispatch:\s*$/m.test(publisher.slice(0, publisher.indexOf("    inputs:")))) {

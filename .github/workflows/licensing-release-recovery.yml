@@ -1,0 +1,317 @@
+name: BKE Library - Recover Verified Existing v0.10.0 Draft (One Time)
+
+# Explicit owner-issued ChatOps recovery; never recreate a tag or upload assets.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: Current workflow main SHA, not the original immutable release target
+        required: true
+        type: string
+      authorization_comment_id:
+        description: Fresh authenticated owner recovery comment on issue #100
+        required: true
+        type: string
+      confirm_recovery:
+        description: Must be RECOVER_EXISTING_DRAFT_ONLY
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  issues: read
+
+concurrency:
+  group: bke-licensing-v010-immutable-publication
+  cancel-in-progress: false
+
+jobs:
+  resume:
+    if: >-
+      github.repository == 'jan2xo/bke-libraries-typescript' &&
+      github.actor == 'github-actions[bot]' &&
+      github.ref == 'refs/heads/main'
+    name: Verify staged bytes and publish ONLY existing draft #442576730
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+      AUTHORIZATION_COMMENT_ID: ${{ inputs.authorization_comment_id }}
+      CONFIRM_RECOVERY: ${{ inputs.confirm_recovery }}
+      RELEASE_TAG: licensing-v0.10.0
+      STAGED_RELEASE_ID: "442576730"
+      STAGING_RUN_ID: "43169356241"
+      ORIGINAL_RELEASE_SHA: "b39fa5cc28c94c87a40a420e80f387c176564144"
+      TARBALL_SHA256: "4d2f8e4295effcfd4aa3b6492944e8dbba3ec75e86c83727a30daa74e4f75d60"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse moved main, unknown actor, or package-source drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "jan2xo/bke-libraries-typescript"
+          test "$GITHUB_ACTOR" = "github-actions[bot]"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$CONFIRM_RECOVERY" = "RECOVER_EXISTING_DRAFT_ONLY"
+          [[ "$EXPECTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$AUTHORIZATION_COMMENT_ID" =~ ^[1-9][0-9]*$ ]]
+          test "$GITHUB_SHA" = "$EXPECTED_MAIN_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_MAIN_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN_SHA"
+          test "$(git rev-parse "HEAD:@bke/licensing")" = \
+            "ca105493952d947e199958d0c214d0528c7ee51b"
+          test "$(git rev-parse "$ORIGINAL_RELEASE_SHA:@bke/licensing")" = \
+            "ca105493952d947e199958d0c214d0528c7ee51b"
+          test "$(node -p "require('./@bke/licensing/package.json').version")" = "0.10.0"
+          test "$(node -p "require('./package-lock.json').packages['@bke/licensing'].version")" = "0.10.0"
+
+      - name: Authenticate fresh recovery comment, exact original failed stage, tag and draft
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const { pathToFileURL } = require("node:url");
+            const { authorizeDelegatedLicensingDraftRecovery } = await import(
+              pathToFileURL(path.resolve(
+                "scripts/licensing/chatops-release-control.mjs")).href);
+            const { owner, repo } = context.repo;
+            const origin = owner + "/" + repo;
+            if (origin !== "jan2xo/bke-libraries-typescript" ||
+                context.actor !== "github-actions[bot]" ||
+                context.eventName !== "workflow_dispatch" ||
+                context.ref !== "refs/heads/main" ||
+                context.sha !== process.env.EXPECTED_MAIN_SHA)
+              throw Error("RECOVERY_UNTRUSTED_DISPATCH");
+            if (!/^[1-9][0-9]*$/.test(process.env.AUTHORIZATION_COMMENT_ID) ||
+                !Number.isSafeInteger(Number(process.env.AUTHORIZATION_COMMENT_ID)))
+              throw Error("INVALID_RECOVERY_OWNER_COMMENT_ID");
+
+            const { data: comment } = await github.rest.issues.getComment({
+              owner, repo, comment_id: Number(process.env.AUTHORIZATION_COMMENT_ID),
+            });
+            const { data: issue } = await github.rest.issues.get({
+              owner, repo, issue_number: 100,
+            });
+            const result = authorizeDelegatedLicensingDraftRecovery({
+              actor: context.actor,
+              authorizationCommentId: process.env.AUTHORIZATION_COMMENT_ID,
+              comment: {
+                id: comment.id, body: comment.body, user: comment.user,
+                authorAssociation: comment.author_association,
+                issueUrl: comment.issue_url,
+                createdAt: comment.created_at, updatedAt: comment.updated_at,
+              },
+              issue: {
+                id: issue.id, number: issue.number, state: issue.state,
+                isPullRequest: !!issue.pull_request, ownerLogin: issue.user?.login,
+              },
+              expectedMainSha: process.env.EXPECTED_MAIN_SHA,
+              nowMs: Date.now(),
+            });
+            if (result.authorization !== "VERIFIED_OWNER_DRAFT_RECOVERY")
+              throw Error("INVALID_RECOVERY_AUTHORITY");
+
+            const { data: branch } = await github.rest.repos.getBranch({
+              owner, repo, branch: "main",
+            });
+            if (branch.commit.sha !== context.sha) throw Error("STALE_MAIN_FOR_RECOVERY");
+
+            const getRun = async id => (await github.rest.actions.getWorkflowRun({
+              owner, repo, run_id: id,
+            })).data;
+            const original = await getRun(43153573142);
+            const readiness = await getRun(43168709538);
+            const stage = await getRun(43169356241);
+            const getArtifacts = async (runId, name) => {
+              const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner, repo, run_id: runId, per_page: 100,
+              });
+              const matches = data.artifacts.filter(a =>
+                a.name === name && !a.expired && a.size_in_bytes > 0);
+              if (matches.length !== 1) throw Error("MISSING_OR_EXPIRED_ORIGINAL_PROOF");
+              return matches[0];
+            };
+            const origArtifact = await getArtifacts(43153573142, "bke-licensing-certified-package");
+            const readyArtifact = await getArtifacts(43168709538, "bke-licensing-read-only-release-readiness");
+
+            const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+              owner, repo, run_id: 43169356241, per_page: 100,
+            });
+            if (jobs.jobs.length !== 1) throw Error("STAGE_WORKFLOW_JOB_COUNT_MISMATCH");
+
+            const { data: tag } = await github.rest.git.getRef({
+              owner, repo, ref: "tags/licensing-v0.10.0",
+            });
+            const { data: draft } = await github.rest.repos.getRelease({
+              owner, repo, release_id: 442576730,
+            });
+            // Deliberate choice: getRelease BY ID, never the draft-invisible
+            // releases/tags endpoint or gh release download by tag.
+            const shapeRun = run => ({
+              id: run.id, repository: run.repository?.full_name,
+              headSha: run.head_sha, path: run.path, event: run.event,
+              status: run.status, conclusion: run.conclusion,
+            });
+            const shapeArtifact = (a, runId) => ({
+              id: a.id, name: a.name, runId, expired: a.expired,
+              size: a.size_in_bytes,
+            });
+            fs.mkdirSync("draft-recovery", { recursive: true });
+            fs.writeFileSync("draft-recovery/github.json", JSON.stringify({
+              repository: origin, mainSha: branch.commit.sha,
+              currentPackageTree: require("node:child_process").execFileSync(
+                "git", ["rev-parse", "HEAD:@bke/licensing"],
+                { encoding: "utf8" }).trim(),
+              tagRef: tag.ref, tagType: tag.object?.type, tagSha: tag.object?.sha,
+              draft: {
+                id: draft.id, tag_name: draft.tag_name,
+                target_commitish: draft.target_commitish,
+                draft: draft.draft, immutable: draft.immutable,
+                published_at: draft.published_at,
+                assets: draft.assets.map(a => ({
+                  id: a.id, name: a.name, state: a.state,
+                  size: a.size, digest: a.digest,
+                })),
+              },
+            }, null, 2));
+            fs.writeFileSync("draft-recovery/runs.json", JSON.stringify({
+              original: shapeRun(original), readiness: shapeRun(readiness),
+              stage: shapeRun(stage),
+              originalArtifact: shapeArtifact(origArtifact, 43153573142),
+              readinessArtifact: shapeArtifact(readyArtifact, 43168709538),
+              stageSteps: jobs.jobs[0].steps.map(s =>
+                ({ name: s.name, conclusion: s.conclusion })),
+            }, null, 2));
+            core.info("PASS: owner-specific staged release recovery authorized; draft ID pinned");
+
+      - name: Retrieve original certified package bytes from original workflow
+        uses: actions/download-artifact@v4
+        with:
+          name: bke-licensing-certified-package
+          run-id: 43153573142
+          github-token: ${{ github.token }}
+          path: original
+
+      - name: Retrieve old-main successful readiness evidence for the staged release
+        uses: actions/download-artifact@v4
+        with:
+          name: bke-licensing-read-only-release-readiness
+          run-id: 43168709538
+          github-token: ${{ github.token }}
+          path: readiness
+
+      - name: Independently verify all FOUR original uploaded draft asset digests and stage steps
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/licensing/chatops-release-control.test.mjs
+          node --test scripts/licensing/check-release-recovery.test.mjs
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import { verifyStagedLicensingDraftRecovery } from "./scripts/licensing/check-release-recovery.mjs";
+          const files = {};
+          for (const name of [
+            "bke-licensing-0.10.0.tgz",
+            "bke-licensing-0.10.0.tgz.sha256",
+            "licensing-package-provenance.json",
+            "licensing-release-readiness.json",
+          ]) {
+            const base = name === "licensing-release-readiness.json" ? "readiness/" : "original/";
+            files[name] = fs.readFileSync(base + name);
+          }
+          const plan = verifyStagedLicensingDraftRecovery({
+            expectedMainSha: process.env.EXPECTED_MAIN_SHA,
+            github: JSON.parse(fs.readFileSync("draft-recovery/github.json", "utf8")),
+            runs: JSON.parse(fs.readFileSync("draft-recovery/runs.json", "utf8")),
+            files,
+            provenance: JSON.parse(files["licensing-package-provenance.json"].toString("utf8")),
+            readiness: JSON.parse(files["licensing-release-readiness.json"].toString("utf8")),
+          });
+          if (plan.state !== "EXISTING_DRAFT_VERIFIED_READY_TO_PUBLISH_ONCE" ||
+              plan.originalTargetSha !== process.env.ORIGINAL_RELEASE_SHA ||
+              plan.sha256 !== process.env.TARBALL_SHA256 ||
+              plan.draftReleaseId !== Number(process.env.STAGED_RELEASE_ID))
+            throw Error("RECOVERY_PLAN_CONFLICT");
+          fs.writeFileSync("draft-recovery/proven-assets.json", JSON.stringify(plan, null, 2) + "\n");
+          console.log("PASS: old owner authorization, source/run/provenance, staged steps and four GitHub server digests match original bytes");
+          NODE
+
+      - name: Publish ONLY previously staged draft ID after fresh remote-state recheck
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM_RECOVERY" = "RECOVER_EXISTING_DRAFT_ONLY"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')" = "$EXPECTED_MAIN_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$ORIGINAL_RELEASE_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$STAGED_RELEASE_ID" \
+            --jq '{id,tag_name,draft,immutable,published_at,target_commitish,assets:[.assets[]|{id,name,size,digest,state}]}' \
+            > draft-recovery/last-check.json
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const original = JSON.parse(fs.readFileSync("draft-recovery/github.json", "utf8")).draft;
+          const current = JSON.parse(fs.readFileSync("draft-recovery/last-check.json", "utf8"));
+          if (current.id !== 442576730 || current.tag_name !== "licensing-v0.10.0" ||
+              current.target_commitish !== process.env.ORIGINAL_RELEASE_SHA ||
+              current.draft !== true || current.published_at !== null ||
+              current.assets.length !== 4 ||
+              current.assets.some(a => {
+                const before = original.assets.find(b => b.id === a.id);
+                return !before || a.digest !== before.digest ||
+                  a.name !== before.name || a.size !== before.size ||
+                  a.state !== "uploaded";
+              })) throw Error("STAGED_DRAFT_CHANGED_BEFORE_PATCH");
+          NODE
+          # No new tag, no new draft, no asset mutation: one ID-scoped PATCH.
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$STAGED_RELEASE_ID" \
+            -F draft=false --jq '{id,tag_name,draft,immutable,published_at}' \
+            > draft-recovery/publish-result.json
+
+      - name: Read back native immutable public release and all four unchanged asset digests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/$STAGED_RELEASE_ID" \
+            --jq '{id,tag_name,draft,immutable,published_at,target_commitish,html_url,assets:[.assets[]|{id,name,size,digest,state}]}' \
+            > draft-recovery/published.json
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')" = "$ORIGINAL_RELEASE_SHA"
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const pub = JSON.parse(fs.readFileSync("draft-recovery/published.json", "utf8"));
+          const plan = JSON.parse(fs.readFileSync("draft-recovery/proven-assets.json", "utf8"));
+          const original = JSON.parse(fs.readFileSync("draft-recovery/github.json", "utf8")).draft;
+          if (pub.id !== plan.draftReleaseId ||
+              pub.tag_name !== plan.tag ||
+              pub.target_commitish !== plan.originalTargetSha ||
+              pub.draft !== false || pub.immutable !== true ||
+              !pub.published_at || pub.assets.length !== 4 ||
+              !pub.html_url || pub.assets.some(a => {
+                const old = original.assets.find(b => b.id === a.id);
+                return !old || a.name !== old.name || a.size !== old.size ||
+                  a.digest !== old.digest || a.state !== "uploaded" ||
+                  plan.assets[a.name] !== a.digest;
+              })) throw Error("POST_RECOVERY_PUBLICATION_AUTHORITY_MISMATCH");
+          console.log("PASS: immutable " + pub.html_url);
+          NODE
+
+      - name: Upload post-recovery publication evidence only (not a second release)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bke-licensing-v010-immutable-recovery-proof
+          path: |
+            draft-recovery/proven-assets.json
+            draft-recovery/published.json
+          retention-days: 90
+          if-no-files-found: error

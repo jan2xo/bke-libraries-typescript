@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { authorizeLicensingChatOpsCommand, authorizeDelegatedLicensingPublication } from './chatops-release-control.mjs';
+import { authorizeLicensingChatOpsCommand, authorizeDelegatedLicensingPublication, authorizeDelegatedLicensingDraftRecovery } from './chatops-release-control.mjs';
 
 const main = 'c'.repeat(40);
 const nowMs = Date.parse('2026-11-12T06:25:00Z');
@@ -145,5 +145,59 @@ describe('independent owner authorization inside delegated publisher', () => {
       'DELEGATED_COMMAND_EXPIRED');
     fail(v => { const t = new Date(nowMs + 1000).toISOString(); v.comment.createdAt = t; v.comment.updatedAt = t; },
       'DELEGATED_COMMAND_EXPIRED');
+  });
+});
+
+
+describe('authenticated one-time failed-draft recovery command', () => {
+  const recoverBody = '/bke recover licensing-v0.10.0 sha=' + main + ' immutable=confirmed';
+  function delegated() {
+    const p = fixture(recoverBody);
+    return {
+      actor: 'github-actions[bot]', authorizationCommentId: String(p.comment.id),
+      comment: p.comment, issue: p.issue, expectedMainSha: main, nowMs,
+    };
+  }
+  function reject(mutate, code) {
+    const p = delegated();
+    mutate(p);
+    assert.throws(() => authorizeDelegatedLicensingDraftRecovery(p),
+      { message: 'LICENSING_CHATOPS_' + code });
+  }
+  it('parses only fixed v0.10.0 recovery command and no arbitrary release operation', () => {
+    const p = fixture(recoverBody);
+    assert.deepEqual(authorizeLicensingChatOpsCommand(p), {
+      intent: 'OWNER_AUTHORIZED_DRAFT_RECOVERY',
+      expectedMainSha: main, releaseTag: 'licensing-v0.10.0',
+      targetWorkflow: 'licensing-release-recovery.yml', authorizationCommentId: 6816324960,
+    });
+    const verified = authorizeDelegatedLicensingDraftRecovery(delegated());
+    assert.equal(verified.authorization, 'VERIFIED_OWNER_DRAFT_RECOVERY');
+    assert.equal(verified.originalDraftId, 442576730);
+    assert.equal(verified.originalReleaseTargetSha, 'b39fa5cc28c94c87a40a420e80f387c176564144');
+    assert.equal(Object.isFrozen(verified), true);
+  });
+  it('rejects unknown operations, versions and false immutability', () => {
+    const cases = [
+      recoverBody.replace('v0.10.0', 'v0.10.1'),
+      recoverBody.replace('immutable=confirmed', 'immutable=unknown'),
+      recoverBody + ' extra',
+      recoverBody + '\nsecond line',
+    ];
+    for (const body of cases)
+      assert.throws(() => authorizeLicensingChatOpsCommand(fixture(body)),
+        { message: 'LICENSING_CHATOPS_UNSUPPORTED_COMMAND' });
+  });
+  it('rejects untrusted actors, forged owner and wrong issue', () => {
+    reject(p => { p.actor = 'jan2xo'; }, 'RECOVERY_BOT_AUTHORIZATION_INVALID');
+    reject(p => { p.authorizationCommentId = ''; }, 'RECOVERY_BOT_AUTHORIZATION_INVALID');
+    reject(p => { p.comment.user.id = 1; }, 'RECOVERY_COMMENT_NOT_OWNER');
+    reject(p => { p.issue.id += 1; }, 'RECOVERY_ISSUE_OR_COMMENT_INVALID');
+    reject(p => { p.comment.id += 1; }, 'RECOVERY_ISSUE_OR_COMMENT_INVALID');
+  });
+  it('refuses different new main, edited and expired owner comments', () => {
+    reject(p => { p.expectedMainSha = 'f'.repeat(40); }, 'RECOVERY_COMMAND_MISMATCH');
+    reject(p => { p.comment.updatedAt = new Date(nowMs).toISOString(); }, 'RECOVERY_COMMAND_EDITED');
+    reject(p => { const t = new Date(nowMs - 601000).toISOString(); p.comment.createdAt = t; p.comment.updatedAt = t; }, 'RECOVERY_COMMAND_EXPIRED');
   });
 });
