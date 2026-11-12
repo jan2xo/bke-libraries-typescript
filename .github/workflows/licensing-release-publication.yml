@@ -20,6 +20,11 @@ on:
         description: Owner confirms GitHub repository immutable releases are ENABLED before dispatch
         required: true
         type: string
+      authorization_comment_id:
+        description: Required for GitHub Actions bot dispatch; must resolve to a fresh owner-authored release command on issue 100
+        required: false
+        default: ""
+        type: string
 
 # This single manual publisher owns the only write-token release exception.
 permissions:
@@ -32,7 +37,10 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'jan2xo/bke-libraries-typescript' && github.actor == 'jan2xo' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'jan2xo/bke-libraries-typescript' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == 'jan2xo' || (github.actor == 'github-actions[bot]' && inputs.authorization_comment_id != ''))
     name: Verify archive identity, then publish exact immutable GitHub release
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -41,6 +49,7 @@ jobs:
       READINESS_RUN_ID: ${{ inputs.readiness_run_id }}
       CONFIRM_RELEASE_TAG: ${{ inputs.confirm_release_tag }}
       CONFIRM_IMMUTABILITY: ${{ inputs.confirm_immutable_releases }}
+      AUTHORIZATION_COMMENT_ID: ${{ inputs.authorization_comment_id }}
       ORIGINAL_RUN_ID: "43153573142"
       ORIGINAL_SOURCE_SHA: "d6b0159d9c22e0f9e468040777ea4591953c89f6"
       ORIGINAL_PACKAGE_SHA256: "4d2f8e4295effcfd4aa3b6492944e8dbba3ec75e86c83727a30daa74e4f75d60"
@@ -58,8 +67,15 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "jan2xo/bke-libraries-typescript"
-          test "$GITHUB_ACTOR" = "jan2xo"
           test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          if [ "$GITHUB_ACTOR" = "jan2xo" ]; then
+            test -z "$AUTHORIZATION_COMMENT_ID"
+          elif [ "$GITHUB_ACTOR" = "github-actions[bot]" ]; then
+            [[ "$AUTHORIZATION_COMMENT_ID" =~ ^[1-9][0-9]*$ ]]
+          else
+            echo "::error::Untrusted release dispatch actor"
+            exit 1
+          fi
           test "$GITHUB_REF" = "refs/heads/main"
           test "$CONFIRM_RELEASE_TAG" = "$RELEASE_TAG"
           test "$CONFIRM_IMMUTABILITY" = "GITHUB_IMMUTABLE_RELEASES_ENABLED"
@@ -87,11 +103,45 @@ jobs:
             const { owner, repo } = context.repo;
             const origin = owner + "/" + repo;
             if (origin !== "jan2xo/bke-libraries-typescript" ||
-                context.actor !== "jan2xo" ||
+                (context.actor !== "jan2xo" && context.actor !== "github-actions[bot]") ||
                 context.eventName !== "workflow_dispatch" ||
                 context.ref !== "refs/heads/main" ||
                 context.sha !== process.env.GITHUB_VERIFIED_MAIN_SHA)
               throw Error("WRONG_RELEASE_AUTHORITY");
+            // An explicit owner run needs no issue token. A bot-dispatched
+            // release must independently verify the precise owner comment.
+            const authorizationId = process.env.AUTHORIZATION_COMMENT_ID ?? "";
+            if (context.actor === "jan2xo") {
+              if (authorizationId) throw Error("OWNER_MUST_NOT_DELEGATE_WITH_UNVERIFIED_COMMENT");
+            } else {
+              if (!/^[1-9][0-9]*$/.test(authorizationId))
+                throw Error("MISSING_BOT_RELEASE_AUTHORIZATION");
+              const id = Number(authorizationId);
+              if (!Number.isSafeInteger(id)) throw Error("INVALID_BOT_COMMENT_ID");
+              const { data: comment } = await github.rest.issues.getComment({
+                owner, repo, comment_id: id,
+              });
+              const { data: issue } = await github.rest.issues.get({
+                owner, repo, issue_number: 100,
+              });
+              const expectedBody =
+                "/bke publish licensing-v0.10.0 sha=" + context.sha +
+                " readiness=" + process.env.READINESS_RUN_ID +
+                " immutable=confirmed";
+              const createdMs = Date.parse(comment.created_at);
+              if (issue.id !== 6344112785 || issue.number !== 100 ||
+                  issue.state !== "open" || issue.pull_request ||
+                  comment.user?.id !== 163499503 ||
+                  comment.user?.login !== "jan2xo" ||
+                  comment.author_association !== "OWNER" ||
+                  comment.issue_url !== "https://api.github.com/repos/" + origin + "/issues/100" ||
+                  comment.body !== expectedBody ||
+                  comment.created_at !== comment.updated_at ||
+                  !Number.isFinite(createdMs) || createdMs > Date.now() ||
+                  Date.now() - createdMs > 10 * 60 * 1000)
+                throw Error("UNVERIFIABLE_OR_STALE_OWNER_RELEASE_COMMAND");
+              core.info("PASS: authentic owner comment #" + id + " authorizes this exact release run");
+            }
             const { data: branch } = await github.rest.repos.getBranch({ owner, repo, branch: "main" });
             if (branch.commit.sha !== context.sha) throw Error("STALE_RELEASE_MAIN");
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: 94 });
