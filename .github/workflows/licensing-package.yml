@@ -15,6 +15,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
+      - name: Verify exact source and unique unpublished Licensing version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          version="$(node -p "require('./@bke/licensing/package.json').version")"
+          locked="$(node -p "require('./package-lock.json').packages['@bke/licensing'].version")"
+          if [[ "$version" != "$locked" ]]; then
+            echo "::error::@bke/licensing package and lockfile versions disagree"
+            exit 1
+          fi
+          # Fail closed if the new bits would reuse any already published tag.
+          # An unreachable remote also fails this assignment under set -e.
+          existing="$(git ls-remote --tags origin "refs/tags/licensing-v${version}")"
+          if [[ -n "$existing" ]]; then
+            echo "::error::Immutable licensing-v${version} tag already exists; bump version before packaging"
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -33,6 +51,26 @@ jobs:
           test "$artifact" = "bke-licensing-${version}.tgz"
           test -s "artifacts/$artifact"
           sha256sum "artifacts/$artifact" | tee "artifacts/$artifact.sha256"
+          export LICENSING_VERSION="$version"
+          export LICENSING_ARTIFACT="$artifact"
+          export SOURCE_SHA="$(git rev-parse HEAD)"
+          export SOURCE_TREE_SHA="$(git rev-parse HEAD^{tree})"
+          export TARBALL_SHA256="$(cut -d' ' -f1 "artifacts/$artifact.sha256")"
+          # This is CI evidence only, NOT release authority or a signed attestation.
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from "node:fs";
+          const e = process.env;
+          writeFileSync("artifacts/licensing-package-provenance.json", JSON.stringify({
+            schemaVersion: 1,
+            component: "@bke/licensing",
+            version: e.LICENSING_VERSION,
+            sourceSha: e.SOURCE_SHA,
+            sourceTreeSha: e.SOURCE_TREE_SHA,
+            tarballFilename: e.LICENSING_ARTIFACT,
+            tarballSha256: e.TARBALL_SHA256,
+            state: "CERTIFIED_UNPUBLISHED_CANDIDATE",
+          }, null, 2) + "\\n");
+          NODE
           echo "LICENSING_VERSION=$version" >> "$GITHUB_ENV"
           echo "LICENSING_ARTIFACT=$artifact" >> "$GITHUB_ENV"
       - name: Certify package contents
@@ -40,6 +78,22 @@ jobs:
         run: |
           set -euo pipefail
           tar -tzf "artifacts/$LICENSING_ARTIFACT" > artifacts/package-contents.txt
+          # Prove the evidence identifies precisely these packed bits and checkout.
+          node <<'NODE'
+          const fs = require("node:fs");
+          const crypto = require("node:crypto");
+          const manifest = JSON.parse(fs.readFileSync("artifacts/licensing-package-provenance.json", "utf8"));
+          const blob = fs.readFileSync("artifacts/" + process.env.LICENSING_ARTIFACT);
+          const actualSha = crypto.createHash("sha256").update(blob).digest("hex");
+          if (manifest.state !== "CERTIFIED_UNPUBLISHED_CANDIDATE" ||
+              manifest.sourceSha !== process.env.GITHUB_SHA ||
+              manifest.version !== process.env.LICENSING_VERSION ||
+              manifest.tarballFilename !== process.env.LICENSING_ARTIFACT ||
+              manifest.tarballSha256 !== actualSha) {
+            throw Error("LICENSING_PACKAGE_PROVENANCE_MISMATCH");
+          }
+          console.log("Certified exact-head unpublished licensing package SHA-256:", actualSha);
+          NODE
           grep -Fx 'package/package.json' artifacts/package-contents.txt
           grep -Fx 'package/module.manifest.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/license-key-reveal.contract.ts' artifacts/package-contents.txt
@@ -209,7 +263,7 @@ jobs:
             renewSubscription: async () => ({ licenses: [], renewalOperations: [] }),
           });
           if (typeof entitlement.issue !== "function" || typeof entitlement.renewSubscription !== "function") throw new Error("Packed entitlement-management capability missing.");
-          console.log("Packed @bke/licensing 0.9.0 entitlement-management and existing consumer smoke GREEN");
+          console.log("Packed @bke/licensing account-product JWS and legacy consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
           npx --prefix .package-smoke tsc -p .package-smoke/tsconfig.json --noEmit

@@ -44,5 +44,12 @@ jobs:
           if (!/Install tarball in blank consumer/.test(source)) {
             reject('Licensing package must retain its isolated consumer gate.');
           }
+          if (!/git rev-parse HEAD/.test(source) || !/\$GITHUB_SHA/.test(source) ||
+              !/git ls-remote --tags origin/.test(source) ||
+              !/licensing-package-provenance\.json/.test(source) ||
+              !/sourceTreeSha/.test(source) || !/tarballSha256/.test(source) ||
+              !/CERTIFIED_UNPUBLISHED_CANDIDATE/.test(source)) {
+            reject('Licensing package needs exact-head, immutable tag and content-hash provenance guards.');
+          }
           console.log('PASS: explicit-only package certification, read-only token, no implicit release path.');
           NODE
