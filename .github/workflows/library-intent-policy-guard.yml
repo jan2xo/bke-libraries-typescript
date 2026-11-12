@@ -117,7 +117,7 @@ jobs:
           const publication = fs.readFileSync("scripts/licensing/check-publication-plan.mjs", "utf8");
           const publicationTests = fs.readFileSync("scripts/licensing/check-publication-plan.test.mjs", "utf8");
           if (!publication.includes('state: "PUBLICATION_NOT_AUTHORIZED"') ||
-              !publication.includes('RELEASE_PLAN') && !publication.includes('LICENSING_PUBLICATION_PLAN_') ||
+              !publication.includes('LICENSING_PUBLICATION_PLAN_') ||
               !publicationTests.includes("immutable licensing publication plan")) {
             fail("Source-only publication plan and fail-closed tests are required");
           }
