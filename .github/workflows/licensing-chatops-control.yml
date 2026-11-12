@@ -176,26 +176,11 @@ jobs:
               });
               if (tag.object?.type !== "commit" || tag.object?.sha !== originalSha)
                 throw Error("STAGED_TAG_NOT_ORIGINAL_APPROVED_SHA");
-              const { data: release } = await github.rest.repos.getRelease({
-                owner, repo, release_id: 442576730,
-              });
-              const names = [
-                "bke-licensing-0.10.0.tgz", "bke-licensing-0.10.0.tgz.sha256",
-                "licensing-package-provenance.json", "licensing-release-readiness.json",
-              ];
-              if (release.id !== 442576730 ||
-                  release.tag_name !== "licensing-v0.10.0" ||
-                  release.target_commitish !== originalSha ||
-                  !release.draft || release.published_at !== null ||
-                  release.assets?.length !== 4 ||
-                  release.assets.some(a => !names.includes(a.name) ||
-                    a.state !== "uploaded" || a.size <= 0 ||
-                    !/^sha256:[0-9a-f]{64}$/.test(a.digest ?? "")) ||
-                  new Set(release.assets.map(a => a.name)).size !== 4)
-                throw Error("STAGED_DRAFT_ASSETS_NOT_SAFE_TO_RECOVER");
-              if (release.assets.find(a => a.name === names[0])?.digest !==
-                  "sha256:4d2f8e4295effcfd4aa3b6492944e8dbba3ec75e86c83727a30daa74e4f75d60")
-                throw Error("STAGED_ORIGINAL_ARCHIVE_HASH_CHANGED");
+              // Draft releases require higher authority than this cheap router's
+              // contents:read permission. Leave privileged draft read and all
+              // byte/digest verification to the explicitly dispatched recovery
+              // workflow with its independently authenticated owner command.
+              // The router only validates the original failed run and pinned tag.
               await github.rest.actions.createWorkflowDispatch({
                 owner, repo, workflow_id: cmd.targetWorkflow, ref: "main",
                 inputs: {
