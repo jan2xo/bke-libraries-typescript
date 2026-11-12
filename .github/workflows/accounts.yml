@@ -1,14 +1,6 @@
 name: BKE Library - Accounts
 
 on:
-  pull_request:
-    branches: [main, feat/licensing-transfer-policy-facts]
-    paths:
-      - "@bke/accounts/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".gitignore"
-      - ".github/workflows/accounts.yml"
   workflow_dispatch:
 
 permissions:
