@@ -1,0 +1,90 @@
+name: BKE Library - Explicit Licensing Package Certification Router
+
+# PR = ledger. Owner slash command = intentional certification dispatch.
+# This workflow NEVER releases, packages, or publishes anything itself.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/licensing-certify-router.yml"
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert narrow owner-only certification router
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const assert = require('node:assert/strict');
+          const s = fs.readFileSync('.github/workflows/licensing-certify-router.yml','utf8');
+          assert.match(s,/github\.event_name == 'issue_comment'/);
+          assert.match(s,/context\.payload\.comment\?\.user\?\.login !== context\.repo\.owner/);
+          assert.match(s,/pr\.head\.sha !== match\[1\]/);
+          assert.match(s,/pr\.head\.repo\.full_name !== `\$\{owner\}\/\$\{repo\}`/);
+          assert.match(s,/github\.rest\.actions\.createWorkflowDispatch/);
+          assert.match(s,/workflow_id: 'licensing-package\.yml'/);
+          assert.doesNotMatch(s.slice(s.indexOf('\n  dispatch:\n')),/gh release create|createRelease|createRef|contents: write/);
+          console.log('PASS: owner-only single-workflow exact-head certification router');
+          NODE
+
+  dispatch:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/certify licensing-package ')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    steps:
+      - name: Authorize exact-head owner request and dispatch certification
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = (context.payload.comment?.body ?? '').trim();
+            const match = /^\/certify licensing-package ([0-9a-f]{40})$/.exec(body);
+            if (!match) {
+              core.setFailed('Expected exact SHA command: /certify licensing-package <40hex>');
+              return;
+            }
+            // This router is deliberately restricted to the repository owner;
+            // there is no authorization via untrusted PR contents or author_association.
+            if (context.payload.comment?.user?.login !== context.repo.owner) {
+              core.setFailed('Only repository owner may dispatch Licensing package proof.');
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: context.issue.number
+            });
+            if (pr.state !== 'open' ||
+                pr.base.ref !== 'main' ||
+                pr.head.repo.full_name !== `${owner}/${repo}` ||
+                pr.head.sha !== match[1]) {
+              core.setFailed('PR not internal/open/main-bound or expected exact head is stale.');
+              return;
+            }
+            if (!pr.body?.includes('BKE CERTIFICATION PLAN')) {
+              core.setFailed('PR missing declared BKE CERTIFICATION PLAN.');
+              return;
+            }
+            // workflow_dispatch is certification-only, read-only, and cannot publish.
+            // Validate dispatched run head SHA against match[1] before any merge:
+            // GitHub resolves branch refs at run admission.
+            await github.rest.actions.createWorkflowDispatch({
+              owner, repo, workflow_id: 'licensing-package.yml', ref: pr.head.ref
+            });
+            core.info(`Dispatched certification only for PR #${pr.number} expected SHA ${match[1]}`);
