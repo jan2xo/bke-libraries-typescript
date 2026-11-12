@@ -20,7 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Certify offline Licensing release-readiness comparator
-        run: node --test scripts/licensing/check-release-readiness.test.mjs
+        run: |
+          node --test scripts/licensing/check-release-readiness.test.mjs
+          node --test scripts/licensing/check-publication-plan.test.mjs
       - name: Verify explicit module CI and absent automatic publication
         shell: bash
         run: |
@@ -111,6 +113,19 @@ jobs:
               !/sha256sum/.test(readiness) ||
               !/check-release-readiness\.mjs/.test(readiness)) {
             fail("Read-only readiness is missing release, Git tree, source run or archive proof");
+          }
+          const publication = fs.readFileSync("scripts/licensing/check-publication-plan.mjs", "utf8");
+          const publicationTests = fs.readFileSync("scripts/licensing/check-publication-plan.test.mjs", "utf8");
+          if (!publication.includes('state: "PUBLICATION_NOT_AUTHORIZED"') ||
+              !publication.includes('LICENSING_PUBLICATION_PLAN_') ||
+              !publicationTests.includes("immutable licensing publication plan")) {
+            fail("Source-only publication plan and fail-closed tests are required");
+          }
+          if (/\bfetch\s*\(|\bhttps\.request\s*\(|\bcreateRelease\s*\(|\bcreateRef\s*\(|\buploadReleaseAsset\s*\(|\bgh\s+release\b|\bnpm\s+publish\b|\bGH_TOKEN\b|\bcontents:\s*write\b/i.test(publication)) {
+            fail("Source-only publication comparator must not gain network or release-write capability");
+          }
+          if (files.includes("licensing-release-publication.yml")) {
+            fail("Privileged Licensing publication workflow is prohibited until separately authorized");
           }
           console.log("PASS: " + explicit + " heavyweight library workflows are explicit-only; "
             + publicationRemoved.size + " historical package release paths are read-only.");
