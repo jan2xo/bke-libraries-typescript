@@ -1,21 +1,10 @@
 name: BKE Library - Identity Package
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/identity/**"
-      - "package-lock.json"
-      - ".github/workflows/identity-package.yml"
-  push:
-    branches: [main]
-    paths:
-      - "@bke/identity/**"
-      - "package-lock.json"
-      - ".github/workflows/identity-package.yml"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   package:
@@ -196,29 +185,3 @@ jobs:
             artifacts/bke-identity-0.5.0.tgz.sha256
             artifacts/package-contents.txt
           if-no-files-found: error
-      - name: Create immutable Identity release
-        if: github.event_name == 'push'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BEFORE_SHA: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          version="$(node -p "require('./@bke/identity/package.json').version")"
-          tag="identity-v${version}"
-          package_changed=false
-          if [[ -n "${BEFORE_SHA:-}" ]] && ! git diff --quiet "$BEFORE_SHA" "$GITHUB_SHA" -- @bke/identity/package.json; then package_changed=true; fi
-          if gh release view "$tag" >/dev/null 2>&1; then
-            if [[ "$package_changed" == "true" ]]; then
-              echo "::error::Release $tag already exists. Package versions are immutable; bump @bke/identity version."
-              exit 1
-            fi
-            echo "Release $tag already exists and package version is unchanged."
-            exit 0
-          fi
-          gh release create "$tag" \
-            "artifacts/$IDENTITY_ARTIFACT" \
-            "artifacts/$IDENTITY_ARTIFACT.sha256" \
-            --target "$GITHUB_SHA" \
-            --title "@bke/identity v${version}" \
-            --notes "Certified BKE Identity package artifact with stable Google subject binding, honest Google session methods, session-bound BKE factor step-up and enrollment recovery, host-owned Google OIDC verification, and preserved password support for existing consumers."

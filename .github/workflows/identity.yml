@@ -1,14 +1,6 @@
 name: BKE Library - Identity
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/identity/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".gitignore"
-      - ".github/workflows/identity.yml"
   workflow_dispatch:
 
 permissions:
