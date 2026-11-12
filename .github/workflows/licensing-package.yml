@@ -52,6 +52,9 @@ jobs:
           grep -Fx 'package/prisma/repositories/postgres-transfer-policy-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/prisma/repositories/postgres-signing-key-registry-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/commercial-lease.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/account-product-lease.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/providers/ed25519-account-product-lease.ts' artifacts/package-contents.txt
+          grep -Fx 'package/docs/ACCOUNT-PRODUCT-LEASE-JWS.md' artifacts/package-contents.txt
           grep -Fx 'package/logic/license-key-reveal.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-lease.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-lease-ports.ts' artifacts/package-contents.txt
@@ -138,6 +141,8 @@ jobs:
           import { refreshRequiresReplacement } from "@bke/licensing/logic/refresh-decision";
           import { createAesGcmLicensingLicenseKeyDecrypter } from "@bke/licensing/providers/aes-gcm-license-key-decrypter";
           import { createEd25519CommercialLeaseSigner } from "@bke/licensing/providers/ed25519-commercial-lease-signer";
+          import { ACCOUNT_PRODUCT_LEASE_CAPABILITY_ID, ACCOUNT_PRODUCT_LEASE_SCHEMA } from "@bke/licensing/contracts/account-product-lease.contract";
+          import { issueAccountProductLeaseJws, verifyAccountProductLeaseJws } from "@bke/licensing/providers/ed25519-account-product-lease";
           import { createPostgresCommercialLeaseStore } from "@bke/licensing/prisma/repositories/postgres-commercial-lease-store";
           import { createPostgresCommercialSigningKeyProvider } from "@bke/licensing/prisma/repositories/postgres-commercial-signing-key-provider";
           import { createPostgresLicensingGracePeriodStore } from "@bke/licensing/prisma/repositories/postgres-grace-period-store";
@@ -146,6 +151,7 @@ jobs:
 
           if (LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID !== "bke.licensing.license-key-reveal.v1") throw new Error("Unexpected reveal capability id.");
           if (LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID !== "bke.licensing.commercial-lease.v1") throw new Error("Unexpected commercial lease capability id.");
+          if (ACCOUNT_PRODUCT_LEASE_CAPABILITY_ID !== "bke.licensing.account-product-lease.v1" || ACCOUNT_PRODUCT_LEASE_SCHEMA !== "bke.product-lease.v1") throw new Error("Packed product lease contract missing.");
           if (LICENSING_TRANSFER_POLICY_CAPABILITY_ID !== "bke.licensing.transfer-policy.v1") throw new Error("Unexpected transfer policy capability id.");
           if (LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID !== "bke.licensing.signing-key-registry.v1") throw new Error("Unexpected signing-key registry capability id.");
           if (LICENSING_GRACE_PERIOD_CAPABILITY_ID !== "bke.licensing.grace-period.v1") throw new Error("Unexpected grace-period capability id.");
@@ -174,6 +180,8 @@ jobs:
             typeof refreshRequiresReplacement !== "function" ||
             typeof createAesGcmLicensingLicenseKeyDecrypter !== "function" ||
             typeof createEd25519CommercialLeaseSigner !== "function" ||
+            typeof issueAccountProductLeaseJws !== "function" ||
+            typeof verifyAccountProductLeaseJws !== "function" ||
             typeof createPostgresCommercialLeaseStore !== "function" ||
             typeof createPostgresCommercialSigningKeyProvider !== "function" ||
             typeof createPostgresLicensingLicenseKeyRevealRepository !== "function" ||
