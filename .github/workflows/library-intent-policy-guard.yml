@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Certify offline Licensing release-readiness comparator
+        run: node --test scripts/licensing/check-release-readiness.test.mjs
       - name: Verify explicit module CI and absent automatic publication
         shell: bash
         run: |
@@ -88,6 +90,27 @@ jobs:
           const router = fs.readFileSync(path.join(directory, "licensing-certify-router.yml"), "utf8");
           if (!/issue_comment:/.test(router) || !/context\.payload\.comment\?\.user\?\.login !== context\.repo\.owner/.test(router)) {
             fail("Owner-only explicit Licensing certification router was weakened");
+          }
+          const readiness = fs.readFileSync(path.join(directory, "licensing-release-readiness.yml"), "utf8");
+          if (!/^on:\s*\n  workflow_dispatch:\s*$/m.test(readiness.slice(0, readiness.indexOf("    inputs:")))) {
+            fail("Licensing release readiness must require manual workflow_dispatch");
+          }
+          if (!/^permissions:\s*\n  contents:\s*read\s*\n  actions:\s*read\s*$/m.test(readiness)) {
+            fail("Licensing release readiness must have only read-only GitHub permissions");
+          }
+          if (/\bgh\s+release\b|\bnpm\s+publish\b|\bGH_TOKEN\b|\bcreateRelease\b|\bcreateRef\b|\bcontents:\s*write\b/i.test(readiness)) {
+            fail("Licensing release readiness must not publish or grant write permissions");
+          }
+          if (!readiness.includes("github.rest.pulls.get(") ||
+              !readiness.includes('pr.head.sha !== process.env.CERTIFIED_SOURCE_SHA') ||
+              !readiness.includes('refs/pull/') ||
+              !/getWorkflowRun\(/.test(readiness) ||
+              !/listWorkflowRunArtifacts\(/.test(readiness) ||
+              !/github\.rest\.repos\.getReleaseByTag\(/.test(readiness) ||
+              !/certified_package_tree/.test(readiness) ||
+              !/sha256sum/.test(readiness) ||
+              !/check-release-readiness\.mjs/.test(readiness)) {
+            fail("Read-only readiness is missing release, Git tree, source run or archive proof");
           }
           console.log("PASS: " + explicit + " heavyweight library workflows are explicit-only; "
             + publicationRemoved.size + " historical package release paths are read-only.");

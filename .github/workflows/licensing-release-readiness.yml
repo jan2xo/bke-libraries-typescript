@@ -1,0 +1,184 @@
+name: BKE Library - Licensing Release Readiness (Read-only)
+
+# This workflow can NEVER publish. Owner action required for a separate release.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: Exact current library main SHA, never a moving ref
+        required: true
+        type: string
+      certified_run_id:
+        description: Successful explicit Licensing Package certification run ID
+        required: true
+        type: string
+      certified_source_sha:
+        description: Exact HEAD of the original successful package run
+        required: true
+        type: string
+      certified_pr_number:
+        description: Original merged same-repository PR holding the certified source SHA
+        required: true
+        type: string
+      tarball_sha256:
+        description: Independently recorded SHA-256 of the certified tarball
+        required: true
+        type: string
+      version:
+        description: Unpublished @bke/licensing semver to check
+        required: true
+        default: "0.10.0"
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  readiness:
+    name: Verify exact CI package without any release authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      READINESS_EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+      READINESS_CERTIFIED_RUN_ID: ${{ inputs.certified_run_id }}
+      READINESS_CERTIFIED_SOURCE_SHA: ${{ inputs.certified_source_sha }}
+      READINESS_CERTIFIED_PR_NUMBER: ${{ inputs.certified_pr_number }}
+      READINESS_EXPECTED_TARBALL_SHA256: ${{ inputs.tarball_sha256 }}
+      READINESS_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Verify immutable current main and original source/package Git objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || { echo "::error::Only main can be checked for release readiness"; exit 1; }
+          [[ "$READINESS_EXPECTED_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$READINESS_CERTIFIED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$READINESS_EXPECTED_TARBALL_SHA256" =~ ^[0-9a-f]{64}$ ]] || exit 1
+          [[ "$READINESS_CERTIFIED_RUN_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ "$READINESS_CERTIFIED_PR_NUMBER" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ "$READINESS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$READINESS_EXPECTED_MAIN_SHA"
+          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          test -n "$remote_main"
+          test "$remote_main" = "$GITHUB_SHA"
+          # The PR ref is immutable to an existing merged PR's last head,
+          # independently authenticated by the GitHub API in the next step.
+          git fetch --no-tags origin "refs/pull/${READINESS_CERTIFIED_PR_NUMBER}/head"
+          test "$(git rev-parse FETCH_HEAD)" = "$READINESS_CERTIFIED_SOURCE_SHA" || {
+            echo "::error::Certified source SHA is not the pinned PR head"
+            exit 1
+          }
+          verified_tree="$(git rev-parse "$READINESS_CERTIFIED_SOURCE_SHA^{tree}")"
+          certified_package_tree="$(git rev-parse "$READINESS_CERTIFIED_SOURCE_SHA:@bke/licensing")"
+          current_package_tree="$(git rev-parse "HEAD:@bke/licensing")"
+          test "$certified_package_tree" = "$current_package_tree" || {
+            echo "::error::The actual Licensing package subtree differs from certified source"
+            exit 1
+          }
+          current_version="$(node -p "require('./@bke/licensing/package.json').version")"
+          locked_version="$(node -p "require('./package-lock.json').packages['@bke/licensing'].version")"
+          test "$current_version" = "$READINESS_VERSION"
+          test "$locked_version" = "$READINESS_VERSION"
+          existing="$(git ls-remote --tags origin "refs/tags/licensing-v${READINESS_VERSION}")"
+          test -z "$existing" || { echo "::error::The immutable candidate tag already exists"; exit 1; }
+          echo "READINESS_VERIFIED_SOURCE_TREE_SHA=$verified_tree" >> "$GITHUB_ENV"
+          echo "READINESS_CERTIFIED_PACKAGE_TREE_SHA=$certified_package_tree" >> "$GITHUB_ENV"
+          echo "READINESS_CURRENT_PACKAGE_TREE_SHA=$current_package_tree" >> "$GITHUB_ENV"
+
+      - name: Authenticate the exact original successful CI run and archive
+        uses: actions/github-script@v7
+        env:
+          CERTIFIED_RUN_ID: ${{ inputs.certified_run_id }}
+          CERTIFIED_SOURCE_SHA: ${{ inputs.certified_source_sha }}
+          CERTIFIED_PR_NUMBER: ${{ inputs.certified_pr_number }}
+          READINESS_VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const id = Number(process.env.CERTIFIED_RUN_ID);
+            if (!Number.isSafeInteger(id) || id <= 0) throw Error("INVALID_CERTIFIED_RUN_ID");
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              owner, repo, run_id: id,
+            });
+            const origin = owner + "/" + repo;
+            const prNumber = Number(process.env.CERTIFIED_PR_NUMBER);
+            if (!Number.isSafeInteger(prNumber) || prNumber <= 0)
+              throw Error("INVALID_CERTIFIED_PR_NUMBER");
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: prNumber,
+            });
+            if (!pr.merged || pr.base.ref !== "main" ||
+                pr.head.repo?.full_name !== origin ||
+                pr.head.sha !== process.env.CERTIFIED_SOURCE_SHA) {
+              throw Error("CERTIFIED_SOURCE_IS_NOT_MERGED_INTERNAL_PR_HEAD");
+            }
+            if (run.repository?.full_name !== origin ||
+                run.head_sha !== process.env.CERTIFIED_SOURCE_SHA ||
+                run.event !== "workflow_dispatch" ||
+                run.status !== "completed" || run.conclusion !== "success" ||
+                !/(^|\/)\.github\/workflows\/licensing-package\.yml(?:@|$)/.test(run.path ?? "")) {
+              throw Error("UNTRUSTED_LICENSING_CERTIFICATION_RUN");
+            }
+            const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+              owner, repo, run_id: id, per_page: 100,
+            });
+            const matches = (data.artifacts ?? []).filter(a =>
+              a.name === "bke-licensing-certified-package" && !a.expired &&
+              a.size_in_bytes > 0);
+            if (matches.length !== 1) throw Error("MISSING_OR_EXPIRED_CERTIFIED_PACKAGE_ARTIFACT");
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner, repo, tag: "licensing-v" + process.env.READINESS_VERSION,
+              });
+              throw Error("LICENSING_RELEASE_ALREADY_EXISTS");
+            } catch (error) {
+              if (error.message === "LICENSING_RELEASE_ALREADY_EXISTS" ||
+                  error.status !== 404) throw error;
+            }
+            core.info("Certified run, exact source SHA, archive and absent release confirmed");
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bke-licensing-certified-package
+          run-id: ${{ inputs.certified_run_id }}
+          github-token: ${{ github.token }}
+          path: verified
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Verify offline comparator behavior and independently reproduce exact tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/licensing/check-release-readiness.test.mjs
+          npm ci
+          mkdir -p reproduced
+          actual="$(npm pack --workspace=@bke/licensing --pack-destination reproduced --silent | tail -n 1)"
+          test "$(basename "$actual")" = "bke-licensing-${READINESS_VERSION}.tgz"
+          reproduced_hash="$(sha256sum "reproduced/$(basename "$actual")" | cut -d' ' -f1)"
+          test "$reproduced_hash" = "$READINESS_EXPECTED_TARBALL_SHA256" || {
+            echo "::error::Current main cannot independently reproduce the certified tarball bytes"
+            exit 1
+          }
+          test -s "verified/bke-licensing-${READINESS_VERSION}.tgz"
+          tar -xOf "verified/bke-licensing-${READINESS_VERSION}.tgz" package/package.json > verified/packed-package.json
+          node scripts/licensing/check-release-readiness.mjs
+
+      - name: Upload read-only release-readiness evidence (NOT a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bke-licensing-read-only-release-readiness
+          path: readiness-evidence/licensing-release-readiness.json
+          if-no-files-found: error
+          retention-days: 30
