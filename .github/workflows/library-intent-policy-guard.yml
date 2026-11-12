@@ -23,6 +23,7 @@ jobs:
         run: |
           node --test scripts/licensing/check-release-readiness.test.mjs
           node --test scripts/licensing/check-publication-plan.test.mjs
+          node --test scripts/licensing/chatops-release-control.test.mjs
       - name: Verify explicit module CI and absent automatic publication
         shell: bash
         run: |
@@ -37,6 +38,7 @@ jobs:
             "library-intent-policy-guard.yml",
             "licensing-policy-guard.yml",
             "licensing-certify-router.yml",
+            "licensing-chatops-control.yml",
           ]);
           const migrated = new Set([
             "accounts-package.yml", "accounts.yml",
@@ -93,6 +95,41 @@ jobs:
           if (!/issue_comment:/.test(router) || !/context\.payload\.comment\?\.user\?\.login !== context\.repo\.owner/.test(router)) {
             fail("Owner-only explicit Licensing certification router was weakened");
           }
+          const chatops = fs.readFileSync(path.join(directory, "licensing-chatops-control.yml"), "utf8");
+          const chatopsParser = fs.readFileSync("scripts/licensing/chatops-release-control.mjs", "utf8");
+          const chatopsTests = fs.readFileSync("scripts/licensing/chatops-release-control.test.mjs", "utf8");
+          const routerRequirements = [
+            "issue_comment:", "types: [created]",
+            "github.event.issue.number == 100",
+            "!github.event.issue.pull_request",
+            "github.rest.issues.getComment(",
+            "github.rest.issues.get(",
+            "github.rest.repos.getBranch(",
+            "authorizeLicensingChatOpsCommand",
+            "github.rest.actions.createWorkflowDispatch(",
+            "licensing-release-readiness.yml",
+            "licensing-release-publication.yml",
+            "READINESS_RUN_NOT_AUTHORIZED_FOR_EXACT_MAIN",
+            "MISSING_OR_AMBIGUOUS_READINESS_ARTIFACT",
+            "LICENSING_V010_RELEASE_COLLISION",
+          ];
+          if (!/^permissions:\s*\n  contents:\s*read\s*$/m.test(chatops) ||
+              !/^    permissions:\s*\n      contents:\s*read\s*\n      issues:\s*read\s*\n      actions:\s*write\s*$/m.test(chatops) ||
+              /contents:\s*write|\bnpm\s+publish\b|\bgh\s+release\b|\bcreateRelease\b|\bcreateRef\b/.test(chatops) ||
+              chatops.includes("pull_request:\n") ||
+              chatops.includes("  push:\n")) {
+            fail("ChatOps router must be cheap owner-issued issue_comment with scoped actions:write only");
+          }
+          for (const token of routerRequirements) {
+            if (!chatops.includes(token)) fail("Missing hardened ChatOps router rule: " + token);
+          }
+          if (!chatopsParser.includes("const OWNER_ID = 163499503") ||
+              !chatopsParser.includes("const CONTROL_ISSUE_ID = 6344112785") ||
+              !chatopsParser.includes("COMMENT_EXPIRED") ||
+              !chatopsParser.includes("UNSUPPORTED_COMMAND") ||
+              !chatopsTests.includes("owner-only licensing release ChatOps")) {
+            fail("ChatOps parser, owner identity or negative tests are missing");
+          }
           const readiness = fs.readFileSync(path.join(directory, "licensing-release-readiness.yml"), "utf8");
           if (!/^on:\s*\n  workflow_dispatch:\s*$/m.test(readiness.slice(0, readiness.indexOf("    inputs:")))) {
             fail("Licensing release readiness must require manual workflow_dispatch");
@@ -134,6 +171,10 @@ jobs:
           const mandatory = [
             "github.repository == 'jan2xo/bke-libraries-typescript'",
             "github.actor == 'jan2xo'",
+            "github.actor == 'github-actions[bot]'",
+            "authorization_comment_id:",
+            "comment.user?.id !== 163499503",
+            "UNVERIFIABLE_OR_STALE_OWNER_RELEASE_COMMAND",
             "github.ref == 'refs/heads/main'",
             "confirm_release_tag:",
             "confirm_immutable_releases:",
