@@ -1,0 +1,48 @@
+name: BKE Library - Licensing Publication Policy Guard
+
+# Cheap PR-only proof. Heavy package certification stays deliberate.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/licensing-package.yml"
+      - ".github/workflows/licensing-policy-guard.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse implicit Licensing release authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync('.github/workflows/licensing-package.yml', 'utf8');
+          const events = source.split(/^permissions:/m)[0];
+          const reject = (message) => { console.error('::error::' + message); process.exit(1); };
+          if (!/^on:\s*\n\s{2}workflow_dispatch:\s*$/m.test(events)) {
+            reject('Licensing package certification must have explicit workflow_dispatch.');
+          }
+          if (/^\s{2}(?:push|pull_request|schedule|release|issue_comment|workflow_run):/m.test(events)) {
+            reject('Licensing package CI must not run from implicit repository events.');
+          }
+          if (!/^permissions:\s*\n\s{2}contents:\s*read\s*$/m.test(source)) {
+            reject('Licensing package must use a read-only repository token.');
+          }
+          if (/\bgh\s+release\b|\bGH_TOKEN\b|contents:\s*write|\bgithub\.token\b/i.test(source)) {
+            reject('Licensing package certification must not contain publication credentials or release commands.');
+          }
+          if (!/uses:\s*actions\/upload-artifact@v\d+/.test(source)) {
+            reject('Licensing package must still upload certification evidence.');
+          }
+          if (!/Install tarball in blank consumer/.test(source)) {
+            reject('Licensing package must retain its isolated consumer gate.');
+          }
+          console.log('PASS: explicit-only package certification, read-only token, no implicit release path.');
+          NODE
