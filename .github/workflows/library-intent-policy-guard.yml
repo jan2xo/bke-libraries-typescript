@@ -113,7 +113,7 @@ jobs:
             "MISSING_OR_AMBIGUOUS_READINESS_ARTIFACT",
             "LICENSING_V010_RELEASE_COLLISION",
             "OWNER_AUTHORIZED_DRAFT_RECOVERY",
-            "STAGED_DRAFT_ASSETS_NOT_SAFE_TO_RECOVER",
+            "STAGED_TAG_NOT_ORIGINAL_APPROVED_SHA",
           ];
           if (!/^permissions:\s*\n  contents:\s*read\s*$/m.test(chatops) ||
               !/^    permissions:\s*\n      contents:\s*read\s*\n      issues:\s*read\s*\n      actions:\s*write\s*$/m.test(chatops) ||
@@ -184,6 +184,8 @@ jobs:
           if (!recovery.includes("github.actor == 'github-actions[bot]'") ||
               !recovery.includes("authorizeDelegatedLicensingDraftRecovery") ||
               !recovery.includes("verifyStagedLicensingDraftRecovery") ||
+              !recovery.includes("github.rest.repos.getRelease(") ||
+              !recovery.includes("GH_TOKEN") && !recovery.includes("github.token") ||
               !recovery.includes("STAGED_RELEASE_ID") ||
               !recovery.includes("442576730") ||
               !recovery.includes("43169356241") ||
