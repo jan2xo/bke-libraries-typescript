@@ -267,6 +267,108 @@ jobs:
             renewSubscription: async () => ({ licenses: [], renewalOperations: [] }),
           });
           if (typeof entitlement.issue !== "function" || typeof entitlement.renewSubscription !== "function") throw new Error("Packed entitlement-management capability missing.");
+          // Exercise the ACTUAL tarball-installed JWS provider, never workspace source.
+          // Only disposable CI keys are generated; no private key is persisted.
+          const { createHash, generateKeyPairSync } = await import("node:crypto");
+          const signer = generateKeyPairSync("ed25519");
+          const agent = generateKeyPairSync("ed25519");
+          const kid = "test-packaged-product-lease-2026";
+          const privateKeyPem = signer.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+          const publicKeyPem = signer.publicKey.export({ type: "spki", format: "pem" }).toString();
+          const agentKeyThumbprint = createHash("sha256")
+            .update(agent.publicKey.export({ type: "spki", format: "der" }))
+            .digest("base64url");
+          const now = new Date("2026-11-12T10:00:00.000Z");
+          const lease = Object.freeze({
+            schema: ACCOUNT_PRODUCT_LEASE_SCHEMA,
+            issuer: "BKE Digital Solutions", audience: "bke-product",
+            leaseId: "packed-smoke-lease-01",
+            accountId: "server-account", userId: "server-user",
+            productId: "render-dock", agentSessionId: "agent-session",
+            agentKeyThumbprint, keyProtection: "software", plan: "subscription",
+            allowedActions: ["OPEN"],
+            issuedAt: "2026-11-12T09:59:00.000Z",
+            refreshAfter: "2026-11-12T10:01:00.000Z",
+            expiresAt: "2026-11-12T10:05:00.000Z",
+          } as const);
+          const jws = issueAccountProductLeaseJws(lease, { kid, privateKeyPem });
+          const expected = {
+            issuer: lease.issuer, audience: lease.audience,
+            accountId: lease.accountId, userId: lease.userId,
+            productId: lease.productId, agentSessionId: lease.agentSessionId,
+            agentKeyThumbprint, action: "OPEN" as const, now,
+          };
+          const keys = new Map([[kid, { publicKeyPem, state: "ACTIVE" as const }]]);
+          const valid = verifyAccountProductLeaseJws(jws, keys, expected);
+          if (!valid.ok || valid.kid !== kid || valid.claims.leaseId !== lease.leaseId)
+            throw new Error("PACKED_JWS_ROUND_TRIP_FAILED");
+          const verifiedOnly = verifyAccountProductLeaseJws(jws, new Map([
+            [kid, { publicKeyPem, state: "VERIFY_ONLY" as const }],
+          ]), expected);
+          if (!verifiedOnly.ok) throw new Error("PACKED_JWS_ROTATION_VERIFY_ONLY_FAILED");
+          function rejected(
+            label: string, result: ReturnType<typeof verifyAccountProductLeaseJws>, reason: string,
+          ) {
+            if (result.ok || result.reason !== reason)
+              throw new Error("PACKED_JWS_" + label + "_EXPECTED_" + reason);
+          }
+          rejected("UNKNOWN_KID", verifyAccountProductLeaseJws(jws, new Map(), expected), "UNTRUSTED_KID");
+          rejected("REVOKED_KID", verifyAccountProductLeaseJws(jws, new Map([
+            [kid, { publicKeyPem, state: "REVOKED" as const }],
+          ]), expected), "UNTRUSTED_KID");
+          rejected("WRONG_PRODUCT", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, productId: "another-product",
+          }), "CLAIM_MISMATCH");
+          rejected("WRONG_ACCOUNT", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, accountId: "another-account",
+          }), "CLAIM_MISMATCH");
+          rejected("WRONG_ACTION", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, action: "USE",
+          }), "CLAIM_MISMATCH");
+          rejected("WRONG_AGENT", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, agentSessionId: "another-session",
+          }), "CLAIM_MISMATCH");
+          rejected("WRONG_AGENT_KEY", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, agentKeyThumbprint: "_".repeat(43),
+          }), "CLAIM_MISMATCH");
+          rejected("WRONG_ISSUER", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, issuer: "untrusted-issuer",
+          }), "CLAIM_MISMATCH");
+          rejected("EXPIRED", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, now: new Date(lease.expiresAt),
+          }), "EXPIRED");
+          rejected("FUTURE_ISSUED_AT", verifyAccountProductLeaseJws(jws, keys, {
+            ...expected, now: new Date("2026-11-12T09:58:00.000Z"),
+            allowedFutureSkewMs: 0,
+          }), "FUTURE_ISSUED_AT");
+          const parts = jws.split(".");
+          const changedPayload = Buffer.from(JSON.stringify({
+            ...lease, productId: "tampered-product",
+          }), "utf8").toString("base64url");
+          rejected("TAMPERED_COMPACT_BYTES", verifyAccountProductLeaseJws(
+            [parts[0], changedPayload, parts[2]].join("."), keys, expected,
+          ), "INVALID_SIGNATURE");
+          const bogusHeader = Buffer.from(JSON.stringify({
+            alg: "none", kid, typ: "bke.product-lease.v1+jws",
+          }), "utf8").toString("base64url");
+          rejected("ALG_CONFUSION", verifyAccountProductLeaseJws(
+            [bogusHeader, parts[1], parts[2]].join("."), keys, expected,
+          ), "MALFORMED_JWS");
+          const alternate = generateKeyPairSync("ed25519");
+          const forged = issueAccountProductLeaseJws(lease, {
+            kid, privateKeyPem: alternate.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+          });
+          rejected("FORGED_SIGNER", verifyAccountProductLeaseJws(
+            forged, keys, expected,
+          ), "INVALID_SIGNATURE");
+          let badClaimsRefused = false;
+          try {
+            issueAccountProductLeaseJws({ ...lease, allowedActions: [] }, { kid, privateKeyPem });
+          } catch (error) {
+            badClaimsRefused = error instanceof Error && error.message === "ACCOUNT_PRODUCT_LEASE_CLAIMS_INVALID";
+          }
+          if (!badClaimsRefused) throw new Error("PACKED_JWS_INVALID_CLAIMS_NOT_REJECTED");
+          console.log("PASS: packed JWS signer/verifier executable with real disposable Ed25519 and 13 negative/rotation cases");
           console.log("Packed @bke/licensing account-product JWS and legacy consumer smoke GREEN");
           TS
           npm install --prefix .package-smoke
