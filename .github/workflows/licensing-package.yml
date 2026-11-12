@@ -69,7 +69,7 @@ jobs:
             tarballFilename: e.LICENSING_ARTIFACT,
             tarballSha256: e.TARBALL_SHA256,
             state: "CERTIFIED_UNPUBLISHED_CANDIDATE",
-          }, null, 2) + "\\n");
+          }, null, 2) + "\n");
           NODE
           echo "LICENSING_VERSION=$version" >> "$GITHUB_ENV"
           echo "LICENSING_ARTIFACT=$artifact" >> "$GITHUB_ENV"
@@ -82,11 +82,15 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
           const crypto = require("node:crypto");
+          const { execFileSync } = require("node:child_process");
           const manifest = JSON.parse(fs.readFileSync("artifacts/licensing-package-provenance.json", "utf8"));
+          const treeSha = execFileSync("git", ["rev-parse", "HEAD^{tree}"], { encoding: "utf8" }).trim();
           const blob = fs.readFileSync("artifacts/" + process.env.LICENSING_ARTIFACT);
           const actualSha = crypto.createHash("sha256").update(blob).digest("hex");
           if (manifest.state !== "CERTIFIED_UNPUBLISHED_CANDIDATE" ||
+              manifest.component !== "@bke/licensing" ||
               manifest.sourceSha !== process.env.GITHUB_SHA ||
+              manifest.sourceTreeSha !== treeSha ||
               manifest.version !== process.env.LICENSING_VERSION ||
               manifest.tarballFilename !== process.env.LICENSING_ARTIFACT ||
               manifest.tarballSha256 !== actualSha) {
