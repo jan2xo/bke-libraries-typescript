@@ -101,7 +101,10 @@ jobs:
           if (/\bgh\s+release\b|\bnpm\s+publish\b|\bGH_TOKEN\b|\bcreateRelease\b|\bcreateRef\b|\bcontents:\s*write\b/i.test(readiness)) {
             fail("Licensing release readiness must not publish or grant write permissions");
           }
-          if (!/getWorkflowRun\(/.test(readiness) ||
+          if (!readiness.includes("github.rest.pulls.get(") ||
+              !readiness.includes('pr.head.sha !== process.env.CERTIFIED_SOURCE_SHA') ||
+              !readiness.includes('refs/pull/') ||
+              !/getWorkflowRun\\(/.test(readiness) ||
               !/listWorkflowRunArtifacts\(/.test(readiness) ||
               !/github\.rest\.repos\.getReleaseByTag\(/.test(readiness) ||
               !/certified_package_tree/.test(readiness) ||
