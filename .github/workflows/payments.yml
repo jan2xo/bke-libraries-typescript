@@ -1,13 +1,6 @@
 name: BKE Library - Payments
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "@bke/payments/**"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/workflows/payments.yml"
   workflow_dispatch:
 
 permissions:
