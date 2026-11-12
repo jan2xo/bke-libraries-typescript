@@ -126,6 +126,10 @@ jobs:
               !chatopsParser.includes("targetWorkflow: 'licensing-release-readiness.yml'") ||
               !chatopsParser.includes("const OWNER_ID = 163499503") ||
               !chatopsParser.includes("const CONTROL_ISSUE_ID = 6344112785") ||
+              !chatopsParser.includes("authorizeDelegatedLicensingPublication") ||
+              !chatopsParser.includes("DELEGATED_COMMENT_NOT_OWNER") ||
+              !chatopsParser.includes("DELEGATED_COMMAND_EXPIRED") ||
+              !chatopsTests.includes("independent owner authorization inside delegated publisher") ||
               !chatopsParser.includes("COMMENT_EXPIRED") ||
               !chatopsParser.includes("UNSUPPORTED_COMMAND") ||
               !chatopsTests.includes("owner-only licensing release ChatOps")) {
@@ -174,7 +178,9 @@ jobs:
             "github.actor == 'jan2xo'",
             "github.actor == 'github-actions[bot]'",
             "authorization_comment_id:",
-            "comment.user?.id !== 163499503",
+            "authorizeDelegatedLicensingPublication",
+            "fetchedComment",
+            "fetchedIssue",
             "UNVERIFIABLE_OR_STALE_OWNER_RELEASE_COMMAND",
             "github.ref == 'refs/heads/main'",
             "confirm_release_tag:",
