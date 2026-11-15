@@ -57,6 +57,8 @@ export type AccountProductLeaseVerificationContext = Readonly<{
   now: Date;
   /** Max clock skew for issuedAt; default 5 minutes. */
   allowedFutureSkewMs?: number;
+  /** Reject known public test fixture keys/kids even if present in keyring. */
+  disallowPublicTestKeys?: boolean;
 }>;
 
 export type AccountProductLeaseVerificationResult =

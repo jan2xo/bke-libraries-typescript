@@ -63,6 +63,8 @@ jobs:
         run: npm run prisma:deploy --workspace=@bke/licensing
       - name: Certify Licensing persistence isolation
         run: npx tsx @bke/licensing/tests/persistence-isolation.certify.ts
+      - name: Certify Licensing isolated test application
+        run: npx tsx @bke/licensing/tests/isolated-test-app.certify.ts
       - name: Test Licensing logic
         run: npm run test --workspace=@bke/licensing
       - name: Certify Licensing PostgreSQL behavior

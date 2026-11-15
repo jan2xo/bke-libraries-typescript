@@ -52,11 +52,31 @@ function validateLicenseContext(
     !context ||
     context.accountLifecycleState !== "ACTIVE" ||
     context.licenseStatus !== "ACTIVE" ||
-    (context.licenseExpiresAt && context.licenseExpiresAt.getTime() < now.getTime())
+    !Number.isSafeInteger(context.maxSeats) ||
+    context.maxSeats < 1 ||
+    !Number.isSafeInteger(context.maxDevicesPerSeat) ||
+    context.maxDevicesPerSeat < 1 ||
+    (context.licenseExpiresAt !== null &&
+      (!(context.licenseExpiresAt instanceof Date) ||
+        !Number.isFinite(context.licenseExpiresAt.getTime()) ||
+        context.licenseExpiresAt.getTime() <= now.getTime()))
   ) {
     throw new Error("INVALID_LICENSE");
   }
   return context;
+}
+
+function requireBoundedText(value: unknown, min: number, max: number): string {
+  if (
+    typeof value !== "string" ||
+    value.trim() !== value ||
+    value.length < min ||
+    value.length > max ||
+    /[\u0000-\u001f\u007f]/.test(value)
+  ) {
+    throw new Error("INVALID_COMMERCIAL_LEASE_REQUEST");
+  }
+  return value;
 }
 
 function metadataValue(metadata: Readonly<Record<string, unknown>>, key: string): string | undefined {
@@ -93,22 +113,28 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const now = input.now ? new Date(input.now) : new Date();
+      if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
+        throw new Error("INVALID_COMMERCIAL_LEASE_REQUEST");
+      }
+      const licenseKey = requireBoundedText(input.licenseKey, 1, 512);
+      const installationId = requireBoundedText(input.installationId, 1, 256);
+      const operationId = requireBoundedText(input.operationId, 8, 128);
       try {
         const context = validateLicenseContext(
           await dependencies.contexts.resolve({
-            licenseKeyHash: dependencies.hasher.hash(input.licenseKey),
+            licenseKeyHash: dependencies.hasher.hash(licenseKey),
             productVersion: input.productVersion,
           }),
           now,
         );
 
         return await dependencies.store.withTransaction(async (transaction) => {
-          let operation = await transaction.findOperation(input.operationId);
+          let operation = await transaction.findOperation(operationId);
           if (!operation) {
             if (input.action !== "ACTIVATION") throw new Error("COMMERCIAL_OPERATION_REQUIRED");
             operation = await transaction.createOperation({
               id: id(),
-              operationId: input.operationId,
+              operationId,
               licenseId: context.licenseId,
               action: "ACTIVATION",
               createdAt: now,
@@ -117,13 +143,18 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
             if (operation.licenseId !== context.licenseId) {
               throw new Error("OPERATION_LICENSE_MISMATCH");
             }
+            if (input.action && input.action !== operation.action) {
+              throw new Error("OPERATION_ACTION_MISMATCH");
+            }
 
             if (operation.status === "COMPLETED" && operation.resultLeaseId) {
+              const normalizedDevice = deviceIdentity(input.deviceId).deviceId;
+              const normalizedVersion = requireProductVersion(input.productVersion);
               if (
                 (metadataValue(operation.metadata, "installationId") !== undefined &&
-                  metadataValue(operation.metadata, "installationId") !== input.installationId) ||
+                  metadataValue(operation.metadata, "installationId") !== installationId) ||
                 (metadataValue(operation.metadata, "deviceId") !== undefined &&
-                  metadataValue(operation.metadata, "deviceId") !== input.deviceId) ||
+                  metadataValue(operation.metadata, "deviceId") !== normalizedDevice) ||
                 (input.predecessorLeaseId &&
                   metadataValue(operation.metadata, "predecessorLeaseId") !== input.predecessorLeaseId)
               ) {
@@ -131,11 +162,15 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
               }
               const prior = await transaction.findLease(operation.resultLeaseId);
               if (!prior) throw new Error("COMMERCIAL_LEASE_NOT_FOUND");
+              if (
+                prior.licenseId !== context.licenseId ||
+                prior.installationId !== installationId ||
+                prior.deviceId !== normalizedDevice ||
+                prior.version !== normalizedVersion
+              ) {
+                throw new Error("OPERATION_INPUT_MISMATCH");
+              }
               return Object.freeze({ lease: replayEnvelope(prior) });
-            }
-
-            if (input.action && input.action !== operation.action) {
-              throw new Error("OPERATION_ACTION_MISMATCH");
             }
           }
 
@@ -206,7 +241,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
             ? await transaction.findLease(input.predecessorLeaseId)
             : await transaction.findLatestLease({
                 licenseId: context.licenseId,
-                installationId: input.installationId,
+                installationId,
                 deviceId: identity.deviceId,
               });
           const previous = predecessor?.licenseId === context.licenseId ? predecessor : null;
@@ -219,7 +254,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
             generation: lifecycle.generation,
             server_revision: lifecycle.serverRevision,
             product_id: context.productId,
-            installation_id: input.installationId,
+            installation_id: installationId,
             device_id: identity.deviceId,
             version,
             issuer,
@@ -238,11 +273,11 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
             leaseId,
             generation: lifecycle.generation,
             serverRevision: lifecycle.serverRevision,
-            installationId: input.installationId,
+            installationId,
             deviceId: identity.deviceId,
             version,
             action,
-            operationId: input.operationId,
+            operationId,
             signerKeyId: signingKey.keyId,
             expiresAt,
             leasePayload: lease.payload,
@@ -257,7 +292,7 @@ export function createCommercialLeaseCapability(dependencies: CommercialLeaseDep
             });
           }
           await transaction.completeOperation({
-            operationId: input.operationId,
+            operationId,
             resultLeaseId: leaseId,
             completedAt: now,
           });

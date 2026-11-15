@@ -1,6 +1,8 @@
+import { LICENSING_ACTIVATION_MODE_CAPABILITY_ID } from "./contracts/activation-mode.contract";
 import { LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID } from "./contracts/commercial-lease.contract";
 import { LICENSING_ENTITLEMENT_MANAGEMENT_CAPABILITY_ID } from "./contracts/entitlement-management.contract";
 import { LICENSING_GRACE_PERIOD_CAPABILITY_ID } from "./contracts/grace-period.contract";
+import { LICENSING_CHALLENGE_PROOF_CAPABILITY_ID } from "./contracts/lease-challenge-proof.contract";
 import { LICENSING_LICENSE_KEY_REVEAL_CAPABILITY_ID } from "./contracts/license-key-reveal.contract";
 import { LICENSING_TRANSFER_POLICY_CAPABILITY_ID } from "./contracts/transfer-policy.contract";
 import { LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID } from "./contracts/signing-key-registry.contract";
@@ -16,5 +18,7 @@ export const licensingModuleManifest = Object.freeze({
     LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID,
     LICENSING_GRACE_PERIOD_CAPABILITY_ID,
     LICENSING_ENTITLEMENT_MANAGEMENT_CAPABILITY_ID,
+    LICENSING_ACTIVATION_MODE_CAPABILITY_ID,
+    LICENSING_CHALLENGE_PROOF_CAPABILITY_ID,
   ],
 } as const satisfies LicensingModuleManifest);

@@ -111,9 +111,13 @@ jobs:
           grep -Fx 'package/prisma/repositories/postgres-signing-key-registry-repository.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/commercial-lease.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/contracts/account-product-lease.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/activation-mode.contract.ts' artifacts/package-contents.txt
+          grep -Fx 'package/contracts/lease-challenge-proof.contract.ts' artifacts/package-contents.txt
           grep -Fx 'package/providers/ed25519-account-product-lease.ts' artifacts/package-contents.txt
           grep -Fx 'package/docs/ACCOUNT-PRODUCT-LEASE-JWS.md' artifacts/package-contents.txt
           grep -Fx 'package/logic/license-key-reveal.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/activation-mode-policy.ts' artifacts/package-contents.txt
+          grep -Fx 'package/logic/lease-challenge-proof.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-lease.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-lease-ports.ts' artifacts/package-contents.txt
           grep -Fx 'package/logic/commercial-signing-registry.ts' artifacts/package-contents.txt
@@ -200,7 +204,12 @@ jobs:
           import { createAesGcmLicensingLicenseKeyDecrypter } from "@bke/licensing/providers/aes-gcm-license-key-decrypter";
           import { createEd25519CommercialLeaseSigner } from "@bke/licensing/providers/ed25519-commercial-lease-signer";
           import { ACCOUNT_PRODUCT_LEASE_CAPABILITY_ID, ACCOUNT_PRODUCT_LEASE_SCHEMA } from "@bke/licensing/contracts/account-product-lease.contract";
+          import { LICENSING_ACTIVATION_MODE_CAPABILITY_ID } from "@bke/licensing/contracts/activation-mode.contract";
+          import { LICENSING_CHALLENGE_PROOF_CAPABILITY_ID } from "@bke/licensing/contracts/lease-challenge-proof.contract";
+          import { allowsProductActivation, evaluateProductActivationMode } from "@bke/licensing/logic/activation-mode-policy";
+          import { createInMemoryLeaseChallengeStore, issueLeaseChallenge, signLeaseChallengeProof, verifyAndConsumeLeaseChallengeProof } from "@bke/licensing/logic/lease-challenge-proof";
           import { issueAccountProductLeaseJws, verifyAccountProductLeaseJws } from "@bke/licensing/providers/ed25519-account-product-lease";
+          import { verifyCommercialLease } from "@bke/licensing/providers/ed25519-commercial-lease-signer";
           import { createPostgresCommercialLeaseStore } from "@bke/licensing/prisma/repositories/postgres-commercial-lease-store";
           import { createPostgresCommercialSigningKeyProvider } from "@bke/licensing/prisma/repositories/postgres-commercial-signing-key-provider";
           import { createPostgresLicensingGracePeriodStore } from "@bke/licensing/prisma/repositories/postgres-grace-period-store";
@@ -214,6 +223,11 @@ jobs:
           if (LICENSING_SIGNING_KEY_REGISTRY_CAPABILITY_ID !== "bke.licensing.signing-key-registry.v1") throw new Error("Unexpected signing-key registry capability id.");
           if (LICENSING_GRACE_PERIOD_CAPABILITY_ID !== "bke.licensing.grace-period.v1") throw new Error("Unexpected grace-period capability id.");
           if (LICENSING_ENTITLEMENT_MANAGEMENT_CAPABILITY_ID !== "bke.licensing.entitlement-management.v1") throw new Error("Unexpected entitlement-management capability id.");
+          if (LICENSING_ACTIVATION_MODE_CAPABILITY_ID !== "bke.licensing.activation-mode.v1") throw new Error("Unexpected activation-mode capability id.");
+          if (LICENSING_CHALLENGE_PROOF_CAPABILITY_ID !== "bke.licensing.lease-challenge-proof.v1") throw new Error("Unexpected challenge-proof capability id.");
+          if (typeof allowsProductActivation !== "function" || typeof evaluateProductActivationMode !== "function") throw new Error("Packed activation-mode policy missing.");
+          if (typeof createInMemoryLeaseChallengeStore !== "function" || typeof issueLeaseChallenge !== "function" || typeof signLeaseChallengeProof !== "function" || typeof verifyAndConsumeLeaseChallengeProof !== "function") throw new Error("Packed challenge-proof capability missing.");
+          if (typeof verifyCommercialLease !== "function") throw new Error("Packed verifyCommercialLease missing.");
           if (licensingModuleManifest.moduleId !== "bke.licensing") throw new Error("Unexpected Licensing module id.");
           if (!licensingModuleManifest.provides.includes(LICENSING_COMMERCIAL_LEASE_CAPABILITY_ID)) throw new Error("Commercial lease capability missing from manifest.");
           if (!licensingModuleManifest.provides.includes(LICENSING_TRANSFER_POLICY_CAPABILITY_ID)) throw new Error("Transfer policy capability missing from manifest.");

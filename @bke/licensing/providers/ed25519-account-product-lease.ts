@@ -1,6 +1,8 @@
 import {
+  createHash,
   createPrivateKey,
   createPublicKey,
+  type KeyObject,
   sign,
   verify,
 } from "node:crypto";
@@ -71,13 +73,53 @@ function decode(part: string): Buffer | null {
 }
 
 /**
+ * Deterministic SPKI SHA-256 base64url thumbprint of the public test-only
+ * Ed25519 key (32-byte seed 0x42 * 32) shipped in tests/lease-vectors.
+ */
+export const PUBLIC_TEST_FIXTURE_ED25519_THUMBPRINT = createHash("sha256")
+  .update(
+    createPublicKey(
+      createPrivateKey({
+        key: Buffer.concat([
+          Buffer.from("302e020100300506032b657004220420", "hex"),
+          Buffer.alloc(32, 0x42),
+        ]),
+        format: "der",
+        type: "pkcs8",
+      }),
+    ).export({ type: "spki", format: "der" }),
+  )
+  .digest("base64url");
+
+export function spkiThumbprint(key: KeyObject): string {
+  return createHash("sha256")
+    .update(key.export({ type: "spki", format: "der" }))
+    .digest("base64url");
+}
+
+export function isPublicTestFixtureKey(keyPem: string, kid?: string): boolean {
+  if (typeof kid === "string" && (kid.startsWith("test-") || kid.startsWith("fixture-"))) {
+    return true;
+  }
+  try {
+    const raw = keyPem.includes("BEGIN") ? keyPem : Buffer.from(keyPem, "base64").toString("utf8");
+    const parsed = raw.includes("PRIVATE KEY")
+      ? createPublicKey(createPrivateKey(raw))
+      : createPublicKey(raw);
+    return spkiThumbprint(parsed) === PUBLIC_TEST_FIXTURE_ED25519_THUMBPRINT;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Parse signed JSON without ambiguous duplicate object members or lossy UTF-8.
  * JSON.parse first enforces the complete JSON grammar; this bounded structural
  * walk additionally rejects duplicate decoded property names at any depth.
  * Escaped spellings of a key (e.g. "product\u0049d") count as the same key.
  * The actual JWS signature is always checked over the original encoded bytes.
  */
-function parseUnambiguousJson(bytes: Buffer): unknown {
+export function parseUnambiguousJson(bytes: Buffer): unknown {
   const source = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   const parsed: unknown = JSON.parse(source);
   let cursor = 0;
@@ -134,13 +176,19 @@ function parseUnambiguousJson(bytes: Buffer): unknown {
 /** Sign exact JWS Compact bytes, not re-serialized JSON. Host supplies the key. */
 export function issueAccountProductLeaseJws(
   claims: AccountProductLeaseClaims,
-  signer: Readonly<{ kid: string; privateKeyPem: string }>,
+  signer: Readonly<{ kid: string; privateKeyPem: string; disallowPublicTestKeys?: boolean }>,
 ): string {
   if (!claimsValid(claims)) throw new Error("ACCOUNT_PRODUCT_LEASE_CLAIMS_INVALID");
   if (!KID.test(signer.kid)) throw new Error("ACCOUNT_PRODUCT_LEASE_KID_INVALID");
   const privateKey = createPrivateKey(signer.privateKeyPem);
   if (privateKey.asymmetricKeyType !== "ed25519")
     throw new Error("ACCOUNT_PRODUCT_LEASE_SIGNING_KEY_INVALID");
+  if (
+    (signer.disallowPublicTestKeys || process.env.DEPLOYMENT_ENV === "production") &&
+    isPublicTestFixtureKey(signer.privateKeyPem, signer.kid)
+  ) {
+    throw new Error("ACCOUNT_PRODUCT_LEASE_SIGNING_KEY_INVALID");
+  }
 
   const header = { alg: "EdDSA", kid: signer.kid, typ: ACCOUNT_PRODUCT_LEASE_JWS_TYP };
   const input = [
@@ -188,6 +236,12 @@ export function verifyAccountProductLeaseJws(
   if (!key || key.state === "REVOKED" ||
     (key.state !== "ACTIVE" && key.state !== "VERIFY_ONLY"))
     return bad("UNTRUSTED_KID");
+  if (
+    (expected.disallowPublicTestKeys || process.env.DEPLOYMENT_ENV === "production") &&
+    isPublicTestFixtureKey(key.publicKeyPem, kid)
+  ) {
+    return bad("UNTRUSTED_KID");
+  }
 
   try {
     const publicKey = createPublicKey(key.publicKeyPem);
