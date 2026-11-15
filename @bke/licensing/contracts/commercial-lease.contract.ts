@@ -70,3 +70,35 @@ export type CommercialLicenseContext = Readonly<{
 export type CommercialLeaseResult = Readonly<{
   lease: CommercialLeaseEnvelope;
 }>;
+
+export type CommercialLeaseTrustedKey = Readonly<{
+  publicKey: string;
+  status: "ACTIVE" | "VERIFY_ONLY" | "RETIRED" | "REVOKED";
+}>;
+
+export type CommercialLeaseVerificationContext = Readonly<{
+  issuer: string;
+  productId: string;
+  installationId: string;
+  deviceId: string;
+  version: string;
+  now: Date;
+  allowedFutureSkewMs?: number;
+  disallowPublicTestKeys?: boolean;
+}>;
+
+export type CommercialLeaseVerificationFailureReason =
+  | "MALFORMED_ENVELOPE"
+  | "UNTRUSTED_KEY_ID"
+  | "INVALID_SIGNATURE"
+  | "INVALID_PAYLOAD"
+  | "LEASE_REVOKED"
+  | "LEASE_SUPERSEDED"
+  | "SCOPE_MISMATCH"
+  | "FUTURE_ISSUED_AT"
+  | "NOT_YET_VALID"
+  | "EXPIRED";
+
+export type CommercialLeaseVerificationResult =
+  | Readonly<{ ok: true; payload: CommercialLeasePayload; keyId: string }>
+  | Readonly<{ ok: false; reason: CommercialLeaseVerificationFailureReason }>;

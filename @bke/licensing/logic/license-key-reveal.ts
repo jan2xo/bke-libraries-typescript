@@ -7,6 +7,10 @@ import type { LicensingClock } from "./licensing-clock";
 import type { LicensingLicenseKeyDecrypter } from "./license-key-decrypter";
 import type { LicensingLicenseKeyRevealRepository } from "./license-key-reveal-repository";
 
+function validRevealId(value: unknown): value is string {
+  return typeof value === "string" && value.trim() === value && value.length > 0 && value.length <= 128;
+}
+
 export function createLicensingLicenseKeyRevealCapability(input: {
   readonly repository: LicensingLicenseKeyRevealRepository;
   readonly decrypter: LicensingLicenseKeyDecrypter;
@@ -16,6 +20,13 @@ export function createLicensingLicenseKeyRevealCapability(input: {
     async reveal(
       request: LicensingLicenseKeyRevealInput,
     ): Promise<LicensingLicenseKeyRevealResult> {
+      if (
+        !validRevealId(request.licenseId) ||
+        !validRevealId(request.accountId) ||
+        !validRevealId(request.actorPrincipalId)
+      ) {
+        return { status: "REJECTED", code: "NOT_FOUND" };
+      }
       const license = await input.repository.findByIdAndAccount({
         licenseId: request.licenseId,
         accountId: request.accountId,
