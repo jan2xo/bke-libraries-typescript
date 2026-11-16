@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestHarness } from "wrangler";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { generateKeyPairSync } from "node:crypto";
 import { createTestInstallAttestation, resetFixtureState } from "../src/index.js";
 
 const __dirname = resolve(fileURLToPath(import.meta.url), "..");
@@ -272,7 +273,10 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
 
   it("13. Deny: Expired attestation timestamp returns 400 EXPIRED_ATTESTATION_TIMESTAMP", async () => {
     const expiredTimestamp = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const expiredAttestation = createTestInstallAttestation({ timestamp: expiredTimestamp });
+    const expiredAttestation = createTestInstallAttestation({
+      issuedAt: new Date(Date.now() - 11 * 60 * 1000).toISOString(),
+      expiresAt: expiredTimestamp,
+    });
 
     const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
       method: "POST",
@@ -288,9 +292,9 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
     expect(body.error).toBe("EXPIRED_ATTESTATION_TIMESTAMP");
   });
 
-  it("14. Deny: Replay of same attestation nonce returns 409 REPLAY_DENIED", async () => {
-    const fixedNonce = "replay-nonce-" + crypto.randomUUID();
-    const attestation = createTestInstallAttestation({ nonce: fixedNonce });
+  it("14. Deny: Replay of same attestation ID returns 409 REPLAY_DENIED", async () => {
+    const fixedId = crypto.randomUUID();
+    const attestation = createTestInstallAttestation({ attestationId: fixedId });
 
     // First attempt succeeds
     const res1 = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
@@ -304,7 +308,7 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
     });
     expect(res1.status).toBe(201);
 
-    // Second attempt with exact same nonce fails closed
+    // Second attempt with exact same attestation ID fails closed
     const res2 = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
       method: "POST",
       headers: {
@@ -357,9 +361,11 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
     expect(body.error).toBe("PRODUCT_MISMATCH");
   });
 
-  it("17. Deny: Forged attestation signature returns 403 INVALID_ATTESTATION_SIGNATURE", async () => {
+  it("17. Deny: Forged attestation signature from un-enrolled key returns 403 INVALID_ATTESTATION_SIGNATURE", async () => {
+    const attackerKey = generateKeyPairSync("ed25519");
+    const attackerPrivateKeyPem = attackerKey.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
     const forgedAttestation = createTestInstallAttestation({
-      secret: "wrong-attacker-secret-xyz",
+      privateKeyPem: attackerPrivateKeyPem,
     });
 
     const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
@@ -374,6 +380,190 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("INVALID_ATTESTATION_SIGNATURE");
+  });
+
+  it("17b. Deny: Corrupted attestation domain returns 403 INVALID_ATTESTATION_SIGNATURE", async () => {
+    const corruptedAttestation = createTestInstallAttestation({
+      corruptDomain: true,
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-test-fixture": "disposable-nonproduction",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: corruptedAttestation }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("INVALID_ATTESTATION_SIGNATURE");
+  });
+
+  it("17c. Deny: Version mismatch returns 403 VERSION_MISMATCH", async () => {
+    const versionMismatch = createTestInstallAttestation({
+      version: "9.9.9",
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-test-fixture": "disposable-nonproduction",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: versionMismatch }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("VERSION_MISMATCH");
+  });
+
+  it("17d. Deny: Image path mismatch returns 403 IMAGE_PATH_MISMATCH", async () => {
+    const pathMismatch = createTestInstallAttestation({
+      imagePath: "C:\\malicious\\path\\fake.exe",
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-test-fixture": "disposable-nonproduction",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: pathMismatch }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("IMAGE_PATH_MISMATCH");
+  });
+
+  it("17e. Deny: Image SHA256 mismatch returns 403 IMAGE_SHA256_MISMATCH", async () => {
+    const hashMismatch = createTestInstallAttestation({
+      imageSha256: "f".repeat(64),
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-test-fixture": "disposable-nonproduction",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: hashMismatch }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("IMAGE_SHA256_MISMATCH");
+  });
+
+  it("17f. Deny: User SID mismatch returns 403 USER_SID_MISMATCH", async () => {
+    const sidMismatch = createTestInstallAttestation({
+      allowedUserSid: "S-1-5-21-999-999-999-9999",
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-test-fixture": "disposable-nonproduction",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: sidMismatch }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("USER_SID_MISMATCH");
+  });
+
+  it("17g. Deny: Tampered inner payload returns 403 INVALID_ATTESTATION_SIGNATURE", async () => {
+    const valid = JSON.parse(createTestInstallAttestation());
+    const tamperedPayload = valid.payload.replace("render-dock", "tampered-dock");
+    const tamperedEnvelope = JSON.stringify({
+      ...valid,
+      payload: tamperedPayload,
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-test-fixture": "disposable-nonproduction",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: tamperedEnvelope }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("INVALID_ATTESTATION_SIGNATURE");
+  });
+
+  it("17h. Deny: Envelope with invalid schema returns 400 MALFORMED_ATTESTATION", async () => {
+    const valid = JSON.parse(createTestInstallAttestation());
+    const badSchema = JSON.stringify({
+      ...valid,
+      schema: "bke.invalid-schema.v1",
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-test-fixture": "disposable-nonproduction",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: badSchema }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("MALFORMED_ATTESTATION");
+  });
+
+  it("17i. Dynamic installation enrollment via POST /api/test/enroll-installation and successful issuance", async () => {
+    const customKey = generateKeyPairSync("ed25519");
+    const customPubPem = customKey.publicKey.export({ type: "spki", format: "pem" }).toString();
+    const customPrivPem = customKey.privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const customInstallId = "11111111-2222-3333-4444-555555555555";
+
+    const enrollRes = await harness.fetch("http://localhost/api/test/enroll-installation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        installationId: customInstallId,
+        productId: "custom-suite",
+        version: "2.1.0",
+        imagePath: "C:\\Program Files\\BKE Digital Solutions\\Custom Suite\\custom.exe",
+        imageSha256: "c".repeat(64),
+        allowedUserSid: "S-1-5-21-333-444-555-2000",
+        activationMode: "ACCOUNT",
+        enrolledPublicKeyPem: customPubPem,
+      }),
+    });
+    expect(enrollRes.status).toBe(201);
+
+    const customAttestation = createTestInstallAttestation({
+      installationId: customInstallId,
+      productId: "custom-suite",
+      version: "2.1.0",
+      imagePath: "C:\\Program Files\\BKE Digital Solutions\\Custom Suite\\custom.exe",
+      imageSha256: "c".repeat(64),
+      allowedUserSid: "S-1-5-21-333-444-555-2000",
+      privateKeyPem: customPrivPem,
+    });
+
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({ signed_install_attestation: customAttestation }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { status: string; activation_mode: string };
+    expect(body.status).toBe("issued");
+    expect(body.activation_mode).toBe("ACCOUNT");
   });
 
   it("18. Deny: Verifying tampered Account JWS payload fails closed with INVALID_SIGNATURE", async () => {

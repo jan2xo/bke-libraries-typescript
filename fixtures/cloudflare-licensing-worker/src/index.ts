@@ -10,7 +10,7 @@
  * installed BKE Licensing Agent.
  */
 
-import { createHmac, generateKeyPairSync, sign, timingSafeEqual } from "node:crypto";
+import { generateKeyPairSync, sign, verify } from "node:crypto";
 import type {
   AccountProductLeaseClaims,
   AccountProductLeaseTrustedKey,
@@ -38,6 +38,9 @@ export interface Env {
 const DEFAULT_KID = "disposable-cf-issuer-2026";
 const POLICY_PROTOCOL = "bke.installed-startup-issuance.v1";
 const POLICY_DOMAIN = "BKE-STANDALONE-STARTUP-POLICY-V1\n";
+const ATTESTATION_DOMAIN = "BKE-AGENT-STARTUP-INSTALL-ATTESTATION-V1\n";
+const ATTESTATION_ENVELOPE_SCHEMA = "bke.agent-startup-install-attestation-envelope.v1";
+const ATTESTATION_PAYLOAD_SCHEMA = "bke.agent-startup-install-attestation.v1";
 const MAX_REQUEST_BYTES = 65536;
 
 // Ephemeral test-only Ed25519 key pair held in Worker instance memory.
@@ -51,6 +54,25 @@ const activePrivateKeyPem = ephemeralKeyPair.privateKey
   .toString();
 const activeThumbprint = spkiThumbprint(ephemeralKeyPair.publicKey);
 
+// Ephemeral test-only enrolled Agent key pair for the default test installation.
+// Constant test key ensures consistent identity across test harnesses and workerd instances.
+const DEFAULT_AGENT_PUBLIC_KEY_PEM =
+  "-----BEGIN PUBLIC KEY-----\n" +
+  "MCowBQYDK2VwAyEASoT9/ZlqbEOT2aH0+m+UaCSsW1zQ4S7s63LybwVTzDA=\n" +
+  "-----END PUBLIC KEY-----\n";
+const DEFAULT_AGENT_PRIVATE_KEY_PEM =
+  "-----BEGIN PRIVATE KEY-----\n" +
+  "MC4CAQAwBQYDK2VwBCIEIDmiRmOgeUcW+4yKJLLfZmIJn10vYVvWsUZPCpKdSHH9\n" +
+  "-----END PRIVATE KEY-----\n";
+
+export function getDefaultAgentPublicKeyPem(): string {
+  return DEFAULT_AGENT_PUBLIC_KEY_PEM;
+}
+
+export function getDefaultAgentPrivateKeyPem(): string {
+  return DEFAULT_AGENT_PRIVATE_KEY_PEM;
+}
+
 export interface EnrolledFixtureInstallation {
   installationId: string;
   productId: string;
@@ -59,10 +81,10 @@ export interface EnrolledFixtureInstallation {
   imageSha256: string;
   allowedUserSid: string;
   activationMode: "ACCOUNT" | "LICENSE_KEY" | "EITHER";
-  fixtureAgentSecret: string;
+  enrolledPublicKeyPem: string;
 }
 
-export const ENROLLED_TEST_INSTALLATIONS: Record<string, EnrolledFixtureInstallation> = {
+const ENROLLED_TEST_INSTALLATIONS: Record<string, EnrolledFixtureInstallation> = {
   "00000000-0000-0000-0000-000000000123": {
     installationId: "00000000-0000-0000-0000-000000000123",
     productId: "render-dock",
@@ -71,9 +93,13 @@ export const ENROLLED_TEST_INSTALLATIONS: Record<string, EnrolledFixtureInstalla
     imageSha256: "a".repeat(64),
     allowedUserSid: "S-1-5-21-111-222-333-1001",
     activationMode: "LICENSE_KEY",
-    fixtureAgentSecret: "disposable-fixture-agent-attestation-secret-2026",
+    enrolledPublicKeyPem: DEFAULT_AGENT_PUBLIC_KEY_PEM,
   },
 };
+
+export function enrollTestInstallation(installation: EnrolledFixtureInstallation): void {
+  ENROLLED_TEST_INSTALLATIONS[installation.installationId] = { ...installation };
+}
 
 const seenNonces = new Set<string>();
 
@@ -100,27 +126,55 @@ export function formatCanonicalDotNetTime(date: Date): string {
 export function createTestInstallAttestation(options: {
   installationId?: string;
   productId?: string;
-  nonce?: string;
-  timestamp?: string;
-  secret?: string;
+  version?: string;
+  imagePath?: string;
+  imageSha256?: string;
+  allowedUserSid?: string;
+  deviceId?: string;
+  attestationId?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  kid?: string;
+  privateKeyPem?: string;
+  corruptDomain?: boolean;
 } = {}): string {
   const installationId = options.installationId ?? "00000000-0000-0000-0000-000000000123";
   const productId = options.productId ?? "render-dock";
-  const nonce = options.nonce ?? crypto.randomUUID();
-  const timestamp = options.timestamp ?? new Date().toISOString();
-  const secret = options.secret ?? "disposable-fixture-agent-attestation-secret-2026";
-  const schema = "bke.agent-install-attestation.v1";
+  const version = options.version ?? "1.0.3";
+  const imagePath = options.imagePath ?? "C:\\Program Files\\BKE Digital Solutions\\Render Dock\\RENDER DOCK.exe";
+  const imageSha256 = options.imageSha256 ?? "a".repeat(64);
+  const allowedUserSid = options.allowedUserSid ?? "S-1-5-21-111-222-333-1001";
+  const deviceId = options.deviceId ?? "startup-device-001";
+  const attestationId = options.attestationId ?? crypto.randomUUID();
+  const now = new Date();
+  const issuedAt = options.issuedAt ?? now.toISOString();
+  const expiresAt = options.expiresAt ?? new Date(now.getTime() + 60000).toISOString();
+  const kid = options.kid ?? "startup-test-key-001";
+  const privateKeyPem = options.privateKeyPem ?? DEFAULT_AGENT_PRIVATE_KEY_PEM;
 
-  const message = `${schema}:${installationId}:${productId}:${nonce}:${timestamp}`;
-  const hmac = createHmac("sha256", secret).update(message).digest("hex");
+  const payload = JSON.stringify({
+    schema: "bke.agent-startup-install-attestation.v1",
+    product_id: productId,
+    version,
+    installation_id: installationId,
+    image_path: imagePath,
+    image_sha256: imageSha256,
+    allowed_user_sid: allowedUserSid,
+    device_id: deviceId,
+    attestation_id: attestationId,
+    issued_at: issuedAt,
+    expires_at: expiresAt,
+  });
+
+  const domain = options.corruptDomain ? "CORRUPTED-DOMAIN\n" : ATTESTATION_DOMAIN;
+  const message = Buffer.from(domain + payload, "utf8");
+  const signature = sign(null, message, privateKeyPem).toString("base64");
 
   return JSON.stringify({
-    schema,
-    installation_id: installationId,
-    product_id: productId,
-    nonce,
-    timestamp,
-    signature: hmac,
+    schema: "bke.agent-startup-install-attestation-envelope.v1",
+    kid,
+    payload,
+    signature,
   });
 }
 
@@ -171,6 +225,31 @@ export default {
           },
         ],
       });
+    }
+
+    // 2b. Enroll installation endpoint (TEST FIXTURE ONLY)
+    if (url.pathname === "/api/test/enroll-installation" && request.method === "POST") {
+      let body: Record<string, unknown> = {};
+      try {
+        const text = await request.text();
+        if (text.length > 0) body = JSON.parse(text);
+      } catch {
+        return errorResponse(400, "INVALID_JSON");
+      }
+      if (
+        typeof body.installationId !== "string" ||
+        typeof body.productId !== "string" ||
+        typeof body.version !== "string" ||
+        typeof body.imagePath !== "string" ||
+        typeof body.imageSha256 !== "string" ||
+        typeof body.allowedUserSid !== "string" ||
+        (body.activationMode !== "ACCOUNT" && body.activationMode !== "LICENSE_KEY" && body.activationMode !== "EITHER") ||
+        typeof body.enrolledPublicKeyPem !== "string"
+      ) {
+        return errorResponse(400, "INVALID_ENROLLMENT_BODY");
+      }
+      enrollTestInstallation(body as unknown as EnrolledFixtureInstallation);
+      return jsonResponse({ status: "enrolled", installationId: body.installationId }, 201);
     }
 
     // Guard payload size for POST routes
@@ -327,65 +406,150 @@ export default {
         return errorResponse(400, "MISSING_ATTESTATION");
       }
 
-      let attestation: {
-        schema?: string;
-        installation_id?: string;
-        product_id?: string;
-        nonce?: string;
-        timestamp?: string;
-        signature?: string;
-      };
+      if (Buffer.byteLength(rawAttestation, "utf8") > 7000) {
+        return errorResponse(400, "ATTESTATION_TOO_LARGE");
+      }
+
+      let envelope: Record<string, unknown>;
       try {
-        attestation = JSON.parse(rawAttestation);
+        envelope = JSON.parse(rawAttestation);
       } catch {
         return errorResponse(400, "MALFORMED_ATTESTATION");
       }
 
       if (
-        !attestation ||
-        typeof attestation !== "object" ||
-        attestation.schema !== "bke.agent-install-attestation.v1" ||
-        typeof attestation.installation_id !== "string" ||
-        typeof attestation.product_id !== "string" ||
-        typeof attestation.nonce !== "string" ||
-        typeof attestation.timestamp !== "string" ||
-        typeof attestation.signature !== "string"
+        !envelope ||
+        typeof envelope !== "object" ||
+        Array.isArray(envelope)
       ) {
         return errorResponse(400, "MALFORMED_ATTESTATION");
       }
 
-      const ts = Date.parse(attestation.timestamp);
-      if (Number.isNaN(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
+      const envKeys = Object.keys(envelope);
+      const expectedEnvKeys = ["schema", "kid", "payload", "signature"];
+      if (
+        envKeys.length !== expectedEnvKeys.length ||
+        !expectedEnvKeys.every((k) => envKeys.includes(k)) ||
+        envelope.schema !== ATTESTATION_ENVELOPE_SCHEMA ||
+        typeof envelope.kid !== "string" ||
+        envelope.kid.length < 1 ||
+        envelope.kid.length > 128 ||
+        typeof envelope.payload !== "string" ||
+        envelope.payload.length < 1 ||
+        typeof envelope.signature !== "string"
+      ) {
+        return errorResponse(400, "MALFORMED_ATTESTATION");
+      }
+
+      let sigBuffer: Buffer;
+      try {
+        sigBuffer = Buffer.from(envelope.signature, "base64");
+        if (sigBuffer.length !== 64 || sigBuffer.toString("base64") !== envelope.signature) {
+          return errorResponse(400, "MALFORMED_ATTESTATION");
+        }
+      } catch {
+        return errorResponse(400, "MALFORMED_ATTESTATION");
+      }
+
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(envelope.payload);
+      } catch {
+        return errorResponse(400, "MALFORMED_ATTESTATION");
+      }
+
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        Array.isArray(payload)
+      ) {
+        return errorResponse(400, "MALFORMED_ATTESTATION");
+      }
+
+      const payloadKeys = Object.keys(payload);
+      const expectedPayloadKeys = [
+        "schema",
+        "product_id",
+        "version",
+        "installation_id",
+        "image_path",
+        "image_sha256",
+        "allowed_user_sid",
+        "device_id",
+        "attestation_id",
+        "issued_at",
+        "expires_at",
+      ];
+      if (
+        payloadKeys.length !== expectedPayloadKeys.length ||
+        !expectedPayloadKeys.every((k) => payloadKeys.includes(k)) ||
+        payload.schema !== ATTESTATION_PAYLOAD_SCHEMA ||
+        typeof payload.product_id !== "string" ||
+        typeof payload.version !== "string" ||
+        typeof payload.installation_id !== "string" ||
+        typeof payload.image_path !== "string" ||
+        typeof payload.image_sha256 !== "string" ||
+        typeof payload.allowed_user_sid !== "string" ||
+        typeof payload.device_id !== "string" ||
+        typeof payload.attestation_id !== "string" ||
+        typeof payload.issued_at !== "string" ||
+        typeof payload.expires_at !== "string"
+      ) {
+        return errorResponse(400, "MALFORMED_ATTESTATION");
+      }
+
+      const issuedTs = Date.parse(payload.issued_at as string);
+      const expiresTs = Date.parse(payload.expires_at as string);
+      const nowTs = Date.now();
+      if (
+        Number.isNaN(issuedTs) ||
+        Number.isNaN(expiresTs) ||
+        expiresTs <= issuedTs ||
+        expiresTs <= nowTs ||
+        issuedTs > nowTs + 30000 ||
+        expiresTs - issuedTs > 300000
+      ) {
         return errorResponse(400, "EXPIRED_ATTESTATION_TIMESTAMP");
       }
 
-      if (seenNonces.has(attestation.nonce)) {
+      if (seenNonces.has(payload.attestation_id as string)) {
         return errorResponse(409, "REPLAY_DENIED");
       }
 
-      const enrolled = ENROLLED_TEST_INSTALLATIONS[attestation.installation_id];
+      const enrolled = ENROLLED_TEST_INSTALLATIONS[payload.installation_id as string];
       if (!enrolled) {
         return errorResponse(403, "UNENROLLED_INSTALLATION");
       }
 
-      if (attestation.product_id !== enrolled.productId) {
-        return errorResponse(403, "PRODUCT_MISMATCH");
-      }
-
-      const message = `${attestation.schema}:${attestation.installation_id}:${attestation.product_id}:${attestation.nonce}:${attestation.timestamp}`;
-      const expectedHmac = createHmac("sha256", enrolled.fixtureAgentSecret).update(message).digest("hex");
+      // Verify Ed25519 signature over ATTESTATION_DOMAIN + envelope.payload using enrolled public key first
+      const messageToVerify = Buffer.from(ATTESTATION_DOMAIN + (envelope.payload as string), "utf8");
       try {
-        const sigBuf = Buffer.from(attestation.signature, "hex");
-        const expBuf = Buffer.from(expectedHmac, "hex");
-        if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+        const isValid = verify(null, messageToVerify, enrolled.enrolledPublicKeyPem, sigBuffer);
+        if (!isValid) {
           return errorResponse(403, "INVALID_ATTESTATION_SIGNATURE");
         }
       } catch {
         return errorResponse(403, "INVALID_ATTESTATION_SIGNATURE");
       }
 
-      // Mark nonce as consumed
-      seenNonces.add(attestation.nonce);
+      if (payload.product_id !== enrolled.productId) {
+        return errorResponse(403, "PRODUCT_MISMATCH");
+      }
+      if (payload.version !== enrolled.version) {
+        return errorResponse(403, "VERSION_MISMATCH");
+      }
+      if ((payload.image_path as string).toLowerCase() !== enrolled.imagePath.toLowerCase()) {
+        return errorResponse(403, "IMAGE_PATH_MISMATCH");
+      }
+      if ((payload.image_sha256 as string).toLowerCase() !== enrolled.imageSha256.toLowerCase()) {
+        return errorResponse(403, "IMAGE_SHA256_MISMATCH");
+      }
+      if (payload.allowed_user_sid !== enrolled.allowedUserSid) {
+        return errorResponse(403, "USER_SID_MISMATCH");
+      }
+
+      // Mark attestation nonce as consumed (scoped to local fixture instance)
+      seenNonces.add(payload.attestation_id as string);
       if (seenNonces.size > 2000) {
         const oldest = seenNonces.values().next().value;
         if (oldest) seenNonces.delete(oldest);
