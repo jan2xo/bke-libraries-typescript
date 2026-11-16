@@ -144,6 +144,7 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
     expect(body.status).toBe("issued");
     expect(body.activation_mode).toBe("LICENSE_KEY");
     expect(body.kid).toBe("disposable-cf-issuer-2026");
+    expect(body.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}\+00:00$/);
 
     const envelope = JSON.parse(body.signed_policy_envelope);
     expect(envelope.schema).toBe("bke.standalone-startup-envelope.v1");
@@ -155,6 +156,29 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
     expect(payload.version).toBe("1.0.3");
     expect(payload.installation_id).toBe("00000000-0000-0000-0000-000000000123");
     expect(payload.activation_mode).toBe("LICENSE_KEY");
+    expect(payload.expires_at).toBe(body.expires_at);
+    expect(payload.not_before).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}\+00:00$/);
+  });
+
+  it("5b. POST /api/agent-sessions/startup-policy accepts standard Agent PreproductionStartupPolicyAcquisition transport", async () => {
+    // Real Agent acquisition sends x-bke-startup-policy-protocol and no ambient/extra headers
+    const validAttestation = createTestInstallAttestation();
+    const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
+      },
+      body: JSON.stringify({
+        signed_install_attestation: validAttestation,
+      }),
+    });
+    expect(res.status).toBe(201);
+    expect(res.headers.get("x-bke-startup-policy-protocol")).toBe("bke.installed-startup-issuance.v1");
+    expect(res.headers.get("x-bke-test-fixture")).toBe("disposable-nonproduction");
+    const body = (await res.json()) as { status: string; expires_at: string };
+    expect(body.status).toBe("issued");
+    expect(body.expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{7}\+00:00$/);
   });
 
   // --- Negative / Adversarial Scenarios ---
@@ -169,18 +193,19 @@ describe("BKE Disposable Cloudflare Worker Fixture Issuer", () => {
     expect(res.status).toBe(405);
   });
 
-  it("8. Deny: Startup policy request without test fixture guard header returns 400", async () => {
+  it("8. Deny: Startup policy request with invalid test fixture header returns 400", async () => {
     const res = await harness.fetch("http://localhost/api/agent-sessions/startup-policy", {
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-bke-test-fixture": "production-bypass-attempt",
         "x-bke-startup-policy-protocol": "bke.installed-startup-issuance.v1",
       },
       body: JSON.stringify({ signed_install_attestation: createTestInstallAttestation() }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toBe("MISSING_TEST_FIXTURE_GUARD");
+    expect(body.error).toBe("INVALID_TEST_FIXTURE_GUARD");
   });
 
   it("9. Deny: Startup policy request without protocol header returns 400", async () => {

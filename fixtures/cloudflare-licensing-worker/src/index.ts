@@ -81,6 +81,22 @@ export function resetFixtureState(): void {
   seenNonces.clear();
 }
 
+/**
+ * Formats a Date object as a canonical .NET "O" (round-trip) UTC timestamp:
+ * yyyy-MM-ddTHH:mm:ss.fffffff+00:00 (7 decimal places and explicit +00:00 offset).
+ * Strictly required by BKE Licensing Agent's RequiredTime parser.
+ */
+export function formatCanonicalDotNetTime(date: Date): string {
+  const year = date.getUTCFullYear().toString().padStart(4, "0");
+  const month = (date.getUTCMonth() + 1).toString().padStart(2, "0");
+  const day = date.getUTCDate().toString().padStart(2, "0");
+  const hours = date.getUTCHours().toString().padStart(2, "0");
+  const minutes = date.getUTCMinutes().toString().padStart(2, "0");
+  const seconds = date.getUTCSeconds().toString().padStart(2, "0");
+  const ms = date.getUTCMilliseconds().toString().padStart(3, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}0000+00:00`;
+}
+
 export function createTestInstallAttestation(options: {
   installationId?: string;
   productId?: string;
@@ -284,8 +300,8 @@ export default {
     // 5. Agent Standalone Startup Policy Issuance Handshake (TEST FIXTURE ONLY)
     if (url.pathname === "/api/agent-sessions/startup-policy" && request.method === "POST") {
       const fixtureHeader = request.headers.get("x-bke-test-fixture");
-      if (fixtureHeader !== "disposable-nonproduction") {
-        return errorResponse(400, "MISSING_TEST_FIXTURE_GUARD", "Endpoint requires x-bke-test-fixture: disposable-nonproduction header.");
+      if (fixtureHeader !== null && fixtureHeader !== "disposable-nonproduction") {
+        return errorResponse(400, "INVALID_TEST_FIXTURE_GUARD", "If provided, x-bke-test-fixture must be 'disposable-nonproduction'.");
       }
 
       const protocolHeader = request.headers.get("x-bke-startup-policy-protocol");
@@ -376,8 +392,8 @@ export default {
       }
 
       const now = new Date();
-      const notBefore = new Date(now.getTime() - 5000).toISOString();
-      const expiresAt = new Date(now.getTime() + 25 * 60 * 1000).toISOString();
+      const notBefore = formatCanonicalDotNetTime(new Date(now.getTime() - 5000));
+      const expiresAt = formatCanonicalDotNetTime(new Date(now.getTime() + 25 * 60 * 1000));
 
       const policyPayload = JSON.stringify({
         schema: "bke.standalone-startup-policy.v1",
