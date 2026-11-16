@@ -38,7 +38,7 @@ jobs:
 
       - name: Install Cloudflare Worker fixture dependencies
         working-directory: fixtures/cloudflare-licensing-worker
-        run: npm install
+        run: npm ci
 
       - name: Certify ES module Worker build under production-shaped compatibility flags
         working-directory: fixtures/cloudflare-licensing-worker

@@ -1,4 +1,16 @@
-import { generateKeyPairSync, sign } from "node:crypto";
+/**
+ * BKE Disposable Cloudflare Worker Fixture Issuer
+ *
+ * CAUTION / AUDIT NOTICE:
+ * This Worker is an ephemeral test fixture intended strictly for local `workerd`
+ * runtime compatibility testing, cryptographic round-trips, and CI certification.
+ * It is NOT an authorized licensing authority, NOT a commerce backend, and MUST NEVER
+ * be deployed to a public Cloudflare environment or used to authorize production workloads.
+ * Real licensing authority resides exclusively in BKE Digital Solutions and the genuine
+ * installed BKE Licensing Agent.
+ */
+
+import { createHmac, generateKeyPairSync, sign, timingSafeEqual } from "node:crypto";
 import type {
   AccountProductLeaseClaims,
   AccountProductLeaseTrustedKey,
@@ -38,6 +50,63 @@ const activePrivateKeyPem = ephemeralKeyPair.privateKey
   .export({ type: "pkcs8", format: "pem" })
   .toString();
 const activeThumbprint = spkiThumbprint(ephemeralKeyPair.publicKey);
+
+export interface EnrolledFixtureInstallation {
+  installationId: string;
+  productId: string;
+  version: string;
+  imagePath: string;
+  imageSha256: string;
+  allowedUserSid: string;
+  activationMode: "ACCOUNT" | "LICENSE_KEY" | "EITHER";
+  fixtureAgentSecret: string;
+}
+
+export const ENROLLED_TEST_INSTALLATIONS: Record<string, EnrolledFixtureInstallation> = {
+  "00000000-0000-0000-0000-000000000123": {
+    installationId: "00000000-0000-0000-0000-000000000123",
+    productId: "render-dock",
+    version: "1.0.3",
+    imagePath: "C:\\Program Files\\BKE Digital Solutions\\Render Dock\\RENDER DOCK.exe",
+    imageSha256: "a".repeat(64),
+    allowedUserSid: "S-1-5-21-111-222-333-1001",
+    activationMode: "LICENSE_KEY",
+    fixtureAgentSecret: "disposable-fixture-agent-attestation-secret-2026",
+  },
+};
+
+const seenNonces = new Set<string>();
+
+export function resetFixtureState(): void {
+  seenNonces.clear();
+}
+
+export function createTestInstallAttestation(options: {
+  installationId?: string;
+  productId?: string;
+  nonce?: string;
+  timestamp?: string;
+  secret?: string;
+} = {}): string {
+  const installationId = options.installationId ?? "00000000-0000-0000-0000-000000000123";
+  const productId = options.productId ?? "render-dock";
+  const nonce = options.nonce ?? crypto.randomUUID();
+  const timestamp = options.timestamp ?? new Date().toISOString();
+  const secret = options.secret ?? "disposable-fixture-agent-attestation-secret-2026";
+  const schema = "bke.agent-install-attestation.v1";
+
+  const message = `${schema}:${installationId}:${productId}:${nonce}:${timestamp}`;
+  const hmac = createHmac("sha256", secret).update(message).digest("hex");
+
+  return JSON.stringify({
+    schema,
+    installation_id: installationId,
+    product_id: productId,
+    nonce,
+    timestamp,
+    signature: hmac,
+  });
+}
 
 function jsonResponse(data: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
@@ -212,8 +281,13 @@ export default {
       }
     }
 
-    // 5. Agent Standalone Startup Policy Issuance Handshake
+    // 5. Agent Standalone Startup Policy Issuance Handshake (TEST FIXTURE ONLY)
     if (url.pathname === "/api/agent-sessions/startup-policy" && request.method === "POST") {
+      const fixtureHeader = request.headers.get("x-bke-test-fixture");
+      if (fixtureHeader !== "disposable-nonproduction") {
+        return errorResponse(400, "MISSING_TEST_FIXTURE_GUARD", "Endpoint requires x-bke-test-fixture: disposable-nonproduction header.");
+      }
+
       const protocolHeader = request.headers.get("x-bke-startup-policy-protocol");
       if (protocolHeader !== POLICY_PROTOCOL) {
         return errorResponse(400, "INVALID_STARTUP_PROTOCOL");
@@ -227,33 +301,94 @@ export default {
         return errorResponse(400, "INVALID_JSON");
       }
 
-      const attestation = body.signed_install_attestation;
-      if (typeof attestation !== "string" || attestation.length < 10) {
+      const bodyKeys = Object.keys(body);
+      if (bodyKeys.length !== 1 || bodyKeys[0] !== "signed_install_attestation") {
+        return errorResponse(400, "UNEXPECTED_BODY_FIELD", "Only signed_install_attestation is accepted. Caller-selected modes and paths are rejected.");
+      }
+
+      const rawAttestation = body.signed_install_attestation;
+      if (typeof rawAttestation !== "string" || rawAttestation.length < 10) {
         return errorResponse(400, "MISSING_ATTESTATION");
+      }
+
+      let attestation: {
+        schema?: string;
+        installation_id?: string;
+        product_id?: string;
+        nonce?: string;
+        timestamp?: string;
+        signature?: string;
+      };
+      try {
+        attestation = JSON.parse(rawAttestation);
+      } catch {
+        return errorResponse(400, "MALFORMED_ATTESTATION");
+      }
+
+      if (
+        !attestation ||
+        typeof attestation !== "object" ||
+        attestation.schema !== "bke.agent-install-attestation.v1" ||
+        typeof attestation.installation_id !== "string" ||
+        typeof attestation.product_id !== "string" ||
+        typeof attestation.nonce !== "string" ||
+        typeof attestation.timestamp !== "string" ||
+        typeof attestation.signature !== "string"
+      ) {
+        return errorResponse(400, "MALFORMED_ATTESTATION");
+      }
+
+      const ts = Date.parse(attestation.timestamp);
+      if (Number.isNaN(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000) {
+        return errorResponse(400, "EXPIRED_ATTESTATION_TIMESTAMP");
+      }
+
+      if (seenNonces.has(attestation.nonce)) {
+        return errorResponse(409, "REPLAY_DENIED");
+      }
+
+      const enrolled = ENROLLED_TEST_INSTALLATIONS[attestation.installation_id];
+      if (!enrolled) {
+        return errorResponse(403, "UNENROLLED_INSTALLATION");
+      }
+
+      if (attestation.product_id !== enrolled.productId) {
+        return errorResponse(403, "PRODUCT_MISMATCH");
+      }
+
+      const message = `${attestation.schema}:${attestation.installation_id}:${attestation.product_id}:${attestation.nonce}:${attestation.timestamp}`;
+      const expectedHmac = createHmac("sha256", enrolled.fixtureAgentSecret).update(message).digest("hex");
+      try {
+        const sigBuf = Buffer.from(attestation.signature, "hex");
+        const expBuf = Buffer.from(expectedHmac, "hex");
+        if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) {
+          return errorResponse(403, "INVALID_ATTESTATION_SIGNATURE");
+        }
+      } catch {
+        return errorResponse(403, "INVALID_ATTESTATION_SIGNATURE");
+      }
+
+      // Mark nonce as consumed
+      seenNonces.add(attestation.nonce);
+      if (seenNonces.size > 2000) {
+        const oldest = seenNonces.values().next().value;
+        if (oldest) seenNonces.delete(oldest);
       }
 
       const now = new Date();
       const notBefore = new Date(now.getTime() - 5000).toISOString();
       const expiresAt = new Date(now.getTime() + 25 * 60 * 1000).toISOString();
 
-      const productId = typeof body.productId === "string" ? body.productId : "render-dock";
-      const version = typeof body.version === "string" ? body.version : "1.0.3";
-      const installationId = typeof body.installationId === "string" ? body.installationId : "00000000-0000-0000-0000-000000000123";
-      const imagePath = typeof body.imagePath === "string" ? body.imagePath : "C:\\Program Files\\BKE Digital Solutions\\Render Dock\\RENDER DOCK.exe";
-      const imageSha256 = typeof body.imageSha256 === "string" ? body.imageSha256 : "a".repeat(64);
-      const allowedUserSid = typeof body.allowedUserSid === "string" ? body.allowedUserSid : "S-1-5-21-111-222-333-1001";
-      const activationMode = typeof body.activationMode === "string" ? body.activationMode : "EITHER";
-
       const policyPayload = JSON.stringify({
         schema: "bke.standalone-startup-policy.v1",
-        issuer_source_sha: "d6e08273ab7062b5a5868bec77a5f65f3d0239a4",
-        product_id: productId,
-        version,
-        installation_id: installationId,
-        image_path: imagePath,
-        image_sha256: imageSha256,
-        allowed_user_sid: allowedUserSid,
-        activation_mode: activationMode,
+        issuer_source_sha: "09c16bc5c7e1d6ab3cb8df0ba569e6da05498f3f",
+        product_id: enrolled.productId,
+        version: enrolled.version,
+        installation_id: enrolled.installationId,
+        image_path: enrolled.imagePath,
+        image_sha256: enrolled.imageSha256,
+        allowed_user_sid: enrolled.allowedUserSid,
+        activation_mode: enrolled.activationMode,
         not_before: notBefore,
         expires_at: expiresAt,
       });
@@ -274,12 +409,13 @@ export default {
           status: "issued",
           signed_policy_envelope: envelopeJson,
           kid,
-          activation_mode: activationMode,
+          activation_mode: enrolled.activationMode,
           expires_at: expiresAt,
         },
         201,
         {
           "x-bke-startup-policy-protocol": POLICY_PROTOCOL,
+          "x-bke-test-fixture": "disposable-nonproduction",
         },
       );
     }
