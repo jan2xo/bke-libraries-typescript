@@ -1,8 +1,12 @@
 name: BKE Library - Licensing Cloudflare Compatibility Certification
 
-# Owner-triggered, certificate-only workflow.
+# Owner-triggered or PR-candidate certification workflow.
 # Verifies disposable Cloudflare Worker fixture issuer consuming @bke/licensing.
 on:
+  pull_request:
+    paths:
+      - 'fixtures/cloudflare-licensing-worker/**'
+      - '.github/workflows/licensing-cloudflare-certify.yml'
   workflow_dispatch:
 
 permissions:
