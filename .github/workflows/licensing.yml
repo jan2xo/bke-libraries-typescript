@@ -77,3 +77,52 @@ jobs:
         run: npx tsx @bke/licensing/tests/signing-key-registry.postgres.certify.ts
       - name: Certify Licensing grace-period behavior on PostgreSQL
         run: npx tsx @bke/licensing/tests/grace-period.postgres.certify.ts
+
+  cloudflare-certify:
+    name: Cloudflare Worker Compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked workspace dependencies
+        run: npm ci
+
+      - name: Pack immutable @bke/licensing package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          npm pack --workspace=@bke/licensing --pack-destination=artifacts
+          version="$(node -p "require('./@bke/licensing/package.json').version")"
+          tarball="artifacts/bke-licensing-${version}.tgz"
+          test -f "$tarball"
+          sha256sum "$tarball" > "${tarball}.sha256"
+          echo "PACKED_TARBALL_SHA256=$(cat "${tarball}.sha256" | awk '{print $1}')" >> "$GITHUB_ENV"
+          cat "${tarball}.sha256"
+
+      - name: Install Cloudflare Worker fixture dependencies
+        working-directory: fixtures/cloudflare-licensing-worker
+        run: npm ci
+
+      - name: Certify ES module Worker build under production-shaped compatibility flags
+        working-directory: fixtures/cloudflare-licensing-worker
+        run: npx wrangler deploy --dry-run --outdir dist
+
+      - name: Certify local workerd whole-worker HTTP behavior and crypto contracts
+        working-directory: fixtures/cloudflare-licensing-worker
+        run: npx vitest run tests/worker.test.ts
+
+      - name: Upload certified Cloudflare compatibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: bke-licensing-cloudflare-certified
+          path: |
+            artifacts/
+            fixtures/cloudflare-licensing-worker/dist/
+          if-no-files-found: error
